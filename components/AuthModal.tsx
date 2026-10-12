@@ -91,15 +91,24 @@ export default function AuthModal() {
         })
 
         if (signUpError) {
-          if (signUpError.message.includes('already registered')) {
-            setError('This USN or email is already registered. Please sign in.')
+          if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
+            setError('This email is already registered. Please sign in instead.')
             setLoading(false)
             return
           }
           throw signUpError
         }
 
-        const userId = data.user?.id || `user-${Date.now()}`
+        // If email confirmation is disabled, data.user is available immediately.
+        // Auto sign-in so the user doesn't need to verify email first.
+        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        })
+
+        const resolvedUser = signInData?.user || data.user
+        const userId = resolvedUser?.id || `user-${Date.now()}`
+
         const newProfile = {
           id: userId,
           usn: formattedUsn,
@@ -113,6 +122,15 @@ export default function AuthModal() {
           created_at: new Date().toISOString(),
         }
         try { await supabase.from('user_profiles').upsert(newProfile) } catch {}
+
+        if (signInErr) {
+          // Email confirmation may be required — tell user to check email
+          setError('Account created! Please check your email to verify, then sign in.')
+          setLoading(false)
+          resetForm()
+          setIsSignUp(false)
+          return
+        }
         setCurrentUser(newProfile)
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
