@@ -138,7 +138,14 @@ export default function AuthModal() {
           password,
         })
         if (signInError || !data.user) {
-          setError('Invalid email or password. Please try again.')
+          const msg = signInError?.message || ''
+          if (msg.toLowerCase().includes('email not confirmed')) {
+            setError('Your email is not confirmed. Please check your inbox or ask the admin to confirm your account in Supabase.')
+          } else if (msg.toLowerCase().includes('invalid login credentials') || msg.toLowerCase().includes('invalid credentials')) {
+            setError('Wrong email or password. Double-check and try again.')
+          } else {
+            setError(msg || 'Sign in failed. Please try again.')
+          }
           setLoading(false)
           return
         }
