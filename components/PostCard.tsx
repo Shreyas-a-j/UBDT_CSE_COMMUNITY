@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
 import {
   Heart,
@@ -15,9 +15,10 @@ import {
   Layers,
   Check,
 } from 'lucide-react'
-import { Post } from '@/lib/types'
+import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import {
+  formatDate,
   formatRelativeTime,
   getAvatarFallback,
   getYearLabel,
@@ -47,6 +48,12 @@ export default function PostCard({ post }: PostCardProps) {
 
   const isLiked = likedPostIds.has(post.id)
   const isUpvoted = upvotedPostIds.has(post.id)
+
+  const [relativeTime, setRelativeTime] = useState('')
+
+  useEffect(() => {
+    setRelativeTime(formatRelativeTime(post.created_at))
+  }, [post.created_at])
 
   const postComments = comments.filter(c => c.post_id === post.id)
 
@@ -116,7 +123,7 @@ export default function PostCard({ post }: PostCardProps) {
             <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
               <span>{post.author_usn}</span>
               <span>•</span>
-              <span className="font-sans" suppressHydrationWarning>{formatRelativeTime(post.created_at)}</span>
+              <span className="font-sans">{relativeTime || formatDate(post.created_at)}</span>
             </div>
           </div>
         </button>
@@ -295,25 +302,7 @@ export default function PostCard({ post }: PostCardProps) {
             {postComments.length === 0 ? (
               <p className="text-xs text-slate-400 italic">No comments yet. Start the conversation!</p>
             ) : (
-              postComments.map(c => (
-                <div
-                  key={c.id}
-                  className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs"
-                >
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="font-bold text-slate-800">
-                      {c.author_name}
-                      <span className="font-mono text-slate-400 font-normal ml-1.5">
-                        ({c.author_usn})
-                      </span>
-                    </span>
-                    <span className="text-[10px] text-slate-400" suppressHydrationWarning>
-                      {formatRelativeTime(c.created_at)}
-                    </span>
-                  </div>
-                  <p className="text-slate-700 leading-relaxed">{c.body}</p>
-                </div>
-              ))
+              postComments.map(c => <CommentItem key={c.id} comment={c} />)
             )}
           </div>
 
@@ -338,5 +327,30 @@ export default function PostCard({ post }: PostCardProps) {
         </div>
       )}
     </article>
+  )
+}
+
+function CommentItem({ comment }: { comment: Comment }) {
+  const [time, setTime] = useState('')
+
+  useEffect(() => {
+    setTime(formatRelativeTime(comment.created_at))
+  }, [comment.created_at])
+
+  return (
+    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
+      <div className="flex items-center justify-between mb-1">
+        <span className="font-bold text-slate-800">
+          {comment.author_name}
+          <span className="font-mono text-slate-400 font-normal ml-1.5">
+            ({comment.author_usn})
+          </span>
+        </span>
+        <span className="text-[10px] text-slate-400">
+          {time || formatDate(comment.created_at)}
+        </span>
+      </div>
+      <p className="text-slate-700 leading-relaxed">{comment.body}</p>
+    </div>
   )
 }
