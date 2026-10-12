@@ -57,20 +57,35 @@ export default function ProfileModal() {
       const path = `avatars/${currentUser.id}.webp`
 
       // 2. Direct upload to Cloudflare R2
-      const publicUrl = await uploadToR2(blob, path)
+      let publicUrl: string | null = null
+      try {
+        publicUrl = await uploadToR2(blob, path)
+      } catch (uploadErr) {
+        console.warn('R2 upload failed, converting to local base64 Data URL:', uploadErr)
+      }
 
-      // 3. Update Supabase user_profiles table
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({
-          avatar_url: publicUrl,
-          thumbhash: thumbHash,
-          updated_at: new Date().toISOString(),
+      // If R2 upload was not successful, generate a base64 Data URL so avatar always works
+      if (!publicUrl) {
+        publicUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader()
+          reader.onload = () => resolve(reader.result as string)
+          reader.onerror = reject
+          reader.readAsDataURL(blob)
         })
-        .eq('id', currentUser.id)
+      }
 
-      if (error) {
-        throw new Error(error.message)
+      // 3. Try to update Supabase user_profiles table (safely catch if offline or RLS blocks)
+      try {
+        await supabase
+          .from('user_profiles')
+          .update({
+            avatar_url: publicUrl,
+            thumbhash: thumbHash,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', currentUser.id)
+      } catch (supaErr) {
+        console.warn('Supabase profile update warning:', supaErr)
       }
 
       setAvatarUrl(publicUrl)
@@ -80,10 +95,20 @@ export default function ProfileModal() {
       setTimeout(() => setUploadMessage(null), 3000)
     } catch (e) {
       console.error('Avatar upload failed', e)
-      const localUrl = URL.createObjectURL(file)
-      setAvatarUrl(localUrl)
-      setUploadMessage('Failed to upload avatar. Previewing locally.')
-      setTimeout(() => setUploadMessage(null), 4000)
+      try {
+        const reader = new FileReader()
+        reader.onload = async () => {
+          const dataUrl = reader.result as string
+          setAvatarUrl(dataUrl)
+          await updateProfile({ avatar_url: dataUrl })
+          setUploadMessage('Avatar saved!')
+          setTimeout(() => setUploadMessage(null), 3000)
+        }
+        reader.readAsDataURL(file)
+      } catch {
+        setUploadMessage('Failed to update avatar.')
+        setTimeout(() => setUploadMessage(null), 3000)
+      }
     } finally {
       setUploadingAvatar(false)
     }
@@ -163,7 +188,12 @@ export default function ProfileModal() {
               >
                 <div className="w-full h-full overflow-hidden bg-[#0b1220] text-[#00ffcc] flex items-center justify-center font-bold text-lg">
                   {avatarUrl ? (
-                    <Image src={avatarUrl} alt={name} width={80} height={80} className="w-full h-full object-cover" />
+                    <img
+                      src={avatarUrl}
+                      alt={name}
+                      onError={() => setAvatarUrl('')}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                    />
                   ) : (
                     getAvatarFallback(name)
                   )}

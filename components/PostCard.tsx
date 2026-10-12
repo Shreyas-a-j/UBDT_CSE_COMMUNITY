@@ -9,6 +9,7 @@ import {
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatDate, formatRelativeTime, getAvatarFallback, getYearLabel } from '@/lib/utils'
+import UserAvatar from '@/components/UserAvatar'
 
 interface PostCardProps { post: Post }
 
@@ -132,13 +133,7 @@ export default function PostCard({ post }: PostCardProps) {
       {/* Author Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
         <button type="button" onClick={handleAuthorClick} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={{ width: 38, height: 38, border: '2px solid #1e3560', overflow: 'hidden', background: '#0c1220', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {post.author_avatar ? (
-              <Image src={post.author_avatar} alt={post.author_name || 'Author'} width={38} height={38} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ fontSize: '0.85rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(post.author_name || 'Author')}</span>
-            )}
-          </div>
+          <UserAvatar src={post.author_avatar} name={post.author_name || 'Author'} size={38} borderColor="#1e3560" />
           <div style={{ textAlign: 'left' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span style={{ fontSize: '0.825rem', color: '#e8f4fd', fontWeight: 700 }}>{post.author_name}</span>

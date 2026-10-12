@@ -6,6 +6,7 @@ import { GraduationCap, Edit3, Compass, Check, LogIn } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
 import { YearFilter } from '@/lib/types'
+import UserAvatar from '@/components/UserAvatar'
 
 export default function SidebarLeft() {
   const { currentUser, yearFilter, setYearFilter, setIsProfileModalOpen, setSelectedProfileForView, setIsAuthModalOpen } = useCommunity()
@@ -25,12 +26,8 @@ export default function SidebarLeft() {
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginTop: -28, padding: '0 16px 16px' }}>
-            <div style={{ width: 56, height: 56, border: '2px solid #00aaff', boxShadow: '3px 3px 0px #003366', overflow: 'hidden', background: '#0d1426', marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              {currentUser.avatar_url ? (
-                <Image src={currentUser.avatar_url} alt={currentUser.name} width={56} height={56} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              ) : (
-                <span style={{ fontSize: '1.1rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(currentUser.name)}</span>
-              )}
+            <div style={{ marginBottom: 8 }}>
+              <UserAvatar src={currentUser.avatar_url} name={currentUser.name} size={56} borderColor="#00aaff" />
             </div>
 
             <h2 style={{ fontSize: '0.9rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>{currentUser.name}</h2>

@@ -44,6 +44,14 @@ export default function Home() {
         if (!matchTitle && !matchBody && !matchAuthor && !matchUsn && !matchTags && !matchTech) return false
       }
       return true
+    }).sort((a, b) => {
+      // Always rank top-liked discussions and showcases at the top
+      const scoreA = (a.like_count ?? 0) + (a.upvote_count ?? 0)
+      const scoreB = (b.like_count ?? 0) + (b.upvote_count ?? 0)
+      if (scoreB !== scoreA) {
+        return scoreB - scoreA
+      }
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     })
   }, [posts, feedFilter, yearFilter, searchQuery])
 
@@ -226,11 +234,35 @@ export default function Home() {
               </div>
             ) : (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* Events section */}
-                {filteredEvents.length > 0 && (feedFilter === 'all' || feedFilter === 'events') && (
+                {/* 1. Top Discussions & Showcases section (always at top) */}
+                {filteredPosts.length > 0 && (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                     {feedFilter === 'all' && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
+                        <span style={{ fontSize: '0.78rem', color: '#00aaff', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.04em' }}>
+                          <Sparkles style={{ width: 14, height: 14, color: '#ffe066' }} />
+                          TOP DISCUSSIONS &amp; SHOWCASES
+                        </span>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <button type="button" onClick={() => setFeedFilter('discussions')} style={{ fontSize: '0.72rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
+                            DISCUSS ({posts.filter(p => p.type === 'discussion').length})
+                          </button>
+                          <span style={{ color: '#3d6b8a' }}>•</span>
+                          <button type="button" onClick={() => setFeedFilter('showcases')} style={{ fontSize: '0.72rem', color: '#ffe066', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
+                            SHOWCASE ({posts.filter(p => p.type === 'showcase').length})
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    {filteredPosts.map(post => <PostCard key={post.id} post={post} />)}
+                  </div>
+                )}
+
+                {/* 2. Events section */}
+                {filteredEvents.length > 0 && (feedFilter === 'all' || feedFilter === 'events') && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                    {feedFilter === 'all' && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', paddingTop: filteredPosts.length > 0 ? 8 : 0 }}>
                         <span style={{ fontSize: '0.78rem', color: '#00ffcc', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.04em' }}>
                           <Calendar style={{ width: 14, height: 14, color: '#00ffcc' }} />
                           UPCOMING EVENTS
@@ -241,21 +273,6 @@ export default function Home() {
                       </div>
                     )}
                     {filteredEvents.map(evt => <EventCard key={evt.id} event={evt} />)}
-                  </div>
-                )}
-
-                {/* Posts section */}
-                {filteredPosts.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {feedFilter === 'all' && filteredEvents.length > 0 && (
-                      <div style={{ padding: '0 4px', paddingTop: 8 }}>
-                        <span style={{ fontSize: '0.78rem', color: '#00aaff', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.04em' }}>
-                          <MessageSquare style={{ width: 14, height: 14 }} />
-                          DISCUSSIONS &amp; SHOWCASES
-                        </span>
-                      </div>
-                    )}
-                    {filteredPosts.map(post => <PostCard key={post.id} post={post} />)}
                   </div>
                 )}
               </div>

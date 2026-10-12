@@ -10,6 +10,7 @@ import {
 import { useCommunity } from '@/contexts/CommunityContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
+import UserAvatar from '@/components/UserAvatar'
 
 export default function Navbar() {
   const {
@@ -221,13 +222,7 @@ export default function Navbar() {
                   onClick={() => { setShowUserMenu(!showUserMenu); setShowCreateMenu(false); setShowNotifs(false) }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer' }}
                 >
-                  <div style={{ width: 32, height: 32, border: '2px solid #00aaff', overflow: 'hidden', background: '#0d1426', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #003366' }}>
-                    {currentUser.avatar_url ? (
-                      <Image src={currentUser.avatar_url} alt={currentUser.name} width={32} height={32} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                    ) : (
-                      <span style={{ fontSize: '0.8rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(currentUser.name)}</span>
-                    )}
-                  </div>
+                  <UserAvatar src={currentUser.avatar_url} name={currentUser.name} size={32} borderColor="#00aaff" />
                   <div className="hidden lg:flex flex-col" style={{ textAlign: 'left' }}>
                     <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.2 }}>{currentUser.name.split(' ')[0]}</span>
                     <span style={{ fontSize: '0.65rem', color: '#00ffcc' }}>{currentUser.usn}</span>

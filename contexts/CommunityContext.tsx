@@ -460,6 +460,38 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     if (!currentUser) return
     const newUser = { ...currentUser, ...updated }
     saveUser(newUser)
+
+    // Synchronize author/host avatar and name in active posts and events
+    if (updated.avatar_url !== undefined || updated.name !== undefined) {
+      setPosts(prevPosts => {
+        const next = prevPosts.map(p =>
+          p.author_id === currentUser.id
+            ? {
+                ...p,
+                ...(updated.avatar_url !== undefined ? { author_avatar: updated.avatar_url } : {}),
+                ...(updated.name ? { author_name: updated.name } : {}),
+              }
+            : p
+        )
+        try { localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(next)) } catch {}
+        return next
+      })
+
+      setEvents(prevEvents => {
+        const next = prevEvents.map(e =>
+          e.host_id === currentUser.id
+            ? {
+                ...e,
+                ...(updated.avatar_url !== undefined ? { host_avatar: updated.avatar_url } : {}),
+                ...(updated.name ? { host_name: updated.name } : {}),
+              }
+            : e
+        )
+        try { localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(next)) } catch {}
+        return next
+      })
+    }
+
     try {
       await supabase.from('user_profiles').update({
         name: newUser.name, bio: newUser.bio, avatar_url: newUser.avatar_url, skills: newUser.skills,

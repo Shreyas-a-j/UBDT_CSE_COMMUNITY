@@ -6,6 +6,7 @@ import { Calendar, Clock, Video, Users, CheckCircle2, ExternalLink, Edit2, Save,
 import { Event } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatEventDateTime, getCountdown, getAvatarFallback } from '@/lib/utils'
+import UserAvatar from '@/components/UserAvatar'
 
 interface EventCardProps { event: Event; compact?: boolean }
 
@@ -163,13 +164,7 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
       {/* Footer */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 14, borderTop: '2px solid #1e3560' }}>
         <button type="button" onClick={handleHostClick} style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <div style={{ width: 32, height: 32, border: '2px solid #1e3560', overflow: 'hidden', background: '#0c1220', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            {event.host_avatar ? (
-              <Image src={event.host_avatar} alt={event.host_name || 'Host'} width={32} height={32} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <span style={{ fontSize: '0.75rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(event.host_name || 'Host')}</span>
-            )}
-          </div>
+          <UserAvatar src={event.host_avatar} name={event.host_name || 'Host'} size={32} borderColor="#1e3560" />
           <div style={{ textAlign: 'left' }}>
             <span style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700, display: 'block' }}>{event.host_name}</span>
             <span style={{ fontSize: '0.7rem', color: '#00aaff', fontWeight: 500 }}>HOST ({event.host_usn})</span>
