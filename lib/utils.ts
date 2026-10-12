@@ -6,27 +6,50 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Validate USN format: 1UBxxCS### (e.g. 1UB21CS001)
+// Validate USN format: 4UB[year <= current]CS[any <= 999] (e.g. 4UB24CS045)
 export function validateUSN(usn: string): boolean {
-  const pattern = /^1UB\d{2}CS\d{3}$/i
-  return pattern.test(usn)
+  const match = usn.trim().match(/^4UB(\d{2})CS(\d{1,3})$/i)
+  if (!match) return false
+  const admissionYearTwoDigits = parseInt(match[1], 10)
+  const roll = parseInt(match[2], 10)
+
+  let currentYearTwoDigits = 26
+  try {
+    currentYearTwoDigits = new Date().getFullYear() % 100
+  } catch {}
+
+  // year <= current
+  if (admissionYearTwoDigits > currentYearTwoDigits) return false
+
+  // any <= 999
+  if (roll < 1 || roll > 999) return false
+
+  return true
 }
 
 // Derive year from USN admission year
-// Convention: 1UB21CS001 → admitted 2021 → current year depends on current calendar year
-// We return 1-4 based on how many years ago they were admitted (relative to 2024-25 academic year)
 export function getYearFromUSN(usn: string): number | null {
-  const match = usn.match(/^1UB(\d{2})CS\d{3}$/i)
+  const match = usn.trim().match(/^4UB(\d{2})CS(\d{1,3})$/i)
   if (!match) return null
-  const batch = match[1]
-  if (batch === '21') return 4
-  if (batch === '22') return 3
-  if (batch === '23') return 2
-  if (batch === '24') return 1
-  const admissionYear = parseInt('20' + batch, 10)
-  const year = 2024 - admissionYear + 1
-  if (year >= 1 && year <= 4) return year
-  return null
+
+  const admissionYearTwoDigits = parseInt(match[1], 10)
+  const roll = parseInt(match[2], 10)
+
+  let currentYear = 2026
+  try {
+    currentYear = new Date().getFullYear()
+  } catch {}
+
+  const currentYearTwoDigits = currentYear % 100
+  if (admissionYearTwoDigits > currentYearTwoDigits) return null
+  if (roll < 1 || roll > 999) return null
+
+  const admissionFullYear = 2000 + admissionYearTwoDigits
+  const diff = currentYear - admissionFullYear + 1
+
+  if (diff >= 1 && diff <= 4) return diff
+  if (diff > 4) return 4
+  return 1
 }
 
 export function formatDate(dateStr: string): string {

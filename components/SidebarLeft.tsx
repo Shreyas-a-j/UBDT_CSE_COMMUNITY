@@ -138,10 +138,10 @@ export default function SidebarLeft() {
         <div className="space-y-1">
           {[
             { value: 0, label: 'All Batches (1st to 4th)' },
-            { value: 1, label: '1st Year (2024 Batch)' },
-            { value: 2, label: '2nd Year (2023 Batch)' },
-            { value: 3, label: '3rd Year (2022 Batch)' },
-            { value: 4, label: '4th Year (2021 Batch)' },
+            { value: 1, label: '1st Year (4UB26CS…)' },
+            { value: 2, label: '2nd Year (4UB25CS…)' },
+            { value: 3, label: '3rd Year (4UB24CS…)' },
+            { value: 4, label: '4th Year (4UB23CS…)' },
           ].map(opt => (
             <button
               key={opt.value}
@@ -168,10 +168,6 @@ export default function SidebarLeft() {
         <div className="flex justify-between py-1 border-b border-slate-100">
           <span>Total Student Intake</span>
           <span className="font-bold text-[#1e3a5f]">480 Students</span>
-        </div>
-        <div className="flex justify-between py-1 border-b border-slate-100">
-          <span>Annual Intake</span>
-          <span className="font-semibold text-slate-800">120 per Year</span>
         </div>
         <div className="flex justify-between py-1">
           <span>Affiliation</span>

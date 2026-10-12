@@ -28,6 +28,7 @@ interface CommunityContextType {
   toggleRsvpEvent: (eventId: string) => Promise<void>
   addComment: (postId: string, body: string) => Promise<void>
   updateProfile: (updated: Partial<Profile>) => Promise<void>
+  updateEvent: (eventId: string, updated: Partial<Event>) => Promise<void>
   signOut: () => Promise<void>
   markNotificationAsRead: (id: string) => void
   markAllNotificationsAsRead: () => void
@@ -455,20 +456,30 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const updateProfile = async (updated: Partial<Profile>) => {
     if (!currentUser) return
-
     const newUser = { ...currentUser, ...updated }
     saveUser(newUser)
-
     try {
-      await supabase
-        .from('profiles')
-        .update({
-          name: newUser.name,
-          bio: newUser.bio,
-          avatar_url: newUser.avatar_url,
-          skills: newUser.skills,
-        })
-        .eq('id', currentUser.id)
+      await supabase.from('profiles').update({
+        name: newUser.name, bio: newUser.bio, avatar_url: newUser.avatar_url, skills: newUser.skills,
+      }).eq('id', currentUser.id)
+    } catch {}
+  }
+
+  const updateEvent = async (eventId: string, updated: Partial<Event>) => {
+    const next = events.map(e => e.id === eventId ? { ...e, ...updated } : e)
+    setEvents(next)
+    try { localStorage.setItem(STORAGE_KEYS.EVENTS, JSON.stringify(next)) } catch {}
+    try {
+      await supabase.from('events').update({
+        title: updated.title,
+        description: updated.description,
+        type: updated.type,
+        event_date: updated.event_date,
+        event_time: updated.event_time,
+        duration: updated.duration,
+        link: updated.link,
+        target_years: updated.target_years,
+      }).eq('id', eventId)
     } catch {}
   }
 
@@ -509,6 +520,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         toggleRsvpEvent,
         addComment,
         updateProfile,
+        updateEvent,
         signOut,
         markNotificationAsRead,
         markAllNotificationsAsRead,

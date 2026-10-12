@@ -16,8 +16,11 @@ import {
   ExternalLink,
   GraduationCap,
   LogIn,
+  Moon,
+  Sun,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
+import { useTheme } from '@/contexts/ThemeContext'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
 
 export default function Navbar() {
@@ -38,6 +41,7 @@ export default function Navbar() {
     signOut,
   } = useCommunity()
 
+  const { theme, toggleTheme } = useTheme()
   const [showNotifs, setShowNotifs] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCreateMenu, setShowCreateMenu] = useState(false)
@@ -45,8 +49,8 @@ export default function Navbar() {
   const unreadNotifs = notifications.filter(n => !n.read)
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 bg-white/95 backdrop-blur-md shadow-xs">
-      {/* Top Banner for UBDT CE Davangere */}
+    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+      {/* Top Banner */}
       <div className="bg-gradient-to-r from-[#0a1628] via-[#1e3a5f] to-[#0d1f3c] text-white text-xs py-1 px-4 text-center flex items-center justify-between">
         <div className="flex items-center gap-2 mx-auto">
           <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
@@ -215,6 +219,16 @@ export default function Navbar() {
                 </div>
               )}
             </div>
+
+            {/* Dark Mode Toggle */}
+            <button
+              type="button"
+              onClick={toggleTheme}
+              className="p-2 text-slate-600 dark:text-slate-300 hover:text-[#1e3a5f] dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
+              aria-label="Toggle dark mode"
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
 
             {/* Notification Bell */}
             {currentUser && (
