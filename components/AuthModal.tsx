@@ -73,7 +73,6 @@ export default function AuthModal() {
     }
 
     setLoading(true)
-    // Use the provided email for sign-up, derive email for sign-in
     const authEmail = isSignUp ? email.trim() : `${formattedUsn.toLowerCase()}@ubdtce.org`
 
     try {
@@ -102,15 +101,14 @@ export default function AuthModal() {
           name: name.trim(),
           year: year || 1,
           branch: 'CSE',
-          bio: `${getYearLabel(year || 1)} student at UBDT College of Engineering, Davangere.`,
+          bio: `${getYearLabel(year || 1)} student at UCC.`,
           avatar_url: null,
           skills: [],
           created_at: new Date().toISOString(),
         }
-        try { await supabase.from('profiles').upsert(newProfile) } catch {}
+        try { await supabase.from('user_profiles').upsert(newProfile) } catch {}
         setCurrentUser(newProfile)
       } else {
-        // For sign-in, try stored email first then derived email
         const tryEmails = [
           email.trim(),
           `${formattedUsn.toLowerCase()}@ubdtce.org`,
@@ -124,7 +122,7 @@ export default function AuthModal() {
           })
           if (!signInError && data.user) {
             const { data: profileData } = await supabase
-              .from('profiles').select('*').eq('id', data.user.id).single()
+              .from('user_profiles').select('*').eq('id', data.user.id).single()
             if (profileData) {
               setCurrentUser(profileData)
             } else {
@@ -162,43 +160,41 @@ export default function AuthModal() {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content overflow-hidden">
+      <div className="modal-content" style={{ background: '#0b1220', border: '2px solid #00aaff', boxShadow: '6px 6px 0px #000, 0 0 24px rgba(0,170,255,0.18)', borderRadius: 0, overflow: 'hidden', outline: 'none' }}>
         {/* Header */}
-        <div className="bg-gradient-to-r from-[#0a1628] via-[#1e3a5f] to-[#254b7a] p-5 text-white flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-amber-400 text-slate-900 flex items-center justify-center">
-              <GraduationCap className="w-5 h-5" />
+        <div style={{ background: '#090e1c', borderBottom: '2px solid #1e3560', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 36, height: 36, background: '#00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #000' }}>
+              <GraduationCap style={{ width: 20, height: 20, color: '#060a14' }} />
             </div>
             <div>
-              <h2 className="text-sm font-bold leading-snug">
-                {isSignUp ? 'Join UBDT CSE Community' : 'Welcome Back'}
+              <h2 style={{ fontSize: '0.95rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.3, textTransform: 'uppercase', letterSpacing: '0.03em', margin: 0 }}>
+                {isSignUp ? 'JOIN UCC COMMUNITY' : 'WELCOME BACK'}
               </h2>
-              <p className="text-[11px] text-amber-200/80">
-                {isSignUp ? 'Create your student profile' : 'Sign in to your account'}
+              <p style={{ fontSize: '0.72rem', color: '#00ffcc', margin: '2px 0 0 0', fontWeight: 500 }}>
+                {isSignUp ? 'Create your UCC student profile' : 'Sign in with your USN'}
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => { resetForm(); setIsAuthModalOpen(false) }}
-            className="p-1.5 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition-colors"
+            style={{ background: 'transparent', border: '2px solid #1e3560', padding: '5px', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#e8f4fd' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
           >
-            <X className="w-4 h-4" />
+            <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
         {/* Toggle Tabs */}
-        <div className="flex border-b border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/60">
-          {['Sign Up', 'Sign In'].map((tab, i) => (
+        <div style={{ display: 'flex', borderBottom: '2px solid #1e3560', background: '#080d18' }}>
+          {['SIGN UP', 'SIGN IN'].map((tab, i) => (
             <button
               key={tab}
               type="button"
               onClick={() => { setIsSignUp(i === 0); setError('') }}
-              className={`flex-1 py-2.5 text-xs font-bold transition-all ${
-                isSignUp === (i === 0)
-                  ? 'bg-white dark:bg-slate-900 text-[#1e3a5f] dark:text-amber-400 border-b-2 border-[#1e3a5f] dark:border-amber-400'
-                  : 'text-slate-500 hover:text-slate-700 dark:text-slate-400'
-              }`}
+              style={{ flex: 1, padding: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: 'none', borderBottom: isSignUp === (i === 0) ? '2px solid #00aaff' : '2px solid transparent', background: isSignUp === (i === 0) ? 'rgba(0,170,255,0.08)' : 'transparent', color: isSignUp === (i === 0) ? '#00aaff' : '#6bafd4', transition: 'all 0.05s steps(1)', letterSpacing: '0.04em' }}
             >
               {tab}
             </button>
@@ -206,11 +202,11 @@ export default function AuthModal() {
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-5 space-y-3 text-xs">
+        <form onSubmit={handleSubmit} style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 13 }}>
           {error && (
-            <div className="p-3 rounded-lg bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 text-rose-700 dark:text-rose-400 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{error}</span>
+            <div style={{ padding: '8px 12px', background: 'rgba(255,68,102,0.1)', border: '2px solid rgba(255,68,102,0.4)', color: '#ff6688', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '2px 2px 0px #661133' }}>
+              <AlertCircle style={{ width: 14, height: 14, flexShrink: 0 }} />
+              <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
             </div>
           )}
 
@@ -224,7 +220,7 @@ export default function AuthModal() {
                 placeholder="e.g. Varun Kumar"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="input text-xs"
+                className="input"
               />
             </div>
           )}
@@ -238,19 +234,19 @@ export default function AuthModal() {
               placeholder="e.g. 4UB24CS045"
               value={usn}
               onChange={e => handleUsnChange(e.target.value)}
-              className="input font-mono uppercase text-xs"
+              className="input uppercase"
               maxLength={12}
             />
-            <p className="text-[10px] text-slate-400 dark:text-slate-500 mt-1">
-              Format: 4UB[YY]CS[Roll] — year is auto-derived
+            <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 4 }}>
+              Format: 4UB[YY]CS[Roll] — academic year is auto-detected
             </p>
           </div>
 
           {/* Email — sign up only */}
           {isSignUp && (
             <div>
-              <label className="label flex items-center gap-1">
-                <Mail className="w-3 h-3" /> Email Address
+              <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Mail style={{ width: 13, height: 13, color: '#00aaff' }} /> Email Address
               </label>
               <input
                 type="email"
@@ -258,17 +254,17 @@ export default function AuthModal() {
                 placeholder="e.g. varun@gmail.com"
                 value={email}
                 onChange={e => setEmail(e.target.value)}
-                className="input text-xs"
+                className="input"
               />
             </div>
           )}
 
           {/* Academic Year — sign up only */}
           {isSignUp && (
-            <div className="grid grid-cols-2 gap-3">
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
               <div>
                 <label className="label">Academic Year</label>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} className="select text-xs">
+                <select value={year} onChange={e => setYear(Number(e.target.value))} className="select">
                   <option value={1}>1st Year</option>
                   <option value={2}>2nd Year</option>
                   <option value={3}>3rd Year</option>
@@ -281,7 +277,8 @@ export default function AuthModal() {
                   type="text"
                   disabled
                   value="CSE (Fixed)"
-                  className="input text-xs bg-slate-100 dark:bg-slate-700 text-slate-400 cursor-not-allowed"
+                  className="input"
+                  style={{ background: '#090d16', color: '#00aaff', opacity: 0.8, cursor: 'not-allowed', fontWeight: 600 }}
                 />
               </div>
             </div>
@@ -297,12 +294,12 @@ export default function AuthModal() {
                 placeholder="Min. 6 characters"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="input text-xs pr-10"
+                className="input pr-10"
               />
               <button
                 type="button"
                 onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
               >
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
@@ -320,49 +317,45 @@ export default function AuthModal() {
                   placeholder="Re-enter your password"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  className={`input text-xs pr-10 ${
-                    confirmPassword && confirmPassword !== password
-                      ? 'border-rose-400 focus:border-rose-400'
-                      : ''
-                  }`}
+                  className="input pr-10"
                 />
                 <button
                   type="button"
                   onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
                 >
                   {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {confirmPassword && confirmPassword !== password && (
-                <p className="text-[10px] text-rose-500 mt-1">Passwords do not match</p>
+                <p style={{ fontSize: '0.7rem', color: '#ff6688', marginTop: 4 }}>Passwords do not match</p>
               )}
             </div>
           )}
 
           {/* Submit */}
-          <div className="pt-2">
+          <div style={{ paddingTop: 8 }}>
             <button
               type="submit"
               disabled={loading || (isSignUp && !!confirmPassword && confirmPassword !== password)}
-              className="w-full py-2.5 rounded-xl bg-[#1e3a5f] hover:bg-[#152e4d] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-sm transition-all disabled:opacity-60"
+              style={{ width: '100%', padding: '10px', background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '4px 4px 0px #003366', textTransform: 'uppercase', opacity: loading ? 0.7 : 1, letterSpacing: '0.03em' }}
             >
               {loading ? (
-                <><Loader2 className="w-4 h-4 animate-spin" /><span>Please wait…</span></>
+                <><Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /><span>PLEASE WAIT...</span></>
               ) : (
-                <><span>{isSignUp ? 'Create Profile & Join' : 'Sign In'}</span><ArrowRight className="w-3.5 h-3.5" /></>
+                <><span>{isSignUp ? 'CREATE PROFILE & JOIN' : 'SIGN IN'}</span><ArrowRight style={{ width: 14, height: 14 }} /></>
               )}
             </button>
           </div>
 
-          <p className="text-center text-slate-400 dark:text-slate-500 text-[11px]">
+          <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', paddingTop: 4 }}>
             {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
             <button
               type="button"
               onClick={() => { setIsSignUp(!isSignUp); setError('') }}
-              className="text-[#1e3a5f] dark:text-amber-400 font-bold hover:underline"
+              style={{ fontSize: '0.75rem', color: '#00ffcc', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
             >
-              {isSignUp ? 'Sign In' : 'Sign Up'}
+              {isSignUp ? 'SIGN IN' : 'SIGN UP'}
             </button>
           </p>
         </form>

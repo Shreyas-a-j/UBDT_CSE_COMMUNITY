@@ -1,54 +1,21 @@
 'use client'
 
-import React, { useState, useRef } from 'react'
-import { X, MessageSquare, Sparkles, Link as LinkIcon, GitBranch, Image as ImageIcon, Upload, Loader2, X as RemoveIcon } from 'lucide-react'
+import React, { useState } from 'react'
+import { X, MessageSquare, Sparkles, Link as LinkIcon, GitBranch } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { createClient } from '@/lib/supabase/client'
 
 export default function CreatePostModal() {
-  const { isCreatePostOpen, setIsCreatePostOpen, createPost, currentUser } = useCommunity()
-  const supabase = createClient()
-  const fileRef = useRef<HTMLInputElement>(null)
+  const { isCreatePostOpen, setIsCreatePostOpen, createPost } = useCommunity()
 
   const [type, setType] = useState<'discussion' | 'showcase'>('discussion')
   const [title, setTitle] = useState('')
   const [body, setBody] = useState('')
   const [tagsStr, setTagsStr] = useState('')
-  const [imageUrl, setImageUrl] = useState('')
-  const [imagePreview, setImagePreview] = useState('')
   const [githubUrl, setGithubUrl] = useState('')
   const [demoUrl, setDemoUrl] = useState('')
   const [techStackStr, setTechStackStr] = useState('')
-  const [uploading, setUploading] = useState(false)
 
   if (!isCreatePostOpen) return null
-
-  const handleImageUpload = async (file: File) => {
-    setUploading(true)
-    try {
-      const ext = file.name.split('.').pop()
-      const path = `posts/${Date.now()}.${ext}`
-      const { error } = await supabase.storage
-        .from('community-uploads')
-        .upload(path, file, { upsert: true })
-
-      if (!error) {
-        const { data } = supabase.storage.from('community-uploads').getPublicUrl(path)
-        setImageUrl(data.publicUrl)
-        setImagePreview(data.publicUrl)
-      } else {
-        const localUrl = URL.createObjectURL(file)
-        setImageUrl(localUrl)
-        setImagePreview(localUrl)
-      }
-    } catch {
-      const localUrl = URL.createObjectURL(file)
-      setImageUrl(localUrl)
-      setImagePreview(localUrl)
-    } finally {
-      setUploading(false)
-    }
-  }
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -62,7 +29,7 @@ export default function CreatePostModal() {
       title: title.trim(),
       body: body.trim(),
       tags: tags.length ? tags : ['General', 'CSE'],
-      image_url: imageUrl || null,
+      image_url: null,
       github_url: githubUrl.trim() || null,
       demo_url: demoUrl.trim() || null,
       tech_stack: techStack,
@@ -70,65 +37,86 @@ export default function CreatePostModal() {
       author_id: '',
     })
 
-    setTitle(''); setBody(''); setTagsStr(''); setImageUrl('')
-    setImagePreview(''); setGithubUrl(''); setDemoUrl(''); setTechStackStr('')
+    setTitle('')
+    setBody('')
+    setTagsStr('')
+    setGithubUrl('')
+    setDemoUrl('')
+    setTechStackStr('')
     setIsCreatePostOpen(false)
   }
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
+      <div className="modal-content" style={{ background: '#0b1220', border: '2px solid #00aaff', boxShadow: '6px 6px 0px #000, 0 0 24px rgba(0,170,255,0.18)', borderRadius: 0, outline: 'none' }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex items-center gap-2">
-            {type === 'showcase' ? (
-              <Sparkles className="w-5 h-5 text-amber-600" />
-            ) : (
-              <MessageSquare className="w-5 h-5 text-indigo-600" />
-            )}
-            <h2 className="text-base font-bold text-slate-900 dark:text-slate-100">
-              {type === 'showcase' ? 'Share Project Showcase' : 'Start Discussion Thread'}
-            </h2>
+        <div style={{ background: '#090e1c', borderBottom: '2px solid #1e3560', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, background: type === 'showcase' ? '#ffe066' : '#00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #000' }}>
+              {type === 'showcase' ? (
+                <Sparkles style={{ width: 18, height: 18, color: '#060a14' }} />
+              ) : (
+                <MessageSquare style={{ width: 18, height: 18, color: '#060a14' }} />
+              )}
+            </div>
+            <div>
+              <h2 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#e8f4fd', letterSpacing: '0.02em', margin: 0 }}>
+                {type === 'showcase' ? 'Share Project Showcase' : 'Start Discussion Thread'}
+              </h2>
+              <p style={{ fontSize: '0.72rem', color: '#6bafd4', margin: 0 }}>
+                {type === 'showcase' ? 'Present your code and demo to UCC peers' : 'Ask questions or share insights with the community'}
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setIsCreatePostOpen(false)}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-700"
+            style={{ background: 'transparent', border: '2px solid #1e3560', padding: '5px', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#e8f4fd' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
           >
-            <X className="w-4 h-4" />
+            <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
         {/* Type Toggle */}
-        <div className="p-4 bg-slate-50 dark:bg-slate-800/50 border-b border-slate-100 dark:border-slate-700">
-          <div className="flex rounded-xl bg-slate-200/70 dark:bg-slate-700/60 p-1">
+        <div style={{ padding: '12px 18px', background: '#080d18', borderBottom: '2px solid #1e3560' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <button
               type="button"
               onClick={() => setType('discussion')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                type === 'discussion'
-                  ? 'bg-white dark:bg-slate-900 text-[#1e3a5f] dark:text-indigo-400 shadow-xs'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
+              style={{
+                flex: 1, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                border: '2px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em',
+                background: type === 'discussion' ? '#00aaff' : 'transparent',
+                color: type === 'discussion' ? '#060a14' : '#6bafd4',
+                borderColor: type === 'discussion' ? '#0088cc' : '#1e3560',
+                boxShadow: type === 'discussion' ? '3px 3px 0px #003366' : 'none',
+              }}
             >
-              <MessageSquare className="w-3.5 h-3.5" /> Discussion
+              <MessageSquare style={{ width: 14, height: 14 }} /> Discussion
             </button>
             <button
               type="button"
               onClick={() => setType('showcase')}
-              className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition-all flex items-center justify-center gap-1.5 ${
-                type === 'showcase'
-                  ? 'bg-amber-500 text-slate-950 shadow-xs'
-                  : 'text-slate-500 dark:text-slate-400 hover:text-slate-700'
-              }`}
+              style={{
+                flex: 1, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                border: '2px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em',
+                background: type === 'showcase' ? '#ffe066' : 'transparent',
+                color: type === 'showcase' ? '#060a14' : '#6bafd4',
+                borderColor: type === 'showcase' ? '#ccb000' : '#1e3560',
+                boxShadow: type === 'showcase' ? '3px 3px 0px #665500' : 'none',
+              }}
             >
-              <Sparkles className="w-3.5 h-3.5" /> Project Showcase
+              <Sparkles style={{ width: 14, height: 14 }} /> Project Showcase
             </button>
           </div>
         </div>
 
         {/* Form */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs">
+        <form onSubmit={handleSubmit} style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label className="label">Title</label>
             <input
@@ -141,7 +129,7 @@ export default function CreatePostModal() {
               }
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="input text-xs"
+              className="input"
             />
           </div>
 
@@ -157,92 +145,81 @@ export default function CreatePostModal() {
               }
               value={body}
               onChange={e => setBody(e.target.value)}
-              className="textarea text-xs"
-            />
-          </div>
-
-          {/* Image Upload (available for both types) */}
-          <div>
-            <label className="label flex items-center gap-1">
-              <ImageIcon className="w-3.5 h-3.5" /> Cover Image / Screenshot
-            </label>
-
-            {imagePreview ? (
-              <div className="relative rounded-xl overflow-hidden border border-slate-200 dark:border-slate-600">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={imagePreview} alt="Preview" className="w-full max-h-48 object-cover" />
-                <button
-                  type="button"
-                  onClick={() => { setImageUrl(''); setImagePreview('') }}
-                  className="absolute top-2 right-2 p-1 rounded-full bg-black/60 text-white hover:bg-black/80"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => fileRef.current?.click()}
-                disabled={uploading}
-                className="w-full border-2 border-dashed border-slate-200 dark:border-slate-600 rounded-xl py-5 flex flex-col items-center gap-2 text-slate-400 hover:border-[#1e3a5f] hover:text-[#1e3a5f] dark:hover:border-amber-400 dark:hover:text-amber-400 transition-colors"
-              >
-                {uploading ? (
-                  <Loader2 className="w-5 h-5 animate-spin" />
-                ) : (
-                  <Upload className="w-5 h-5" />
-                )}
-                <span className="text-[11px] font-medium">
-                  {uploading ? 'Uploading…' : 'Click to upload image'}
-                </span>
-              </button>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={e => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
+              className="textarea"
             />
           </div>
 
           {/* Showcase-specific fields */}
           {type === 'showcase' && (
-            <div className="space-y-3 p-3 bg-amber-50/40 dark:bg-amber-950/20 rounded-xl border border-amber-200/60 dark:border-amber-800/40">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px', background: '#080d18', border: '2px solid rgba(255,224,102,0.3)', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.5)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div>
-                  <label className="label flex items-center gap-1">
-                    <GitBranch className="w-3 h-3" /> GitHub Repo URL
+                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <GitBranch style={{ width: 12, height: 12, color: '#00aaff' }} /> GitHub Repo URL
                   </label>
-                  <input type="url" placeholder="https://github.com/…" value={githubUrl} onChange={e => setGithubUrl(e.target.value)} className="input text-xs" />
+                  <input
+                    type="url"
+                    placeholder="https://github.com/…"
+                    value={githubUrl}
+                    onChange={e => setGithubUrl(e.target.value)}
+                    className="input"
+                  />
                 </div>
                 <div>
-                  <label className="label flex items-center gap-1">
-                    <LinkIcon className="w-3 h-3 text-amber-700" /> Live Demo URL
+                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                    <LinkIcon style={{ width: 12, height: 12, color: '#ffe066' }} /> Live Demo URL
                   </label>
-                  <input type="url" placeholder="https://myproject.vercel.app" value={demoUrl} onChange={e => setDemoUrl(e.target.value)} className="input text-xs" />
+                  <input
+                    type="url"
+                    placeholder="https://myproject.vercel.app"
+                    value={demoUrl}
+                    onChange={e => setDemoUrl(e.target.value)}
+                    className="input"
+                  />
                 </div>
               </div>
               <div>
                 <label className="label">Tech Stack (comma-separated)</label>
-                <input type="text" placeholder="e.g. Next.js, Supabase, TypeScript" value={techStackStr} onChange={e => setTechStackStr(e.target.value)} className="input text-xs" />
+                <input
+                  type="text"
+                  placeholder="e.g. Next.js, Supabase, TypeScript"
+                  value={techStackStr}
+                  onChange={e => setTechStackStr(e.target.value)}
+                  className="input"
+                />
               </div>
             </div>
           )}
 
           <div>
             <label className="label">Tags (comma-separated)</label>
-            <input type="text" placeholder="e.g. DSA, Placements, WebDev" value={tagsStr} onChange={e => setTagsStr(e.target.value)} className="input text-xs" />
+            <input
+              type="text"
+              placeholder="e.g. DSA, Placements, WebDev"
+              value={tagsStr}
+              onChange={e => setTagsStr(e.target.value)}
+              className="input"
+            />
           </div>
 
           {/* Footer */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100 dark:border-slate-700">
-            <button type="button" onClick={() => setIsCreatePostOpen(false)} className="px-3 py-1.5 rounded-lg border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700 font-medium text-xs">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 14, borderTop: '2px solid #1e3560' }}>
+            <button
+              type="button"
+              onClick={() => setIsCreatePostOpen(false)}
+              style={{ padding: '8px 14px', background: 'transparent', border: '2px solid #1e3560', color: '#a8d4f0', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', boxShadow: '2px 2px 0px #000' }}
+            >
               Cancel
             </button>
             <button
               type="submit"
-              disabled={!title.trim() || !body.trim() || uploading}
-              className="px-4 py-1.5 rounded-lg bg-[#1e3a5f] hover:bg-[#152e4d] text-white font-bold text-xs transition-all disabled:opacity-50"
+              disabled={!title.trim() || !body.trim()}
+              style={{
+                padding: '8px 18px', background: '#00f5c4', color: '#060a14', border: '2px solid #00cca0',
+                fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase',
+                boxShadow: '3px 3px 0px #006650', opacity: (!title.trim() || !body.trim()) ? 0.5 : 1,
+                letterSpacing: '0.03em',
+              }}
             >
               Publish {type === 'showcase' ? 'Showcase' : 'Post'}
             </button>

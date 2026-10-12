@@ -3,329 +3,282 @@
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
 import {
-  Heart,
-  ArrowBigUp,
-  MessageSquare,
-  Share2,
-  ExternalLink,
-  GitBranch,
-  Sparkles,
-  Send,
-  Calendar,
-  Layers,
-  Check,
+  Heart, ArrowBigUp, MessageSquare, Share2, ExternalLink, GitBranch,
+  Sparkles, Send, Check, Edit2, Trash2, Save, X, Link as LinkIcon,
 } from 'lucide-react'
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
-import {
-  formatDate,
-  formatRelativeTime,
-  getAvatarFallback,
-  getYearLabel,
-} from '@/lib/utils'
+import { formatDate, formatRelativeTime, getAvatarFallback, getYearLabel } from '@/lib/utils'
 
-interface PostCardProps {
-  post: Post
-}
+interface PostCardProps { post: Post }
 
 export default function PostCard({ post }: PostCardProps) {
   const {
-    currentUser,
-    likedPostIds,
-    upvotedPostIds,
-    toggleLikePost,
-    toggleUpvotePost,
-    comments,
-    addComment,
-    setSelectedProfileForView,
-    setIsProfileModalOpen,
+    currentUser, likedPostIds, upvotedPostIds, toggleLikePost, toggleUpvotePost,
+    comments, addComment, updatePost, deletePost, setSelectedProfileForView, setIsProfileModalOpen,
   } = useCommunity()
 
   const [showComments, setShowComments] = useState(false)
   const [commentInput, setCommentInput] = useState('')
   const [copied, setCopied] = useState(false)
+  const [isEditing, setIsEditing] = useState(false)
+  const [eTitle, setETitle] = useState(post.title)
+  const [eBody, setEBody] = useState(post.body)
+  const [eTags, setETags] = useState((post.tags || []).join(', '))
+  const [eGithubUrl, setEGithubUrl] = useState(post.github_url || '')
+  const [eDemoUrl, setEDemoUrl] = useState(post.demo_url || '')
+  const [eTechStack, setETechStack] = useState((post.tech_stack || []).join(', '))
+  const [isSaving, setIsSaving] = useState(false)
+  const [relativeTime, setRelativeTime] = useState('')
 
   const isLiked = likedPostIds.has(post.id)
   const isUpvoted = upvotedPostIds.has(post.id)
-
-  const [relativeTime, setRelativeTime] = useState('')
-
-  useEffect(() => {
-    setRelativeTime(formatRelativeTime(post.created_at))
-  }, [post.created_at])
-
+  const isAuthor = Boolean(currentUser && (currentUser.id === post.author_id || currentUser.usn === post.author_usn))
+  const isShowcase = post.type === 'showcase'
   const postComments = comments.filter(c => c.post_id === post.id)
 
+  useEffect(() => { setRelativeTime(formatRelativeTime(post.created_at)) }, [post.created_at])
+  useEffect(() => {
+    setETitle(post.title); setEBody(post.body); setETags((post.tags || []).join(', '))
+    setEGithubUrl(post.github_url || ''); setEDemoUrl(post.demo_url || ''); setETechStack((post.tech_stack || []).join(', '))
+  }, [post])
+
   const handleAuthorClick = () => {
-    setSelectedProfileForView({
-      id: post.author_id,
-      usn: post.author_usn || '',
-      name: post.author_name || 'Author',
-      year: post.author_year || 1,
-      branch: 'CSE',
-      bio: null,
-      avatar_url: post.author_avatar || null,
-      skills: [],
-      created_at: post.created_at,
-    })
+    setSelectedProfileForView({ id: post.author_id, usn: post.author_usn || '', name: post.author_name || 'Author', year: post.author_year || 1, branch: 'CSE', bio: null, avatar_url: post.author_avatar || null, skills: [], created_at: post.created_at })
     setIsProfileModalOpen(true)
   }
+  const handleCommentSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!commentInput.trim()) return; addComment(post.id, commentInput.trim()); setCommentInput(''); setShowComments(true) }
+  const handleShare = () => { navigator.clipboard?.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+  const handleSaveEdit = async () => {
+    if (!eTitle.trim() || !eBody.trim()) return; setIsSaving(true)
+    try {
+      const tags = eTags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
+      const techStack = eTechStack.split(',').map(t => t.trim()).filter(Boolean)
+      await updatePost(post.id, { title: eTitle.trim(), body: eBody.trim(), tags: tags.length ? tags : ['General', 'CSE'], github_url: eGithubUrl.trim() || null, demo_url: eDemoUrl.trim() || null, tech_stack: techStack })
+      setIsEditing(false)
+    } finally { setIsSaving(false) }
+  }
+  const handleCancelEdit = () => { setETitle(post.title); setEBody(post.body); setETags((post.tags || []).join(', ')); setEGithubUrl(post.github_url || ''); setEDemoUrl(post.demo_url || ''); setETechStack((post.tech_stack || []).join(', ')); setIsEditing(false) }
+  const handleDelete = async () => { if (window.confirm(`Delete this ${isShowcase ? 'project showcase' : 'discussion'}?`)) { await deletePost(post.id) } }
 
-  const handleCommentSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!commentInput.trim()) return
-    addComment(post.id, commentInput.trim())
-    setCommentInput('')
-    setShowComments(true)
+  // Edit Mode
+  if (isEditing) {
+    return (
+      <article style={{ background: '#0d1426', border: `2px solid ${isShowcase ? '#ffe066' : '#00aaff'}`, padding: '20px', boxShadow: `4px 4px 0px ${isShowcase ? '#665500' : '#003366'}, 0 0 16px ${isShowcase ? 'rgba(255,224,102,0.12)' : 'rgba(0,170,255,0.12)'}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 12, borderBottom: '2px solid #1e3560' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isShowcase ? <Sparkles style={{ width: 14, height: 14, color: '#ffe066' }} /> : <MessageSquare style={{ width: 14, height: 14, color: '#00aaff' }} />}
+            <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
+              EDITING {isShowcase ? 'SHOWCASE' : 'DISCUSSION'}
+            </span>
+          </div>
+          <button type="button" onClick={handleCancelEdit} style={{ background: 'transparent', border: '2px solid #1e3560', padding: 4, cursor: 'pointer', color: '#6bafd4' }}>
+            <X style={{ width: 14, height: 14 }} />
+          </button>
+        </div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          <div>
+            <label className="label">TITLE</label>
+            <input type="text" required value={eTitle} onChange={e => setETitle(e.target.value)} className="input" placeholder="Post title" />
+          </div>
+          <div>
+            <label className="label">DESCRIPTION</label>
+            <textarea required rows={4} value={eBody} onChange={e => setEBody(e.target.value)} className="textarea" placeholder="Detailed description..." />
+          </div>
+          {isShowcase && (
+            <div style={{ padding: 12, background: '#0c1220', border: `2px solid rgba(255,224,102,0.3)`, boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.4)' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                <div>
+                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><GitBranch style={{ width: 12, height: 12 }} /> GITHUB URL</label>
+                  <input type="url" placeholder="https://github.com/..." value={eGithubUrl} onChange={e => setEGithubUrl(e.target.value)} className="input" />
+                </div>
+                <div>
+                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><LinkIcon style={{ width: 12, height: 12 }} /> DEMO URL</label>
+                  <input type="url" placeholder="https://myproject.vercel.app" value={eDemoUrl} onChange={e => setEDemoUrl(e.target.value)} className="input" />
+                </div>
+              </div>
+              <label className="label">TECH STACK (COMMA-SEPARATED)</label>
+              <input type="text" placeholder="e.g. Next.js, Supabase, TypeScript" value={eTechStack} onChange={e => setETechStack(e.target.value)} className="input" />
+            </div>
+          )}
+          <div>
+            <label className="label">TAGS (COMMA-SEPARATED)</label>
+            <input type="text" placeholder="e.g. WebDev, DSA, Placements" value={eTags} onChange={e => setETags(e.target.value)} className="input" />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '2px solid #1e3560' }}>
+            <button type="button" onClick={handleDelete} style={{ fontSize: '0.72rem', fontWeight: 700, color: '#ff4466', background: 'transparent', border: '2px solid #ff4466', padding: '6px 12px', cursor: 'pointer', boxShadow: '2px 2px 0px #661133', display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase' }}>
+              <Trash2 style={{ width: 13, height: 13 }} /> DELETE
+            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button type="button" onClick={handleCancelEdit} style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a8d4f0', background: 'transparent', border: '2px solid #1e3560', padding: '6px 12px', cursor: 'pointer', boxShadow: '2px 2px 0px #000', textTransform: 'uppercase' }}>CANCEL</button>
+              <button type="button" onClick={handleSaveEdit} disabled={!eTitle.trim() || !eBody.trim() || isSaving}
+                style={{ fontSize: '0.72rem', fontWeight: 700, color: '#060a14', background: '#00aaff', border: '2px solid #0088cc', padding: '6px 14px', cursor: 'pointer', boxShadow: '3px 3px 0px #003366', display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', opacity: isSaving ? 0.6 : 1 }}>
+                <Save style={{ width: 13, height: 13 }} /> {isSaving ? 'SAVING...' : 'SAVE'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </article>
+    )
   }
 
-  const handleShare = () => {
-    navigator.clipboard?.writeText(window.location.href)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
-  }
-
-  const isShowcase = post.type === 'showcase'
-
+  // Normal View
   return (
-    <article
-      className={`card p-5 transition-all hover:border-slate-300 bg-white ${
-        isShowcase ? 'border-amber-200/60 shadow-xs' : ''
-      }`}
-    >
+    <article style={{ background: '#0d1426', border: `2px solid ${isShowcase ? '#665500' : '#1e3560'}`, padding: '20px', boxShadow: '4px 4px 0px #000', position: 'relative' }}>
+      {/* Showcase indicator bar */}
+      {isShowcase && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #ffe066, #00ffcc)' }} />}
+
       {/* Author Header */}
-      <div className="flex items-center justify-between gap-3 mb-3">
-        <button
-          type="button"
-          onClick={handleAuthorClick}
-          className="flex items-center gap-2.5 text-left group/author hover:opacity-90 transition-opacity"
-        >
-          <div className="w-9 h-9 rounded-full overflow-hidden bg-[#1e3a5f] text-white flex items-center justify-center font-bold text-xs">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
+        <button type="button" onClick={handleAuthorClick} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+          <div style={{ width: 38, height: 38, border: '2px solid #1e3560', overflow: 'hidden', background: '#0c1220', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             {post.author_avatar ? (
-              <Image
-                src={post.author_avatar}
-                alt={post.author_name || 'Author'}
-                width={36}
-                height={36}
-                className="w-full h-full object-cover"
-              />
+              <Image src={post.author_avatar} alt={post.author_name || 'Author'} width={38} height={38} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             ) : (
-              getAvatarFallback(post.author_name || 'Author')
+              <span style={{ fontSize: '0.85rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(post.author_name || 'Author')}</span>
             )}
           </div>
-          <div className="flex flex-col">
-            <div className="flex items-center gap-2">
-              <span className="text-xs sm:text-sm font-bold text-slate-900 group-hover/author:text-[#1e3a5f] transition-colors">
-                {post.author_name}
-              </span>
+          <div style={{ textAlign: 'left' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.825rem', color: '#e8f4fd', fontWeight: 700 }}>{post.author_name}</span>
               {post.author_year && (
-                <span className="text-[10px] font-semibold bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded border border-slate-200">
-                  {getYearLabel(post.author_year)}
-                </span>
+                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#00ffcc', background: 'rgba(0,255,204,0.1)', border: '1px solid rgba(0,255,204,0.3)', padding: '1px 6px' }}>{getYearLabel(post.author_year)}</span>
               )}
             </div>
-            <div className="flex items-center gap-1.5 text-[11px] text-slate-400 font-mono">
-              <span>{post.author_usn}</span>
-              <span>•</span>
-              <span className="font-sans">{relativeTime || formatDate(post.created_at)}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: '0.72rem', color: '#00aaff', fontWeight: 500 }}>{post.author_usn}</span>
+              <span style={{ fontSize: '0.72rem', color: '#3d6b8a' }}>•</span>
+              <span style={{ fontSize: '0.72rem', color: '#6bafd4' }}>{relativeTime || formatDate(post.created_at)}</span>
             </div>
           </div>
         </button>
 
-        {/* Post Type Badge */}
-        {isShowcase ? (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-50 text-amber-800 border border-amber-300/60">
-            <Sparkles className="w-3 h-3 text-amber-600" />
-            Showcase
-          </span>
-        ) : (
-          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
-            Discussion
-          </span>
-        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {isShowcase ? (
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#ffe066', background: 'rgba(255,224,102,0.12)', border: '2px solid rgba(255,224,102,0.4)', padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4, boxShadow: '2px 2px 0px #665500', textTransform: 'uppercase' }}>
+              <Sparkles style={{ width: 11, height: 11, color: '#ffe066' }} /> SHOWCASE
+            </span>
+          ) : (
+            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#00aaff', background: 'rgba(0,170,255,0.1)', border: '2px solid rgba(0,170,255,0.3)', padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4, boxShadow: '2px 2px 0px #003366', textTransform: 'uppercase' }}>
+              <MessageSquare style={{ width: 11, height: 11 }} /> DISCUSS
+            </span>
+          )}
+          {isAuthor && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 8, borderLeft: '2px solid #1e3560' }}>
+              <button type="button" onClick={() => setIsEditing(true)} style={{ background: 'transparent', border: '2px solid transparent', padding: 4, cursor: 'pointer', color: '#6bafd4' }} title="Edit">
+                <Edit2 style={{ width: 13, height: 13 }} />
+              </button>
+              <button type="button" onClick={handleDelete} style={{ background: 'transparent', border: '2px solid transparent', padding: 4, cursor: 'pointer', color: '#6bafd4' }} title="Delete">
+                <Trash2 style={{ width: 13, height: 13 }} />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Title */}
-      <h3 className="text-base sm:text-lg font-bold text-slate-900 leading-snug mb-2">
-        {post.title}
-      </h3>
+      <h3 style={{ fontSize: '1rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>{post.title}</h3>
 
       {/* Body */}
-      <p className="text-xs sm:text-sm text-slate-700 leading-relaxed whitespace-pre-line mb-4">
-        {post.body}
-      </p>
+      <p style={{ fontSize: '0.875rem', color: '#cbd5e1', lineHeight: 1.6, marginBottom: 16, whiteSpace: 'pre-line' }}>{post.body}</p>
 
-      {/* Showcase Specific Media & Links */}
+      {/* Showcase Extras */}
       {isShowcase && (
-        <div className="space-y-3 mb-4">
-          {/* Showcase Image Preview if available */}
-          {post.image_url && (
-            <div className="relative w-full h-48 sm:h-64 rounded-xl overflow-hidden border border-slate-200 bg-slate-100">
-              <Image
-                src={post.image_url}
-                alt={post.title}
-                fill
-                sizes="(max-width: 768px) 100vw, 600px"
-                className="object-cover hover:scale-[1.02] transition-transform duration-300"
-              />
-            </div>
-          )}
-
-          {/* Action links: Live Demo & GitHub repo */}
-          <div className="flex flex-wrap items-center gap-2">
+        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
             {post.demo_url && (
-              <a
-                href={post.demo_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg transition-colors shadow-xs"
-              >
-                <span>Live Demo</span>
-                <ExternalLink className="w-3.5 h-3.5" />
+              <a href={post.demo_url} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: '0.75rem', fontWeight: 700, color: '#060a14', background: '#00ffcc', border: '2px solid #00ccaa', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase' }}>
+                LIVE DEMO <ExternalLink style={{ width: 12, height: 12 }} />
               </a>
             )}
             {post.github_url && (
-              <a
-                href={post.github_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white font-medium text-xs rounded-lg transition-colors shadow-xs"
-              >
-                <GitBranch className="w-3.5 h-3.5" />
-                <span>Source Code</span>
+              <a href={post.github_url} target="_blank" rel="noopener noreferrer"
+                style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a8d4f0', background: 'transparent', border: '2px solid #1e3560', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #000', textTransform: 'uppercase' }}>
+                <GitBranch style={{ width: 12, height: 12, color: '#00aaff' }} /> SOURCE CODE
               </a>
             )}
           </div>
-
-          {/* Tech Stack Chips */}
           {post.tech_stack && post.tech_stack.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 pt-1">
-              <span className="text-[11px] font-bold text-slate-500 mr-1">Stack:</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: '0.7rem', color: '#6bafd4', textTransform: 'uppercase', marginRight: 4, fontWeight: 700 }}>STACK:</span>
               {post.tech_stack.map(tech => (
-                <span
-                  key={tech}
-                  className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200"
-                >
-                  {tech}
-                </span>
+                <span key={tech} style={{ fontSize: '0.72rem', color: '#a8d4f0', background: '#0c1220', border: '1px solid #1e3560', padding: '2px 7px' }}>{tech}</span>
               ))}
             </div>
           )}
         </div>
       )}
 
-      {/* Tags Chips */}
+      {/* Tags */}
       {post.tags && post.tags.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5 mb-4">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
           {post.tags.map(t => (
-            <span
-              key={t}
-              className="text-[11px] font-medium text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded cursor-pointer transition-colors"
-            >
-              #{t}
-            </span>
+            <span key={t} style={{ fontSize: '0.72rem', color: '#44ccff', background: 'rgba(0,170,255,0.1)', border: '1px solid rgba(0,170,255,0.3)', padding: '2px 8px', fontWeight: 600 }}>#{t}</span>
           ))}
         </div>
       )}
 
-      {/* Reaction and Interaction Bar */}
-      <div className="flex items-center justify-between pt-3 border-t border-slate-100">
-        <div className="flex items-center gap-1 sm:gap-2">
-          {/* Showcase Upvote or Discussion Like */}
+      {/* Reaction Bar */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 14, borderTop: '2px solid #1e3560' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isShowcase ? (
-            <button
-              type="button"
-              onClick={() => toggleUpvotePost(post.id)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                isUpvoted
-                  ? 'bg-amber-100 text-amber-800 border border-amber-300'
-                  : 'text-slate-600 hover:bg-amber-50 hover:text-amber-800'
-              }`}
-            >
-              <ArrowBigUp className={`w-4 h-4 ${isUpvoted ? 'fill-amber-600 text-amber-600' : ''}`} />
-              <span>{post.upvote_count ?? 0}</span>
-              <span className="hidden sm:inline">Upvotes</span>
+            <button type="button" onClick={() => toggleUpvotePost(post.id)}
+              style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
+                background: isUpvoted ? '#ffe066' : 'transparent', color: isUpvoted ? '#060a14' : '#a8d4f0',
+                borderColor: isUpvoted ? '#ccb000' : '#1e3560', boxShadow: isUpvoted ? '3px 3px 0px #665500' : '2px 2px 0px #000',
+                transform: isUpvoted ? 'translate(-1px,-1px)' : 'none' }}>
+              <ArrowBigUp style={{ width: 15, height: 15, fill: isUpvoted ? '#060a14' : 'none', color: isUpvoted ? '#060a14' : '#ffe066' }} />
+              {post.upvote_count ?? 0} UPVOTE
             </button>
           ) : (
-            <button
-              type="button"
-              onClick={() => toggleLikePost(post.id)}
-              className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                isLiked
-                  ? 'bg-rose-50 text-rose-600 font-bold'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-rose-600'
-              }`}
-            >
-              <Heart className={`w-4 h-4 ${isLiked ? 'fill-rose-600 text-rose-600' : ''}`} />
-              <span>{post.like_count ?? 0}</span>
-              <span className="hidden sm:inline">Likes</span>
+            <button type="button" onClick={() => toggleLikePost(post.id)}
+              style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
+                background: isLiked ? 'rgba(255,68,102,0.15)' : 'transparent', color: isLiked ? '#ff4466' : '#a8d4f0',
+                borderColor: isLiked ? '#ff4466' : '#1e3560', boxShadow: isLiked ? '2px 2px 0px #661133' : '2px 2px 0px #000',
+                transform: isLiked ? 'translate(-1px,-1px)' : 'none' }}>
+              <Heart style={{ width: 14, height: 14, fill: isLiked ? '#ff4466' : 'none', color: isLiked ? '#ff4466' : '#6bafd4' }} />
+              {post.like_count ?? 0} LIKE
             </button>
           )}
-
-          {/* Comment Button */}
-          <button
-            type="button"
-            onClick={() => setShowComments(!showComments)}
-            className={`inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-              showComments
-                ? 'bg-indigo-50 text-indigo-700'
-                : 'text-slate-600 hover:bg-slate-100 hover:text-indigo-700'
-            }`}
-          >
-            <MessageSquare className="w-4 h-4" />
-            <span>{postComments.length}</span>
-            <span className="hidden sm:inline">Comments</span>
+          <button type="button" onClick={() => setShowComments(!showComments)}
+            style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+              background: showComments ? 'rgba(0,170,255,0.12)' : 'transparent', color: showComments ? '#00aaff' : '#a8d4f0',
+              borderColor: showComments ? '#00aaff' : '#1e3560', boxShadow: '2px 2px 0px #000' }}>
+            <MessageSquare style={{ width: 14, height: 14, color: '#00aaff' }} />
+            {postComments.length} REPLY
           </button>
         </div>
 
-        {/* Share Button */}
-        <button
-          type="button"
-          onClick={handleShare}
-          className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg transition-colors"
-        >
-          {copied ? (
-            <>
-              <Check className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-emerald-600 text-[11px] font-bold">Link Copied!</span>
-            </>
-          ) : (
-            <>
-              <Share2 className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">Share</span>
-            </>
-          )}
+        <button type="button" onClick={handleShare}
+          style={{ fontSize: '0.72rem', fontWeight: 600, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+            background: 'transparent', color: '#6bafd4', borderColor: '#1e3560', boxShadow: '2px 2px 0px #000' }}>
+          {copied ? (<><Check style={{ width: 13, height: 13, color: '#00ffcc' }} /><span style={{ color: '#00ffcc' }}>COPIED!</span></>) : (<><Share2 style={{ width: 13, height: 13 }} />SHARE</>)}
         </button>
       </div>
 
-      {/* Expandable Comments Section */}
+      {/* Comments */}
       {showComments && (
-        <div className="mt-4 pt-4 border-t border-slate-100 space-y-3 animate-fade-in-up">
-          {/* Existing Comments */}
-          <div className="space-y-2.5">
+        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '2px solid #1e3560', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {postComments.length === 0 ? (
-              <p className="text-xs text-slate-400 italic">No comments yet. Start the conversation!</p>
+              <p style={{ fontSize: '0.78rem', color: '#3d6b8a', fontStyle: 'italic', padding: '6px 0' }}>NO COMMENTS YET. START THE CONVERSATION!</p>
             ) : (
               postComments.map(c => <CommentItem key={c.id} comment={c} />)
             )}
           </div>
-
-          {/* Add Comment Input Form */}
-          <form onSubmit={handleCommentSubmit} className="flex items-center gap-2 pt-1">
+          <form onSubmit={handleCommentSubmit} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               type="text"
               placeholder={currentUser ? `Reply as ${currentUser.name.split(' ')[0]}...` : 'Sign in to reply...'}
               value={commentInput}
               onChange={e => setCommentInput(e.target.value)}
-              className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-[#1e3a5f] focus:bg-white text-slate-800"
+              style={{ flex: 1, padding: '8px 12px', background: '#0c1220', border: '2px solid #1e3560', color: '#e8f4fd', fontSize: '0.825rem', outline: 'none', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.4)' }}
             />
-            <button
-              type="submit"
-              disabled={!commentInput.trim()}
-              className="p-2 bg-[#1e3a5f] text-white rounded-lg hover:bg-[#152e4d] disabled:opacity-40 transition-colors"
-              aria-label="Post comment"
-            >
-              <Send className="w-3.5 h-3.5" />
+            <button type="submit" disabled={!commentInput.trim()}
+              style={{ background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', padding: '8px 14px', cursor: 'pointer', boxShadow: '3px 3px 0px #003366', opacity: !commentInput.trim() ? 0.4 : 1 }}>
+              <Send style={{ width: 14, height: 14 }} />
             </button>
           </form>
         </div>
@@ -336,25 +289,17 @@ export default function PostCard({ post }: PostCardProps) {
 
 function CommentItem({ comment }: { comment: Comment }) {
   const [time, setTime] = useState('')
-
-  useEffect(() => {
-    setTime(formatRelativeTime(comment.created_at))
-  }, [comment.created_at])
-
+  useEffect(() => { setTime(formatRelativeTime(comment.created_at)) }, [comment.created_at])
   return (
-    <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-100 text-xs">
-      <div className="flex items-center justify-between mb-1">
-        <span className="font-bold text-slate-800">
+    <div style={{ padding: '10px 12px', background: '#090e1c', border: '2px solid #1e3560', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.3)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <span style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>
           {comment.author_name}
-          <span className="font-mono text-slate-400 font-normal ml-1.5">
-            ({comment.author_usn})
-          </span>
+          <span style={{ fontSize: '0.72rem', color: '#00aaff', fontWeight: 500, marginLeft: 6 }}>({comment.author_usn})</span>
         </span>
-        <span className="text-[10px] text-slate-400">
-          {time || formatDate(comment.created_at)}
-        </span>
+        <span style={{ fontSize: '0.7rem', color: '#3d6b8a' }}>{time || formatDate(comment.created_at)}</span>
       </div>
-      <p className="text-slate-700 leading-relaxed">{comment.body}</p>
+      <p style={{ fontSize: '0.825rem', color: '#cbd5e1', lineHeight: 1.5 }}>{comment.body}</p>
     </div>
   )
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, Calendar, Video, Clock, Users } from 'lucide-react'
+import { X, Calendar, Video } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 
 export default function CreateEventModal() {
@@ -53,24 +53,35 @@ export default function CreateEventModal() {
 
   return (
     <div className="modal-overlay">
-      <div className="modal-content">
+      <div className="modal-content" style={{ background: '#0b1220', border: '2px solid #00aaff', boxShadow: '6px 6px 0px #000, 0 0 24px rgba(0,170,255,0.18)', borderRadius: 0, outline: 'none' }}>
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-slate-100">
-          <div className="flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[#1e3a5f]" />
-            <h2 className="text-base font-bold text-slate-900">Host New CSE Event / Workshop</h2>
+        <div style={{ background: '#090e1c', borderBottom: '2px solid #1e3560', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 34, height: 34, background: '#00ffcc', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #000' }}>
+              <Calendar style={{ width: 18, height: 18, color: '#060a14' }} />
+            </div>
+            <div>
+              <h2 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#e8f4fd', letterSpacing: '0.02em', margin: 0 }}>
+                Host New UCC Workshop / Event
+              </h2>
+              <p style={{ fontSize: '0.72rem', color: '#6bafd4', margin: 0 }}>
+                Schedule a virtual workshop, review meeting, or study session
+              </p>
+            </div>
           </div>
           <button
             type="button"
             onClick={() => setIsCreateEventOpen(false)}
-            className="p-1 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+            style={{ background: 'transparent', border: '2px solid #1e3560', padding: '5px', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#e8f4fd' }}
+            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
           >
-            <X className="w-5 h-5" />
+            <X style={{ width: 16, height: 16 }} />
           </button>
         </div>
 
         {/* Form Body */}
-        <form onSubmit={handleSubmit} className="p-4 space-y-3.5 text-xs">
+        <form onSubmit={handleSubmit} style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
             <label className="label">Event Title</label>
             <input
@@ -79,34 +90,34 @@ export default function CreateEventModal() {
               placeholder="e.g. Hands-on Docker & Kubernetes Workshop for Beginners"
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="input text-xs"
+              className="input"
             />
           </div>
 
           <div>
-            <label className="label">Description & Agenda</label>
+            <label className="label">Description &amp; Agenda</label>
             <textarea
               required
               rows={3}
               placeholder="Outline what students will learn, prerequisites, and session expectations..."
               value={description}
               onChange={e => setDescription(e.target.value)}
-              className="textarea text-xs"
+              className="textarea"
             />
           </div>
 
           {/* Type & Duration */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="label">Event Type</label>
               <select
                 value={type}
                 onChange={e => setType(e.target.value as any)}
-                className="select text-xs"
+                className="select"
               >
                 <option value="Workshop">Hands-on Workshop</option>
                 <option value="Meeting">Meeting / Study Group</option>
-                <option value="Showcase">Project Showcase & Review</option>
+                <option value="Showcase">Project Showcase &amp; Review</option>
               </select>
             </div>
             <div>
@@ -118,13 +129,13 @@ export default function CreateEventModal() {
                 step="15"
                 value={duration}
                 onChange={e => setDuration(Number(e.target.value))}
-                className="input text-xs"
+                className="input"
               />
             </div>
           </div>
 
           {/* Date & Time */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
             <div>
               <label className="label">Event Date</label>
               <input
@@ -132,7 +143,7 @@ export default function CreateEventModal() {
                 required
                 value={eventDate}
                 onChange={e => setEventDate(e.target.value)}
-                className="input text-xs"
+                className="input"
               />
             </div>
             <div>
@@ -142,15 +153,15 @@ export default function CreateEventModal() {
                 required
                 value={eventTime}
                 onChange={e => setEventTime(e.target.value)}
-                className="input text-xs"
+                className="input"
               />
             </div>
           </div>
 
           {/* Virtual Link */}
           <div>
-            <label className="label flex items-center gap-1">
-              <Video className="w-3.5 h-3.5 text-indigo-600" />
+            <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Video style={{ width: 14, height: 14, color: '#00aaff' }} />
               Virtual Link (Google Meet / Zoom)
             </label>
             <input
@@ -158,14 +169,14 @@ export default function CreateEventModal() {
               placeholder="https://meet.google.com/xyz-abc-def"
               value={link}
               onChange={e => setLink(e.target.value)}
-              className="input text-xs"
+              className="input"
             />
           </div>
 
           {/* Target Years */}
           <div>
-            <label className="label">Target Year Audience</label>
-            <div className="flex flex-wrap gap-2 mt-1">
+            <label className="label">Target Batch Audience</label>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginTop: 4 }}>
               {[1, 2, 3, 4].map(yr => {
                 const active = targetYears.includes(yr)
                 return (
@@ -173,20 +184,23 @@ export default function CreateEventModal() {
                     key={yr}
                     type="button"
                     onClick={() => handleYearToggle(yr)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all border ${
-                      active
-                        ? 'bg-[#1e3a5f] text-white border-[#1e3a5f]'
-                        : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
-                    }`}
+                    style={{
+                      padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
+                      border: '2px solid', textTransform: 'uppercase', transition: 'all 0.05s steps(1)',
+                      background: active ? '#00aaff' : 'transparent',
+                      color: active ? '#060a14' : '#a8d4f0',
+                      borderColor: active ? '#0088cc' : '#1e3560',
+                      boxShadow: active ? '2px 2px 0px #003366' : 'none',
+                    }}
                   >
-                    {yr}st/nd/rd/th Year
+                    {yr === 1 ? '1st' : yr === 2 ? '2nd' : yr === 3 ? '3rd' : '4th'} Year
                   </button>
                 )
               })}
               <button
                 type="button"
                 onClick={() => setTargetYears([1, 2, 3, 4])}
-                className="px-2.5 py-1.5 text-xs text-indigo-600 hover:underline font-semibold"
+                style={{ padding: '6px 10px', fontSize: '0.72rem', color: '#00ffcc', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
               >
                 Select All
               </button>
@@ -194,20 +208,25 @@ export default function CreateEventModal() {
           </div>
 
           {/* Submit footer */}
-          <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 14, borderTop: '2px solid #1e3560' }}>
             <button
               type="button"
               onClick={() => setIsCreateEventOpen(false)}
-              className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-600 hover:bg-slate-50 font-medium"
+              style={{ padding: '8px 14px', background: 'transparent', border: '2px solid #1e3560', color: '#a8d4f0', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', boxShadow: '2px 2px 0px #000' }}
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={!title.trim() || !description.trim() || !eventDate}
-              className="px-4 py-1.5 rounded-lg bg-[#1e3a5f] hover:bg-[#152e4d] text-white font-bold transition-all disabled:opacity-50"
+              style={{
+                padding: '8px 18px', background: '#00f5c4', color: '#060a14', border: '2px solid #00cca0',
+                fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase',
+                boxShadow: '3px 3px 0px #006650', opacity: (!title.trim() || !description.trim() || !eventDate) ? 0.5 : 1,
+                letterSpacing: '0.03em',
+              }}
             >
-              Schedule Event
+              Schedule Workshop
             </button>
           </div>
         </form>

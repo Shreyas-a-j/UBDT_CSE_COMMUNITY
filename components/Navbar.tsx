@@ -4,20 +4,8 @@ import React, { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import {
-  Bell,
-  Search,
-  Plus,
-  Calendar,
-  MessageSquarePlus,
-  User,
-  LogOut,
-  ChevronDown,
-  Sparkles,
-  ExternalLink,
-  GraduationCap,
-  LogIn,
-  Moon,
-  Sun,
+  Bell, Search, Plus, Calendar, MessageSquarePlus, User, LogOut, ChevronDown,
+  Sparkles, ExternalLink, GraduationCap, LogIn, Moon, Sun, MessageSquare,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { useTheme } from '@/contexts/ThemeContext'
@@ -25,20 +13,10 @@ import { getAvatarFallback, getYearLabel } from '@/lib/utils'
 
 export default function Navbar() {
   const {
-    currentUser,
-    notifications,
-    markNotificationAsRead,
-    markAllNotificationsAsRead,
-    feedFilter,
-    setFeedFilter,
-    searchQuery,
-    setSearchQuery,
-    setIsCreatePostOpen,
-    setIsCreateEventOpen,
-    setIsProfileModalOpen,
-    setIsAuthModalOpen,
-    setSelectedProfileForView,
-    signOut,
+    currentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead,
+    feedFilter, setFeedFilter, searchQuery, setSearchQuery,
+    setIsCreatePostOpen, setIsCreateEventOpen, setIsProfileModalOpen,
+    setIsAuthModalOpen, setSelectedProfileForView, signOut,
   } = useCommunity()
 
   const { theme, toggleTheme } = useTheme()
@@ -49,245 +27,183 @@ export default function Navbar() {
   const unreadNotifs = notifications.filter(n => !n.read)
 
   return (
-    <header className="sticky top-0 z-40 w-full border-b border-slate-200/80 dark:border-slate-800 bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-xs">
+    <header className="sticky top-0 z-40 w-full" style={{ borderBottom: '2px solid #1e3560', background: '#060a14', boxShadow: '0 4px 0px #000, 0 0 20px rgba(0,170,255,0.08)' }}>
       {/* Top Banner */}
-      <div className="bg-gradient-to-r from-[#0a1628] via-[#1e3a5f] to-[#0d1f3c] text-white text-xs py-1 px-4 text-center flex items-center justify-between">
-        <div className="flex items-center gap-2 mx-auto">
-          <span className="inline-block w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
-          <span className="font-medium tracking-wide">
-            UBDT College of Engineering, Davangere (Constituent College of VTU) • Department of Computer Science & Engineering
-          </span>
-          <a
-            href="https://ubdtce.org"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-amber-300 hover:text-amber-200 underline inline-flex items-center gap-0.5 text-[11px] ml-2 hidden sm:inline-flex"
-          >
-            ubdtce.org <ExternalLink className="w-2.5 h-2.5" />
-          </a>
+      <div style={{ background: '#0a0f20', borderBottom: '2px solid #1e3560', padding: '5px 16px' }}>
+        <div className="app-container flex items-center justify-center">
+          <div className="flex items-center gap-2">
+            <span className="animate-pixel-blink" style={{ width: 8, height: 8, background: '#00ffcc', display: 'inline-block', boxShadow: '0 0 6px #00ffcc' }} />
+            <span style={{ fontSize: '0.72rem', color: '#a8d4f0', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
+              UCC — Dept. of Computer Science &amp; Engineering
+            </span>
+            <a
+              href="https://ubdtce.org" target="_blank" rel="noopener noreferrer"
+              style={{ fontSize: '0.72rem', color: '#00aaff', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 600 }}
+            >
+              ubdtce.org <ExternalLink style={{ width: 11, height: 11 }} />
+            </a>
+          </div>
         </div>
       </div>
 
       <div className="app-container">
-        <div className="flex items-center justify-between h-16 gap-3">
-          {/* Brand Logo & Title */}
+        <div className="flex items-center justify-between gap-3" style={{ height: 64 }}>
+          {/* Brand Logo */}
           <div className="flex items-center gap-3">
             <Link
               href="/"
-              onClick={() => {
-                setFeedFilter('all')
-                setSearchQuery('')
-              }}
-              className="flex items-center gap-2.5 group text-decoration-none"
+              onClick={() => { setFeedFilter('all'); setSearchQuery('') }}
+              className="flex items-center gap-3"
+              style={{ textDecoration: 'none' }}
             >
-              <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#0d1f3c] to-[#1e3a5f] flex items-center justify-center text-amber-400 font-extrabold text-lg shadow-sm border border-slate-700/30 group-hover:scale-105 transition-transform">
-                <GraduationCap className="w-6 h-6 text-amber-400" />
+              <div style={{ width: 42, height: 42, background: '#0d1426', border: '2px solid #00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '3px 3px 0px #003366' }}>
+                <GraduationCap style={{ width: 24, height: 24, color: '#00ffcc' }} />
               </div>
               <div className="flex flex-col">
-                <span className="font-bold text-base sm:text-lg text-[#0d1f3c] leading-tight flex items-center gap-1.5">
-                  UBDT <span className="text-amber-600 font-extrabold">CSE</span>
-                  <span className="hidden md:inline-block text-[11px] uppercase tracking-wider bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono border border-slate-200">
-                    480 Intake
-                  </span>
+                <span style={{ fontWeight: 800, fontSize: '1.15rem', color: '#e8f4fd', lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.02em' }}>
+                  UCC <span style={{ color: '#00ffcc', textShadow: '0 0 8px rgba(0,255,204,0.3)', fontSize: '0.8rem', fontWeight: 800 }}>HUB</span>
                 </span>
-                <span className="text-[11px] font-medium text-slate-500 leading-none">
-                  Community Hub & Showcase
-                </span>
+                <span style={{ fontSize: '0.65rem', color: '#6bafd4', fontWeight: 600, letterSpacing: '0.04em' }}>COMMUNITY PORTAL</span>
               </div>
             </Link>
 
-            {/* Quick Navigation Filter Pills */}
-            <nav className="hidden md:flex items-center gap-1 ml-4 border-l border-slate-200 pl-4">
-              <button
-                type="button"
-                onClick={() => setFeedFilter('all')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  feedFilter === 'all'
-                    ? 'bg-[#1e3a5f] text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-[#1e3a5f]'
-                }`}
-              >
-                Feed
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedFilter('events')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                  feedFilter === 'events'
-                    ? 'bg-[#1e3a5f] text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-[#1e3a5f]'
-                }`}
-              >
-                <Calendar className="w-3.5 h-3.5" />
-                Events
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedFilter('discussions')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
-                  feedFilter === 'discussions'
-                    ? 'bg-[#1e3a5f] text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-[#1e3a5f]'
-                }`}
-              >
-                Discussions
-              </button>
-              <button
-                type="button"
-                onClick={() => setFeedFilter('showcases')}
-                className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1 ${
-                  feedFilter === 'showcases'
-                    ? 'bg-amber-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-amber-50 hover:text-amber-800'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Showcases
-              </button>
+            {/* Quick Nav Pills */}
+            <nav className="hidden md:flex items-center gap-1.5 ml-4" style={{ borderLeft: '2px solid #1e3560', paddingLeft: 16 }}>
+              {[
+                { id: 'all', label: 'FEED', icon: null },
+                { id: 'events', label: 'EVENTS', icon: <Calendar style={{ width: 13, height: 13, color: '#00ffcc' }} /> },
+                { id: 'discussions', label: 'DISCUSS', icon: <MessageSquare style={{ width: 13, height: 13, color: '#00aaff' }} /> },
+                { id: 'showcases', label: 'SHOWCASE', icon: <Sparkles style={{ width: 13, height: 13, color: '#ffe066' }} /> },
+              ].map(item => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => setFeedFilter(item.id as any)}
+                  style={{
+                    fontSize: '0.75rem', fontWeight: 700,
+                    padding: '6px 12px', border: '2px solid', cursor: 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.05s steps(1)',
+                    background: feedFilter === item.id ? '#00aaff' : 'transparent',
+                    color: feedFilter === item.id ? '#060a14' : '#a8d4f0',
+                    borderColor: feedFilter === item.id ? '#0088cc' : 'transparent',
+                    boxShadow: feedFilter === item.id ? '3px 3px 0px #003366' : 'none',
+                    transform: feedFilter === item.id ? 'translate(-1px,-1px)' : 'none',
+                    letterSpacing: '0.03em',
+                  }}
+                >
+                  {item.icon}{item.label}
+                </button>
+              ))}
             </nav>
           </div>
 
-          {/* Search Bar */}
+          {/* Search */}
           <div className="flex-1 max-w-xs lg:max-w-md hidden sm:block">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <div className="relative" style={{ border: '2px solid #1e3560', background: '#0c1220', display: 'flex', alignItems: 'center', padding: '5px 12px', gap: 8, boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.5)' }}>
+              <Search style={{ width: 15, height: 15, color: '#6bafd4', flexShrink: 0 }} />
               <input
                 type="text"
-                placeholder="Search posts, events, projects, USN..."
+                placeholder="Search discussions, events, tags..."
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-1.5 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-[#1e3a5f] focus:bg-white focus:ring-2 focus:ring-[#1e3a5f]/10 transition-all text-slate-800"
+                style={{ border: 'none', outline: 'none', flex: 1, fontSize: '0.8125rem', color: '#e8f4fd', background: 'transparent' }}
               />
               {searchQuery && (
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
-                >
-                  ✕
-                </button>
+                <button type="button" onClick={() => setSearchQuery('')} style={{ color: '#6bafd4', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
               )}
             </div>
           </div>
 
-          {/* Action Buttons & Profile Controls */}
+          {/* Action Controls */}
           <div className="flex items-center gap-2">
             {/* Create Dropdown */}
             <div className="relative">
               <button
                 type="button"
                 onClick={() => {
-                  if (!currentUser) {
-                    setIsAuthModalOpen(true)
-                    return
-                  }
-                  setShowCreateMenu(!showCreateMenu)
-                  setShowNotifs(false)
-                  setShowUserMenu(false)
+                  if (!currentUser) { setIsAuthModalOpen(true); return }
+                  setShowCreateMenu(!showCreateMenu); setShowNotifs(false); setShowUserMenu(false)
                 }}
-                className="inline-flex items-center gap-1.5 px-3 py-2 bg-[#1e3a5f] hover:bg-[#152e4d] text-white text-xs font-semibold rounded-lg shadow-sm transition-all active:scale-95"
+                style={{ background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #003366', transition: 'all 0.05s steps(1)', textTransform: 'uppercase', letterSpacing: '0.03em' }}
               >
-                <Plus className="w-4 h-4" />
-                <span className="hidden sm:inline">Post / Event</span>
-                <ChevronDown className="w-3 h-3 opacity-80" />
+                <Plus style={{ width: 14, height: 14 }} />
+                <span className="hidden sm:inline">CREATE</span>
+                <ChevronDown style={{ width: 12, height: 12 }} />
               </button>
 
               {showCreateMenu && (
-                <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-lg py-1.5 z-50 animate-fade-in-up">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreatePostOpen(true)
-                      setShowCreateMenu(false)
-                    }}
-                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium"
+                <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 200, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
+                  <button type="button" onClick={() => { setIsCreatePostOpen(true); setShowCreateMenu(false) }}
+                    style={{ width: '100%', padding: '10px 14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '2px solid #1e3560' }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
                   >
-                    <MessageSquarePlus className="w-4 h-4 text-indigo-600" />
-                    New Discussion / Showcase
+                    <MessageSquarePlus style={{ width: 14, height: 14, color: '#00aaff' }} />
+                    NEW DISCUSSION
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsCreateEventOpen(true)
-                      setShowCreateMenu(false)
-                    }}
-                    className="w-full px-3.5 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 font-medium border-t border-slate-100"
+                  <button type="button" onClick={() => { setIsCreateEventOpen(true); setShowCreateMenu(false) }}
+                    style={{ width: '100%', padding: '10px 14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00ffcc' }}
+                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
                   >
-                    <Calendar className="w-4 h-4 text-emerald-600" />
-                    Host Workshop / Event
+                    <Calendar style={{ width: 14, height: 14, color: '#00ffcc' }} />
+                    HOST EVENT
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Dark Mode Toggle */}
+            {/* Theme Toggle */}
             <button
-              type="button"
-              onClick={toggleTheme}
-              className="p-2 text-slate-600 dark:text-slate-300 hover:text-[#1e3a5f] dark:hover:text-amber-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg transition-colors"
-              aria-label="Toggle dark mode"
+              type="button" onClick={toggleTheme}
+              style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
+              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
+              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
+              aria-label="Toggle theme"
             >
-              {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {theme === 'dark' ? <Sun style={{ width: 15, height: 15, color: '#ffe066' }} /> : <Moon style={{ width: 15, height: 15, color: '#00aaff' }} />}
             </button>
 
-            {/* Notification Bell */}
+            {/* Notifications */}
             {currentUser && (
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowNotifs(!showNotifs)
-                    setShowCreateMenu(false)
-                    setShowUserMenu(false)
-                  }}
-                  className="relative p-2 text-slate-600 hover:text-[#1e3a5f] hover:bg-slate-100 rounded-lg transition-colors"
+                  onClick={() => { setShowNotifs(!showNotifs); setShowCreateMenu(false); setShowUserMenu(false) }}
+                  style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center' }}
                   aria-label="Notifications"
                 >
-                  <Bell className="w-5 h-5" />
+                  <Bell style={{ width: 16, height: 16, color: '#6bafd4' }} />
                   {unreadNotifs.length > 0 && (
-                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white" />
+                    <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, background: '#ff4466', boxShadow: '0 0 6px #ff4466', display: 'block' }} />
                   )}
                 </button>
 
                 {showNotifs && (
-                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
-                    <div className="px-3.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                      <span className="text-xs font-bold text-[#0d1f3c]">Notifications</span>
+                  <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 300, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
+                    <div style={{ padding: '10px 14px', borderBottom: '2px solid #1e3560', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, letterSpacing: '0.04em' }}>NOTIFICATIONS</span>
                       {unreadNotifs.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={markAllNotificationsAsRead}
-                          className="text-[11px] text-indigo-600 hover:underline font-semibold"
-                        >
-                          Mark all as read
+                        <button type="button" onClick={markAllNotificationsAsRead} style={{ fontSize: '0.7rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
+                          MARK ALL READ
                         </button>
                       )}
                     </div>
-                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
                       {notifications.length === 0 ? (
-                        <div className="p-4 text-center text-xs text-slate-400">
-                          No notifications yet
-                        </div>
+                        <div style={{ padding: 16, textAlign: 'center', fontSize: '0.75rem', color: '#3d6b8a' }}>NO NOTIFICATIONS</div>
                       ) : (
                         notifications.map(n => (
                           <div
                             key={n.id}
                             onClick={() => markNotificationAsRead(n.id)}
-                            className={`p-3 text-xs cursor-pointer transition-colors ${
-                              n.read ? 'bg-white hover:bg-slate-50' : 'bg-indigo-50/50 hover:bg-indigo-50'
-                            }`}
+                            style={{ padding: '10px 14px', borderBottom: '1px solid #1e3560', cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(0,170,255,0.06)' }}
                           >
-                            <div className="font-semibold text-slate-800 flex items-center justify-between">
-                              <span>{n.title}</span>
-                              {!n.read && (
-                                <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full" />
-                              )}
+                            <div style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              {n.title}
+                              {!n.read && <span style={{ width: 6, height: 6, background: '#00aaff', display: 'inline-block', boxShadow: '0 0 4px #00aaff' }} />}
                             </div>
-                            {n.body && (
-                              <p className="text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
-                                {n.body}
-                              </p>
-                            )}
+                            {n.body && <p style={{ fontSize: '0.7rem', color: '#a8d4f0', marginTop: 4, lineHeight: 1.5 }}>{n.body}</p>}
                           </div>
                         ))
                       )}
@@ -297,75 +213,49 @@ export default function Navbar() {
               </div>
             )}
 
-            {/* Profile or Sign In Button */}
+            {/* Profile or Sign In */}
             {currentUser ? (
               <div className="relative">
                 <button
                   type="button"
-                  onClick={() => {
-                    setShowUserMenu(!showUserMenu)
-                    setShowCreateMenu(false)
-                    setShowNotifs(false)
-                  }}
-                  className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-lg hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all text-left"
+                  onClick={() => { setShowUserMenu(!showUserMenu); setShowCreateMenu(false); setShowNotifs(false) }}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer' }}
                 >
-                  <div className="w-8 h-8 rounded-full overflow-hidden bg-[#1e3a5f] text-white flex items-center justify-center font-bold text-xs ring-2 ring-slate-100">
+                  <div style={{ width: 32, height: 32, border: '2px solid #00aaff', overflow: 'hidden', background: '#0d1426', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #003366' }}>
                     {currentUser.avatar_url ? (
-                      <Image
-                        src={currentUser.avatar_url}
-                        alt={currentUser.name}
-                        width={32}
-                        height={32}
-                        className="w-full h-full object-cover"
-                      />
+                      <Image src={currentUser.avatar_url} alt={currentUser.name} width={32} height={32} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     ) : (
-                      getAvatarFallback(currentUser.name)
+                      <span style={{ fontSize: '0.8rem', color: '#00aaff', fontWeight: 700 }}>{getAvatarFallback(currentUser.name)}</span>
                     )}
                   </div>
-                  <div className="hidden lg:flex flex-col">
-                    <span className="text-xs font-bold text-slate-800 leading-tight">
-                      {currentUser.name.split(' ')[0]}
-                    </span>
-                    <span className="text-[10px] text-amber-700 font-mono font-medium leading-none">
-                      {currentUser.usn} ({getYearLabel(currentUser.year)})
-                    </span>
+                  <div className="hidden lg:flex flex-col" style={{ textAlign: 'left' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.2 }}>{currentUser.name.split(' ')[0]}</span>
+                    <span style={{ fontSize: '0.65rem', color: '#00ffcc' }}>{currentUser.usn}</span>
                   </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                  <ChevronDown style={{ width: 12, height: 12, color: '#6bafd4' }} />
                 </button>
 
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
-                    <div className="px-4 py-2 border-b border-slate-100">
-                      <p className="text-xs font-bold text-slate-800">{currentUser.name}</p>
-                      <p className="text-[11px] font-mono text-indigo-700 font-semibold">{currentUser.usn}</p>
-                      <p className="text-[11px] text-slate-500">
-                        {getYearLabel(currentUser.year)} • Department of CSE
-                      </p>
+                  <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 240, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
+                    <div style={{ padding: '12px 14px', borderBottom: '2px solid #1e3560' }}>
+                      <p style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>{currentUser.name}</p>
+                      <p style={{ fontSize: '0.7rem', color: '#00ffcc', marginTop: 2 }}>{currentUser.usn}</p>
+                      <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 2 }}>{getYearLabel(currentUser.year)} • CSE</p>
                     </div>
-
-                    <div className="py-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setSelectedProfileForView(currentUser)
-                          setIsProfileModalOpen(true)
-                          setShowUserMenu(false)
-                        }}
-                        className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
+                    <div style={{ padding: 4 }}>
+                      <button type="button" onClick={() => { setSelectedProfileForView(currentUser); setIsProfileModalOpen(true); setShowUserMenu(false) }}
+                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
                       >
-                        <User className="w-3.5 h-3.5 text-slate-500" />
-                        View & Edit Profile
+                        <User style={{ width: 13, height: 13 }} /> VIEW &amp; EDIT PROFILE
                       </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          signOut()
-                          setShowUserMenu(false)
-                        }}
-                        className="w-full px-4 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium border-t border-slate-100"
+                      <button type="button" onClick={() => { signOut(); setShowUserMenu(false) }}
+                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#ff4466', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderTop: '2px solid #1e3560' }}
+                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,68,102,0.1)' }}
+                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none' }}
                       >
-                        <LogOut className="w-3.5 h-3.5" />
-                        Sign Out
+                        <LogOut style={{ width: 13, height: 13 }} /> SIGN OUT
                       </button>
                     </div>
                   </div>
@@ -375,10 +265,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => setIsAuthModalOpen(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-[#1e3a5f] hover:bg-[#152e4d] text-white rounded-lg shadow-xs transition-all"
+                style={{ background: '#00ffcc', color: '#060a14', border: '2px solid #00ccaa', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase', letterSpacing: '0.03em' }}
               >
-                <LogIn className="w-3.5 h-3.5" />
-                <span>Sign In / Join</span>
+                <LogIn style={{ width: 14, height: 14 }} />
+                SIGN IN
               </button>
             )}
           </div>

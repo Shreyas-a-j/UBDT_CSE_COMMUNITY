@@ -6,6 +6,9 @@ export type Json =
   | { [key: string]: Json | undefined }
   | Json[]
 
+/**
+ * Maps to the Supabase PostgreSQL user_profiles table.
+ */
 export interface Profile {
   id: string
   usn: string
@@ -14,8 +17,10 @@ export interface Profile {
   branch?: string
   bio: string | null
   avatar_url: string | null
+  thumbhash?: string | null
   skills: string[]
   created_at: string
+  updated_at?: string
 }
 
 export interface Event {

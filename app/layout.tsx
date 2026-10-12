@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import { Inter, JetBrains_Mono } from 'next/font/google'
+import { Inter } from 'next/font/google'
 import './globals.css'
 import { CommunityProvider } from '@/contexts/CommunityContext'
 import { ThemeProvider } from '@/contexts/ThemeContext'
@@ -7,27 +7,22 @@ import { ThemeProvider } from '@/contexts/ThemeContext'
 const inter = Inter({
   variable: '--font-sans',
   subsets: ['latin'],
-})
-
-const jetbrainsMono = JetBrains_Mono({
-  variable: '--font-mono',
-  subsets: ['latin'],
+  display: 'swap',
 })
 
 export const metadata: Metadata = {
-  title: 'UBDT CSE Community | UBDT College of Engineering, Davangere',
+  title: 'UCC | Computer Science & Engineering Community',
   description:
-    'Exclusive virtual community, peer collaboration, workshop hub, and project showcase for the Computer Science & Engineering students of UBDT College of Engineering, Davangere (ubdtce.org).',
+    'Exclusive community hub, peer collaboration, workshops, and project showcases for UCC students.',
   keywords: [
-    'UBDT', 'UBDTCE', 'Davangere', 'CSE', 'Computer Science',
-    'VTU', 'Engineering Community', 'Workshops', 'Student Projects',
+    'UCC', 'CSE', 'Computer Science', 'Engineering Community', 'Workshops', 'Student Projects',
   ],
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className={`${inter.variable} ${jetbrainsMono.variable} h-full antialiased`} suppressHydrationWarning>
-      <body className="min-h-full flex flex-col bg-[#f8fafc] dark:bg-slate-950 text-slate-800 dark:text-slate-200 font-sans transition-colors duration-200">
+    <html lang="en" className={`dark ${inter.variable} h-full`} suppressHydrationWarning>
+      <body className="min-h-full flex flex-col antialiased font-sans">
         <ThemeProvider>
           <CommunityProvider>{children}</CommunityProvider>
         </ThemeProvider>

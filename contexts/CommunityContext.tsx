@@ -28,6 +28,8 @@ interface CommunityContextType {
   toggleRsvpEvent: (eventId: string) => Promise<void>
   addComment: (postId: string, body: string) => Promise<void>
   updateProfile: (updated: Partial<Profile>) => Promise<void>
+  updatePost: (postId: string, updated: Partial<Post>) => Promise<void>
+  deletePost: (postId: string) => Promise<void>
   updateEvent: (eventId: string, updated: Partial<Event>) => Promise<void>
   signOut: () => Promise<void>
   markNotificationAsRead: (id: string) => void
@@ -170,7 +172,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     supabase.auth.getSession().then(({ data: { session } }) => {
       if (session?.user) {
         supabase
-          .from('profiles')
+          .from('user_profiles')
           .select('*')
           .eq('id', session.user.id)
           .single()
@@ -459,9 +461,35 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     const newUser = { ...currentUser, ...updated }
     saveUser(newUser)
     try {
-      await supabase.from('profiles').update({
+      await supabase.from('user_profiles').update({
         name: newUser.name, bio: newUser.bio, avatar_url: newUser.avatar_url, skills: newUser.skills,
       }).eq('id', currentUser.id)
+    } catch {}
+  }
+
+  const updatePost = async (postId: string, updated: Partial<Post>) => {
+    const next = posts.map(p => (p.id === postId ? { ...p, ...updated } : p))
+    setPosts(next)
+    try { localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(next)) } catch {}
+    try {
+      await supabase.from('posts').update({
+        title: updated.title,
+        body: updated.body,
+        tags: updated.tags,
+        github_url: updated.github_url,
+        demo_url: updated.demo_url,
+        tech_stack: updated.tech_stack,
+        target_years: updated.target_years,
+      }).eq('id', postId)
+    } catch {}
+  }
+
+  const deletePost = async (postId: string) => {
+    const next = posts.filter(p => p.id !== postId)
+    setPosts(next)
+    try { localStorage.setItem(STORAGE_KEYS.POSTS, JSON.stringify(next)) } catch {}
+    try {
+      await supabase.from('posts').delete().eq('id', postId)
     } catch {}
   }
 
@@ -520,6 +548,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         toggleRsvpEvent,
         addComment,
         updateProfile,
+        updatePost,
+        deletePost,
         updateEvent,
         signOut,
         markNotificationAsRead,
