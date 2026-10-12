@@ -72,8 +72,13 @@ export default function AuthModal() {
       return
     }
 
+    if (!email.trim()) {
+      setError('Please enter your email address')
+      return
+    }
+
     setLoading(true)
-    const authEmail = isSignUp ? email.trim() : `${formattedUsn.toLowerCase()}@ubdtce.org`
+    const authEmail = email.trim()
 
     try {
       if (isSignUp) {
@@ -103,49 +108,38 @@ export default function AuthModal() {
           branch: 'CSE',
           bio: `${getYearLabel(year || 1)} student at UCC.`,
           avatar_url: null,
+          email: authEmail,
           skills: [],
           created_at: new Date().toISOString(),
         }
         try { await supabase.from('user_profiles').upsert(newProfile) } catch {}
         setCurrentUser(newProfile)
       } else {
-        const tryEmails = [
-          email.trim(),
-          `${formattedUsn.toLowerCase()}@ubdtce.org`,
-        ].filter(Boolean)
-
-        let signedIn = false
-        for (const tryEmail of tryEmails) {
-          const { data, error: signInError } = await supabase.auth.signInWithPassword({
-            email: tryEmail,
-            password,
-          })
-          if (!signInError && data.user) {
-            const { data: profileData } = await supabase
-              .from('user_profiles').select('*').eq('id', data.user.id).single()
-            if (profileData) {
-              setCurrentUser(profileData)
-            } else {
-              setCurrentUser({
-                id: data.user.id,
-                usn: formattedUsn,
-                name: data.user.user_metadata?.name || `Student`,
-                year: data.user.user_metadata?.year || year,
-                branch: 'CSE',
-                bio: null,
-                avatar_url: null,
-                skills: [],
-                created_at: new Date().toISOString(),
-              })
-            }
-            signedIn = true
-            break
-          }
-        }
-        if (!signedIn) {
-          setError('Invalid credentials. Please check your USN and password.')
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email: authEmail,
+          password,
+        })
+        if (signInError || !data.user) {
+          setError('Invalid email or password. Please try again.')
           setLoading(false)
           return
+        }
+        const { data: profileData } = await supabase
+          .from('user_profiles').select('*').eq('id', data.user.id).single()
+        if (profileData) {
+          setCurrentUser(profileData)
+        } else {
+          setCurrentUser({
+            id: data.user.id,
+            usn: formattedUsn,
+            name: data.user.user_metadata?.name || 'Student',
+            year: data.user.user_metadata?.year || year,
+            branch: 'CSE',
+            bio: null,
+            avatar_url: null,
+            skills: [],
+            created_at: new Date().toISOString(),
+          })
         }
       }
 
@@ -242,22 +236,20 @@ export default function AuthModal() {
             </p>
           </div>
 
-          {/* Email — sign up only */}
-          {isSignUp && (
-            <div>
-              <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                <Mail style={{ width: 13, height: 13, color: '#00aaff' }} /> Email Address
-              </label>
-              <input
-                type="email"
-                required
-                placeholder="e.g. varun@gmail.com"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                className="input"
-              />
-            </div>
-          )}
+          {/* Email — always shown */}
+          <div>
+            <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+              <Mail style={{ width: 13, height: 13, color: '#00aaff' }} /> Email Address
+            </label>
+            <input
+              type="email"
+              required
+              placeholder="e.g. varun@gmail.com"
+              value={email}
+              onChange={e => { setEmail(e.target.value); setError('') }}
+              className="input"
+            />
+          </div>
 
           {/* Academic Year — sign up only */}
           {isSignUp && (
