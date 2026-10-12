@@ -5,6 +5,7 @@ import { X, GraduationCap, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, Mail }
 import { useCommunity } from '@/contexts/CommunityContext'
 import { validateUSN, getYearFromUSN, getYearLabel } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import type { Profile } from '@/lib/types'
 
 export default function AuthModal() {
   const { isAuthModalOpen, setIsAuthModalOpen, setCurrentUser } = useCommunity()
@@ -109,7 +110,7 @@ export default function AuthModal() {
         const resolvedUser = signInData?.user || data.user
         const userId = resolvedUser?.id || `user-${Date.now()}`
 
-        const newProfile = {
+        const newProfile: Profile = {
           id: userId,
           usn: formattedUsn,
           name: name.trim(),
@@ -117,11 +118,11 @@ export default function AuthModal() {
           branch: 'CSE',
           bio: `${getYearLabel(year || 1)} student at UCC.`,
           avatar_url: null,
-          email: authEmail,
           skills: [],
           created_at: new Date().toISOString(),
         }
-        try { await supabase.from('user_profiles').upsert(newProfile) } catch {}
+        // Store email separately in Supabase (not in Profile type)
+        try { await supabase.from('user_profiles').upsert({ ...newProfile, email: authEmail }) } catch {}
 
         if (signInErr) {
           // Email confirmation may be required — tell user to check email
@@ -152,7 +153,8 @@ export default function AuthModal() {
         const { data: profileData } = await supabase
           .from('user_profiles').select('*').eq('id', data.user.id).single()
         if (profileData) {
-          setCurrentUser(profileData)
+          // Normalize skills: DB may return null for empty array
+          setCurrentUser({ ...profileData, skills: profileData.skills ?? [] })
         } else {
           setCurrentUser({
             id: data.user.id,

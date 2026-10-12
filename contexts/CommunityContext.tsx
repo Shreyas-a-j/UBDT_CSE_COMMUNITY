@@ -178,17 +178,28 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
           .single()
           .then(({ data, error }) => {
             if (!error && data) {
-              setCurrentUser(data)
-              localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(data))
+              const profile = { ...data, skills: data.skills ?? [] }
+              setCurrentUser(profile)
+              localStorage.setItem(STORAGE_KEYS.CURRENT_USER, JSON.stringify(profile))
             } else {
               // Try local user cache
               const cachedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER)
-              if (cachedUser) setCurrentUser(JSON.parse(cachedUser))
+              if (cachedUser) {
+                try {
+                  const u = JSON.parse(cachedUser)
+                  setCurrentUser({ ...u, skills: u.skills ?? [] })
+                } catch {}
+              }
             }
           })
       } else {
         const cachedUser = localStorage.getItem(STORAGE_KEYS.CURRENT_USER)
-        if (cachedUser) setCurrentUser(JSON.parse(cachedUser))
+        if (cachedUser) {
+          try {
+            const u = JSON.parse(cachedUser)
+            setCurrentUser({ ...u, skills: u.skills ?? [] })
+          } catch {}
+        }
       }
     })
 
