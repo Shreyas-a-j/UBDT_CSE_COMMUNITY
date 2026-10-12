@@ -16,24 +16,26 @@ export default function ProfileModal() {
   } = useCommunity()
 
   const profile = selectedProfileForView || currentUser
-  const isEditingSelf = profile.id === currentUser.id
+  const isEditingSelf = Boolean(profile && currentUser && profile.id === currentUser.id)
 
   const [isEditMode, setIsEditMode] = useState(false)
-  const [name, setName] = useState(profile.name)
-  const [bio, setBio] = useState(profile.bio || '')
-  const [avatarUrl, setAvatarUrl] = useState(profile.avatar_url || '')
-  const [skills, setSkills] = useState<string[]>(profile.skills || [])
+  const [name, setName] = useState(profile?.name || '')
+  const [bio, setBio] = useState(profile?.bio || '')
+  const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '')
+  const [skills, setSkills] = useState<string[]>(profile?.skills || [])
   const [newSkillInput, setNewSkillInput] = useState('')
 
   useEffect(() => {
-    setName(profile.name)
-    setBio(profile.bio || '')
-    setAvatarUrl(profile.avatar_url || '')
-    setSkills(profile.skills || [])
-    setIsEditMode(false)
+    if (profile) {
+      setName(profile.name)
+      setBio(profile.bio || '')
+      setAvatarUrl(profile.avatar_url || '')
+      setSkills(profile.skills || [])
+      setIsEditMode(false)
+    }
   }, [profile])
 
-  if (!isProfileModalOpen) return null
+  if (!isProfileModalOpen || !profile) return null
 
   const handleAddSkill = (e: React.FormEvent) => {
     e.preventDefault()

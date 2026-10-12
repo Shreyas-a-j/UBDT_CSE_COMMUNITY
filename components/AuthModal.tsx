@@ -1,25 +1,27 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, GraduationCap, ArrowRight, ShieldCheck, UserCheck, AlertCircle } from 'lucide-react'
+import { X, GraduationCap, ArrowRight, AlertCircle, Loader2 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { validateUSN, getYearFromUSN, getYearLabel } from '@/lib/utils'
+import { createClient } from '@/lib/supabase/client'
 
 export default function AuthModal() {
   const {
     isAuthModalOpen,
     setIsAuthModalOpen,
     setCurrentUser,
-    allProfiles,
-    switchUserByYear,
   } = useCommunity()
+
+  const supabase = createClient()
 
   const [isSignUp, setIsSignUp] = useState(true)
   const [usn, setUsn] = useState('')
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
-  const [year, setYear] = useState<number>(3)
+  const [year, setYear] = useState<number>(1)
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(false)
 
   if (!isAuthModalOpen) return null
 
@@ -34,7 +36,7 @@ export default function AuthModal() {
     }
   }
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
 
@@ -49,48 +51,104 @@ export default function AuthModal() {
       return
     }
 
-    if (!password || password.length < 4) {
-      setError('Password must be at least 4 characters')
+    if (!password || password.length < 6) {
+      setError('Password must be at least 6 characters')
       return
     }
 
-    // Check if profile exists with this USN
-    const existing = allProfiles.find(p => p.usn.toUpperCase() === formattedUsn)
+    setLoading(true)
+    const email = `${formattedUsn.toLowerCase()}@ubdtce.org`
 
-    if (isSignUp) {
-      const newProfile = {
-        id: `user-${Date.now()}`,
-        usn: formattedUsn,
-        name: name.trim(),
-        year: year || 1,
-        branch: 'CSE',
-        bio: `${getYearLabel(year || 1)} student at UBDT College of Engineering, Davangere.`,
-        avatar_url: null,
-        skills: ['C++', 'Python', 'Web Development'],
-        created_at: new Date().toISOString(),
-      }
-      setCurrentUser(newProfile)
-    } else {
-      if (existing) {
-        setCurrentUser(existing)
-      } else {
-        // Log in new demo profile
+    try {
+      if (isSignUp) {
+        const { data, error: signUpError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              name: name.trim(),
+              usn: formattedUsn,
+              year,
+            },
+          },
+        })
+
+        if (signUpError) {
+          // If already registered, suggest signing in
+          if (signUpError.message.includes('already registered')) {
+            setError('This USN is already registered. Please switch to Sign In.')
+            setLoading(false)
+            return
+          }
+          throw signUpError
+        }
+
+        const userId = data.user?.id || `user-${Date.now()}`
         const newProfile = {
-          id: `user-${Date.now()}`,
+          id: userId,
           usn: formattedUsn,
-          name: name.trim() || `Student ${formattedUsn.slice(-3)}`,
+          name: name.trim(),
           year: year || 1,
           branch: 'CSE',
-          bio: `CSE student at UBDT College of Engineering, Davangere.`,
+          bio: `${getYearLabel(year || 1)} student at UBDT College of Engineering, Davangere.`,
           avatar_url: null,
-          skills: ['Algorithms', 'Software Engineering'],
+          skills: [],
           created_at: new Date().toISOString(),
         }
-        setCurrentUser(newProfile)
-      }
-    }
 
-    setIsAuthModalOpen(false)
+        // Upsert to Supabase profiles
+        try {
+          await supabase.from('profiles').upsert(newProfile)
+        } catch {}
+
+        setCurrentUser(newProfile)
+      } else {
+        const { data, error: signInError } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+
+        if (signInError) {
+          setError(signInError.message || 'Invalid USN or password')
+          setLoading(false)
+          return
+        }
+
+        if (data.user) {
+          const { data: profileData } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', data.user.id)
+            .single()
+
+          if (profileData) {
+            setCurrentUser(profileData)
+          } else {
+            const fallbackProfile = {
+              id: data.user.id,
+              usn: formattedUsn,
+              name: data.user.user_metadata?.name || `Student ${formattedUsn.slice(-3)}`,
+              year: data.user.user_metadata?.year || year,
+              branch: 'CSE',
+              bio: `CSE student at UBDT College of Engineering, Davangere.`,
+              avatar_url: null,
+              skills: [],
+              created_at: new Date().toISOString(),
+            }
+            try {
+              await supabase.from('profiles').upsert(fallbackProfile)
+            } catch {}
+            setCurrentUser(fallbackProfile)
+          }
+        }
+      }
+
+      setIsAuthModalOpen(false)
+    } catch (err: any) {
+      setError(err?.message || 'Authentication error. Please check your network or credentials.')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -118,35 +176,6 @@ export default function AuthModal() {
           >
             <X className="w-5 h-5" />
           </button>
-        </div>
-
-        {/* Instant 1-Click Persona Logins (Super convenient for reviewers!) */}
-        <div className="p-4 bg-slate-50 border-b border-slate-100">
-          <p className="text-[11px] font-bold text-slate-600 mb-2 flex items-center gap-1.5">
-            <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-            Instant 1-Click Test Login (Skip typing):
-          </p>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 text-xs">
-            {[
-              { yr: 1, name: 'Sneha (1st Yr)', usn: '1UB24CS012' },
-              { yr: 2, name: 'Rohan (2nd Yr)', usn: '1UB23CS045' },
-              { yr: 3, name: 'Priyanka (3rd Yr)', usn: '1UB22CS078' },
-              { yr: 4, name: 'Aditya (4th Yr)', usn: '1UB21CS099' },
-            ].map(test => (
-              <button
-                key={test.yr}
-                type="button"
-                onClick={() => {
-                  switchUserByYear(test.yr)
-                  setIsAuthModalOpen(false)
-                }}
-                className="p-2 rounded-lg bg-white border border-slate-200 hover:border-slate-300 hover:bg-slate-50 text-left transition-all"
-              >
-                <span className="block font-bold text-slate-800 text-[11px]">{test.name}</span>
-                <span className="block text-[10px] font-mono text-slate-400">{test.usn}</span>
-              </button>
-            ))}
-          </div>
         </div>
 
         {/* Auth Form */}
@@ -183,7 +212,7 @@ export default function AuthModal() {
               className="input font-mono uppercase text-xs"
             />
             <p className="text-[10px] text-slate-400 mt-1">
-              Format: 1UB[Year]CS[Roll No]. Auto-derives your academic year.
+              Format: 1UB[Batch]CS[Roll No]. Auto-derives your academic year.
             </p>
           </div>
 
@@ -227,10 +256,20 @@ export default function AuthModal() {
           <div className="pt-2">
             <button
               type="submit"
-              className="w-full py-2.5 rounded-lg bg-[#1e3a5f] hover:bg-[#152e4d] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all"
+              disabled={loading}
+              className="w-full py-2.5 rounded-lg bg-[#1e3a5f] hover:bg-[#152e4d] text-white font-bold text-xs flex items-center justify-center gap-2 shadow-xs transition-all disabled:opacity-60"
             >
-              <span>{isSignUp ? 'Create CSE Profile & Enter' : 'Log In with USN'}</span>
-              <ArrowRight className="w-3.5 h-3.5" />
+              {loading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Please wait...</span>
+                </>
+              ) : (
+                <>
+                  <span>{isSignUp ? 'Create CSE Profile & Enter' : 'Log In with USN'}</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </>
+              )}
             </button>
           </div>
 

@@ -28,7 +28,7 @@ interface EventCardProps {
 }
 
 export default function EventCard({ event, compact = false }: EventCardProps) {
-  const { rsvpedEventIds, toggleRsvpEvent, setSelectedProfileForView, allProfiles, setIsProfileModalOpen } = useCommunity()
+  const { rsvpedEventIds, toggleRsvpEvent, setSelectedProfileForView, setIsProfileModalOpen } = useCommunity()
 
   const isRsvped = rsvpedEventIds.has(event.id)
   const [countdown, setCountdown] = useState<string>('')
@@ -42,11 +42,18 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
   }, [event.event_date, event.event_time])
 
   const handleHostClick = () => {
-    const hostProfile = allProfiles.find(p => p.id === event.host_id || p.usn === event.host_usn)
-    if (hostProfile) {
-      setSelectedProfileForView(hostProfile)
-      setIsProfileModalOpen(true)
-    }
+    setSelectedProfileForView({
+      id: event.host_id,
+      usn: event.host_usn || '',
+      name: event.host_name || 'Host',
+      year: 1,
+      branch: 'CSE',
+      bio: null,
+      avatar_url: event.host_avatar || null,
+      skills: [],
+      created_at: event.created_at,
+    })
+    setIsProfileModalOpen(true)
   }
 
   return (

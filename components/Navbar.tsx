@@ -15,9 +15,7 @@ import {
   Sparkles,
   ExternalLink,
   GraduationCap,
-  Layers,
-  Check,
-  RotateCcw,
+  LogIn,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
@@ -37,8 +35,7 @@ export default function Navbar() {
     setIsProfileModalOpen,
     setIsAuthModalOpen,
     setSelectedProfileForView,
-    switchUserByYear,
-    resetToDefaultData,
+    signOut,
   } = useCommunity()
 
   const [showNotifs, setShowNotifs] = useState(false)
@@ -176,6 +173,10 @@ export default function Navbar() {
               <button
                 type="button"
                 onClick={() => {
+                  if (!currentUser) {
+                    setIsAuthModalOpen(true)
+                    return
+                  }
                   setShowCreateMenu(!showCreateMenu)
                   setShowNotifs(false)
                   setShowUserMenu(false)
@@ -216,183 +217,156 @@ export default function Navbar() {
             </div>
 
             {/* Notification Bell */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowNotifs(!showNotifs)
-                  setShowCreateMenu(false)
-                  setShowUserMenu(false)
-                }}
-                className="relative p-2 text-slate-600 hover:text-[#1e3a5f] hover:bg-slate-100 rounded-lg transition-colors"
-                aria-label="Notifications"
-              >
-                <Bell className="w-5 h-5" />
-                {unreadNotifs.length > 0 && (
-                  <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white" />
-                )}
-              </button>
+            {currentUser && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowNotifs(!showNotifs)
+                    setShowCreateMenu(false)
+                    setShowUserMenu(false)
+                  }}
+                  className="relative p-2 text-slate-600 hover:text-[#1e3a5f] hover:bg-slate-100 rounded-lg transition-colors"
+                  aria-label="Notifications"
+                >
+                  <Bell className="w-5 h-5" />
+                  {unreadNotifs.length > 0 && (
+                    <span className="absolute top-1 right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white" />
+                  )}
+                </button>
 
-              {showNotifs && (
-                <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
-                  <div className="px-3.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
-                    <span className="text-xs font-bold text-[#0d1f3c]">Notifications</span>
-                    {unreadNotifs.length > 0 && (
-                      <button
-                        type="button"
-                        onClick={markAllNotificationsAsRead}
-                        className="text-[11px] text-indigo-600 hover:underline font-semibold"
-                      >
-                        Mark all as read
-                      </button>
-                    )}
-                  </div>
-                  <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
-                    {notifications.length === 0 ? (
-                      <div className="p-4 text-center text-xs text-slate-400">
-                        No notifications yet
-                      </div>
-                    ) : (
-                      notifications.map(n => (
-                        <div
-                          key={n.id}
-                          onClick={() => markNotificationAsRead(n.id)}
-                          className={`p-3 text-xs cursor-pointer transition-colors ${
-                            n.read ? 'bg-white hover:bg-slate-50' : 'bg-indigo-50/50 hover:bg-indigo-50'
-                          }`}
+                {showNotifs && (
+                  <div className="absolute right-0 mt-2 w-80 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
+                    <div className="px-3.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
+                      <span className="text-xs font-bold text-[#0d1f3c]">Notifications</span>
+                      {unreadNotifs.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={markAllNotificationsAsRead}
+                          className="text-[11px] text-indigo-600 hover:underline font-semibold"
                         >
-                          <div className="font-semibold text-slate-800 flex items-center justify-between">
-                            <span>{n.title}</span>
-                            {!n.read && (
-                              <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full" />
+                          Mark all as read
+                        </button>
+                      )}
+                    </div>
+                    <div className="max-h-64 overflow-y-auto divide-y divide-slate-100">
+                      {notifications.length === 0 ? (
+                        <div className="p-4 text-center text-xs text-slate-400">
+                          No notifications yet
+                        </div>
+                      ) : (
+                        notifications.map(n => (
+                          <div
+                            key={n.id}
+                            onClick={() => markNotificationAsRead(n.id)}
+                            className={`p-3 text-xs cursor-pointer transition-colors ${
+                              n.read ? 'bg-white hover:bg-slate-50' : 'bg-indigo-50/50 hover:bg-indigo-50'
+                            }`}
+                          >
+                            <div className="font-semibold text-slate-800 flex items-center justify-between">
+                              <span>{n.title}</span>
+                              {!n.read && (
+                                <span className="w-1.5 h-1.5 bg-indigo-600 rounded-full" />
+                              )}
+                            </div>
+                            {n.body && (
+                              <p className="text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
+                                {n.body}
+                              </p>
                             )}
                           </div>
-                          {n.body && (
-                            <p className="text-slate-600 mt-0.5 line-clamp-2 leading-relaxed">
-                              {n.body}
-                            </p>
-                          )}
-                        </div>
-                      ))
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* User Profile Pill & Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => {
-                  setShowUserMenu(!showUserMenu)
-                  setShowCreateMenu(false)
-                  setShowNotifs(false)
-                }}
-                className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-lg hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all text-left"
-              >
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-[#1e3a5f] text-white flex items-center justify-center font-bold text-xs ring-2 ring-slate-100">
-                  {currentUser.avatar_url ? (
-                    <Image
-                      src={currentUser.avatar_url}
-                      alt={currentUser.name}
-                      width={32}
-                      height={32}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    getAvatarFallback(currentUser.name)
-                  )}
-                </div>
-                <div className="hidden lg:flex flex-col">
-                  <span className="text-xs font-bold text-slate-800 leading-tight">
-                    {currentUser.name.split(' ')[0]}
-                  </span>
-                  <span className="text-[10px] text-amber-700 font-mono font-medium leading-none">
-                    {currentUser.usn} ({getYearLabel(currentUser.year)})
-                  </span>
-                </div>
-                <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
-              </button>
-
-              {showUserMenu && (
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
-                  {/* Active User Header */}
-                  <div className="px-4 py-2 border-b border-slate-100">
-                    <p className="text-xs font-bold text-slate-800">{currentUser.name}</p>
-                    <p className="text-[11px] font-mono text-indigo-700 font-semibold">{currentUser.usn}</p>
-                    <p className="text-[11px] text-slate-500">
-                      {getYearLabel(currentUser.year)} • Department of CSE
-                    </p>
-                  </div>
-
-                  {/* Switch Active Year / Persona (For effortless testing by examiner/reviewer) */}
-                  <div className="px-3 py-2 border-b border-slate-100">
-                    <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-1.5">
-                      Switch Role (1-Click Test)
-                    </p>
-                    <div className="grid grid-cols-2 gap-1 text-[11px]">
-                      {[1, 2, 3, 4].map(y => (
-                        <button
-                          key={y}
-                          type="button"
-                          onClick={() => {
-                            switchUserByYear(y)
-                            setShowUserMenu(false)
-                          }}
-                          className={`px-2 py-1 rounded text-left flex items-center justify-between transition-colors ${
-                            currentUser.year === y
-                              ? 'bg-[#1e3a5f] text-white font-semibold'
-                              : 'hover:bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          <span>{y}st Year</span>
-                          {currentUser.year === y && <Check className="w-3 h-3 text-amber-400" />}
-                        </button>
-                      ))}
+                        ))
+                      )}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Profile Actions */}
-                  <div className="py-1">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setSelectedProfileForView(currentUser)
-                        setIsProfileModalOpen(true)
-                        setShowUserMenu(false)
-                      }}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
-                    >
-                      <User className="w-3.5 h-3.5 text-slate-500" />
-                      View & Edit Profile
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setIsAuthModalOpen(true)
-                        setShowUserMenu(false)
-                      }}
-                      className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
-                    >
-                      <GraduationCap className="w-3.5 h-3.5 text-slate-500" />
-                      Sign Up with New USN
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        resetToDefaultData()
-                        setShowUserMenu(false)
-                      }}
-                      className="w-full px-4 py-2 text-left text-xs text-amber-700 hover:bg-amber-50 flex items-center gap-2 font-medium border-t border-slate-100"
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
-                      Reset to Fresh Demo Data
-                    </button>
+            {/* Profile or Sign In Button */}
+            {currentUser ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowUserMenu(!showUserMenu)
+                    setShowCreateMenu(false)
+                    setShowNotifs(false)
+                  }}
+                  className="flex items-center gap-2 p-1 pl-1.5 pr-2 rounded-lg hover:bg-slate-100 border border-transparent hover:border-slate-200 transition-all text-left"
+                >
+                  <div className="w-8 h-8 rounded-full overflow-hidden bg-[#1e3a5f] text-white flex items-center justify-center font-bold text-xs ring-2 ring-slate-100">
+                    {currentUser.avatar_url ? (
+                      <Image
+                        src={currentUser.avatar_url}
+                        alt={currentUser.name}
+                        width={32}
+                        height={32}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      getAvatarFallback(currentUser.name)
+                    )}
                   </div>
-                </div>
-              )}
-            </div>
+                  <div className="hidden lg:flex flex-col">
+                    <span className="text-xs font-bold text-slate-800 leading-tight">
+                      {currentUser.name.split(' ')[0]}
+                    </span>
+                    <span className="text-[10px] text-amber-700 font-mono font-medium leading-none">
+                      {currentUser.usn} ({getYearLabel(currentUser.year)})
+                    </span>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+                </button>
+
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-2 z-50 animate-fade-in-up">
+                    <div className="px-4 py-2 border-b border-slate-100">
+                      <p className="text-xs font-bold text-slate-800">{currentUser.name}</p>
+                      <p className="text-[11px] font-mono text-indigo-700 font-semibold">{currentUser.usn}</p>
+                      <p className="text-[11px] text-slate-500">
+                        {getYearLabel(currentUser.year)} • Department of CSE
+                      </p>
+                    </div>
+
+                    <div className="py-1">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSelectedProfileForView(currentUser)
+                          setIsProfileModalOpen(true)
+                          setShowUserMenu(false)
+                        }}
+                        className="w-full px-4 py-2 text-left text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 font-medium"
+                      >
+                        <User className="w-3.5 h-3.5 text-slate-500" />
+                        View & Edit Profile
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          signOut()
+                          setShowUserMenu(false)
+                        }}
+                        className="w-full px-4 py-2 text-left text-xs text-rose-600 hover:bg-rose-50 flex items-center gap-2 font-medium border-t border-slate-100"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        Sign Out
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsAuthModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold bg-[#1e3a5f] hover:bg-[#152e4d] text-white rounded-lg shadow-xs transition-all"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In / Join</span>
+              </button>
+            )}
           </div>
         </div>
       </div>

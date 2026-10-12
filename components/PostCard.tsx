@@ -38,7 +38,6 @@ export default function PostCard({ post }: PostCardProps) {
     comments,
     addComment,
     setSelectedProfileForView,
-    allProfiles,
     setIsProfileModalOpen,
   } = useCommunity()
 
@@ -58,13 +57,18 @@ export default function PostCard({ post }: PostCardProps) {
   const postComments = comments.filter(c => c.post_id === post.id)
 
   const handleAuthorClick = () => {
-    const authorProfile = allProfiles.find(
-      p => p.id === post.author_id || p.usn === post.author_usn
-    )
-    if (authorProfile) {
-      setSelectedProfileForView(authorProfile)
-      setIsProfileModalOpen(true)
-    }
+    setSelectedProfileForView({
+      id: post.author_id,
+      usn: post.author_usn || '',
+      name: post.author_name || 'Author',
+      year: post.author_year || 1,
+      branch: 'CSE',
+      bio: null,
+      avatar_url: post.author_avatar || null,
+      skills: [],
+      created_at: post.created_at,
+    })
+    setIsProfileModalOpen(true)
   }
 
   const handleCommentSubmit = (e: React.FormEvent) => {
@@ -310,7 +314,7 @@ export default function PostCard({ post }: PostCardProps) {
           <form onSubmit={handleCommentSubmit} className="flex items-center gap-2 pt-1">
             <input
               type="text"
-              placeholder={`Reply as ${currentUser.name.split(' ')[0]}...`}
+              placeholder={currentUser ? `Reply as ${currentUser.name.split(' ')[0]}...` : 'Sign in to reply...'}
               value={commentInput}
               onChange={e => setCommentInput(e.target.value)}
               className="flex-1 px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-[#1e3a5f] focus:bg-white text-slate-800"
