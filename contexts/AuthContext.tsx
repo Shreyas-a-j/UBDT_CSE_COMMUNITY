@@ -26,6 +26,26 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 })
 
+/**
+ * Log a Supabase error object with all available detail fields.
+ * Supabase errors carry message, code, details, and hint — log
+ * each one so operators can distinguish constraint violations
+ * from transient failures.
+ */
+function logSupabaseError(label: string, err: unknown): void {
+  if (!err || typeof err !== 'object') {
+    console.error(`${label}:`, err)
+    return
+  }
+  const e = err as Record<string, unknown>
+  console.error(`${label}:`, {
+    message: e.message,
+    code: e.code,
+    details: e.details,
+    hint: e.hint,
+  })
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), [])
   const [user, setUser] = useState<User | null>(null)
@@ -35,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null)
 
   const fetchProfile = useCallback(async (authUser: User) => {
+    // 1. Select existing profile first — never assume it needs to be created.
     const { data, error: queryError } = await supabase
       .from('profiles')
       .select('*')
@@ -42,7 +63,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       .maybeSingle()
 
     if (queryError) {
-      setError(queryError.message)
+      logSupabaseError('Profile fetch error', queryError)
+      setError(queryError.message ?? 'Failed to load profile')
       setProfile(fallbackProfileFromAuth(authUser))
       return
     }
@@ -53,6 +75,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
+    // 2. Profile does not exist — attempt to create it.
+    //    This is a safety net for edge cases where the trigger
+    //    did not fire (e.g. auth user created outside the normal
+    //    sign-up flow). The trigger remains the primary path.
     const fallback = fallbackProfileFromAuth(authUser)
     const { error: insertError } = await supabase.from('profiles').insert({
       id: fallback.id,
@@ -70,17 +96,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       employee_id: null,
       expertise: [],
     })
-    if (insertError && !insertError.message.toLowerCase().includes('duplicate')) {
-      console.error('Profile insert error:', insertError)
-      // Don't set hard error — the profile may already exist or columns
-      // may be catching up in schema cache. Still try to select.
+
+    // 3. Log ALL Supabase error fields individually.
+    if (insertError) {
+      logSupabaseError('Profile insert error', insertError)
+      // Do NOT silently treat a failed insert as success.
+      // Set the error so the caller knows provisioning failed.
+      setError(insertError.message ?? 'Failed to create profile')
+      // Still attempt a select in case the row was created by a
+      // race-condition retry of the trigger.
     }
-    const { data: created } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle()
+
+    const { data: created, error: selectError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', authUser.id)
+      .maybeSingle()
+
+    if (selectError) {
+      logSupabaseError('Profile re-fetch error', selectError)
+      setProfile(normalizeProfile(created as Record<string, unknown> | null) ?? fallback)
+      return
+    }
+
     setProfile(normalizeProfile(created as Record<string, unknown> | null) ?? fallback)
-    // If profile was just created, propagate it to listeners
+
+    // If a profile was created but looks incomplete (missing role),
+    // retry once after a short delay to pick up any schema-cache lag.
     if (created && !created.role) {
-      // Profile exists but may be from an older schema. Trigger a
-      // refetch after a short delay to pick up refreshed schema cache.
       setTimeout(() => {
         if (authUser) fetchProfile(authUser)
       }, 500)
@@ -103,7 +146,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     supabase.auth.getSession().then(async ({ data: { session: nextSession }, error: sessionError }) => {
       if (cancelled) return
-      if (sessionError) setError(sessionError.message)
+      if (sessionError) {
+        logSupabaseError('Session error', sessionError)
+        setError(sessionError.message)
+      }
       setSession(nextSession)
       setUser(nextSession?.user ?? null)
       if (nextSession?.user) {

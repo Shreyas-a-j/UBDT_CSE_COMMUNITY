@@ -68,43 +68,100 @@ function AdminDashboard() {
   }, [currentUser, fetchApplications, router])
 
   const handleApprove = async (applicationId: string) => {
+    if (!currentUser) return
     setProcessingId(applicationId)
-    const { error } = await supabase
+
+    // First update the faculty application
+    const { error: appError } = await supabase
       .from('faculty_applications')
       .update({
         status: 'approved',
-        reviewed_by: currentUser?.id,
+        reviewed_by: currentUser.id,
         reviewed_at: new Date().toISOString(),
       })
       .eq('id', applicationId)
+      .eq('status', 'pending') // Prevent double approval
 
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Faculty application approved')
-      fetchApplications()
+    if (appError) {
+      toast.error(`Failed to approve application: ${appError.message}`)
+      setProcessingId(null)
+      return
     }
+
+    // Get the application to find the user_id for profile update
+    const { data: appData, error: fetchError } = await supabase
+      .from('faculty_applications')
+      .select('user_id, designation, employee_id')
+      .eq('id', applicationId)
+      .single()
+
+    if (fetchError || !appData) {
+      toast.error('Failed to fetch application details')
+      fetchApplications()
+      setProcessingId(null)
+      return
+    }
+
+    // Update the user's profile to grant faculty access
+    const { error: profileError } = await supabase
+      .from('profiles')
+      .update({
+        role: 'faculty',
+        faculty_status: 'verified',
+        designation: appData.designation, // Set designation from application
+        employee_id: appData.employee_id,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', appData.user_id)
+      .eq('role', 'student') // Prevent re-approval of already approved users
+
+    if (profileError) {
+      toast.error(`Failed to update faculty profile: ${profileError.message}`)
+    } else {
+      toast.success('Faculty application approved - faculty access granted')
+    }
+
+    fetchApplications()
     setProcessingId(null)
   }
 
   const handleReject = async (applicationId: string, notes?: string) => {
+    if (!currentUser) return
     setProcessingId(applicationId)
+
     const { error } = await supabase
       .from('faculty_applications')
       .update({
         status: 'rejected',
-        reviewed_by: currentUser?.id,
+        reviewed_by: currentUser.id,
         reviewed_at: new Date().toISOString(),
         notes: notes || 'Application not approved',
       })
       .eq('id', applicationId)
+      .eq('status', 'pending') // Prevent double rejection
 
     if (error) {
-      toast.error(error.message)
+      toast.error(`Failed to reject application: ${error.message}`)
     } else {
       toast.success('Faculty application rejected')
-      fetchApplications()
+
+      // Also update the user's profile to mark as rejected
+      const { data: appData } = await supabase
+        .from('faculty_applications')
+        .select('user_id')
+        .eq('id', applicationId)
+        .single()
+
+      if (appData) {
+        await supabase
+          .from('profiles')
+          .update({ faculty_status: 'rejected', updated_at: new Date().toISOString() })
+          .eq('id', appData.user_id)
+          .eq('role', 'student') // Only update students who applied
+      }
     }
+
+    fetchApplications()
     setProcessingId(null)
   }
 

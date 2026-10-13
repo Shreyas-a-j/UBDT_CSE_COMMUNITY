@@ -10,8 +10,12 @@ import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
 import { useAuth } from '@/contexts/AuthContext'
 
+// Only select columns that are guaranteed to exist on every install.
+// Do NOT include: email (private, not part of the public profile schema),
+// faculty_status, expertise, employee_id — these were added by migrations
+// and may not be present on all databases.
 const PEOPLE_COLUMNS =
-  'id, usn, name, year, branch, section, bio, avatar_url, skills, interests, role, faculty_status, created_at'
+  'id, usn, name, year, branch, section, bio, avatar_url, skills, interests, role, created_at'
 
 function PeopleDirectory() {
   const supabase = createClient()
@@ -27,6 +31,9 @@ function PeopleDirectory() {
     setLoading(true)
     setError(null)
     try {
+      // Primary query: only core, always-present columns.
+      // Filter by role=student server-side; if the role column is missing
+      // this fails and we fall back to a broader query.
       const primaryRes = await supabase
         .from('profiles')
         .select(PEOPLE_COLUMNS)
@@ -35,10 +42,12 @@ function PeopleDirectory() {
         .limit(200)
 
       if (primaryRes.error) {
-        const fallbackCols = 'id, usn, name, year, branch, section, bio, avatar_url, skills, interests, created_at'
+        // Fallback: wider query without role filter (works when role column
+        // or other migration columns are absent). Client-side filters below
+        // will still exclude non-student rows when role is present.
         const fallbackRes = await supabase
           .from('profiles')
-          .select(fallbackCols)
+          .select('id, usn, name, year, branch, section, bio, avatar_url, skills, interests, role, created_at')
           .order('created_at', { ascending: false })
           .limit(200)
 
@@ -46,7 +55,8 @@ function PeopleDirectory() {
           throw fallbackRes.error
         }
 
-        const filtered = (fallbackRes.data ?? []).filter((p: Record<string, unknown>) => {
+        const rows = (fallbackRes.data ?? []) as Record<string, unknown>[]
+        const filtered = rows.filter((p: Record<string, unknown>) => {
           const role = p.role
           return role === undefined || role === 'student' || role === null
         })
@@ -72,6 +82,7 @@ function PeopleDirectory() {
   }, [fetchPeople])
 
   const filteredPeople = people.filter(person => {
+    // Exclude the current viewer from their own directory listing.
     if (currentUser && person.id === currentUser.id) return false
 
     const matchesSearch = searchQuery
@@ -82,9 +93,12 @@ function PeopleDirectory() {
 
     const matchesYear = yearFilter ? person.year === yearFilter : true
 
+    // Safely handle missing skills/interests arrays — treat empty as matching.
+    const personSkills = Array.isArray(person.skills) ? person.skills : []
+    const personInterests = Array.isArray(person.interests) ? person.interests : []
     const matchesSkill = skillFilter
-      ? person.skills.some(skill => skill.toLowerCase().includes(skillFilter.toLowerCase())) ||
-        person.interests.some(interest => interest.toLowerCase().includes(skillFilter.toLowerCase()))
+      ? personSkills.some(skill => skill.toLowerCase().includes(skillFilter.toLowerCase())) ||
+        personInterests.some(interest => interest.toLowerCase().includes(skillFilter.toLowerCase()))
       : true
 
     return matchesSearch && matchesYear && matchesSkill

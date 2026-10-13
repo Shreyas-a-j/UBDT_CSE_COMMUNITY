@@ -8,10 +8,15 @@ import AppShell from '@/components/AppShell'
 import UserAvatar from '@/components/UserAvatar'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
-import { displayName } from '@/lib/profile'
+import { displayName, isVerifiedFaculty } from '@/lib/profile'
 
+// Columns from the verified profile schema. `email` is deliberately excluded —
+// it is not part of the public profile schema and must never be exposed by a
+// directory query. `faculty_status` is included because the approved-faculty
+// filter depends on it; if the column is absent the query fails and we fall
+// back to a role-only filter below.
 const FACULTY_COLUMNS =
-  'id, name, branch, bio, avatar_url, email, expertise, role, faculty_status, designation, created_at'
+  'id, name, designation, branch, bio, avatar_url, role, faculty_status, created_at'
 
 function FacultyDirectory() {
   const supabase = createClient()
@@ -19,10 +24,23 @@ function FacultyDirectory() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // Approved faculty = admin OR (role=faculty AND faculty_status=verified).
+  // A self-declared signup role is NOT proof of approval — pending faculty
+  // (faculty_status='pending') and rejected faculty are excluded here.
+  const isApprovedFaculty = (p: Record<string, unknown>): boolean => {
+    const role = p.role
+    if (role === 'admin') return true
+    if (role === 'faculty' && p.faculty_status === 'verified') return true
+    return false
+  }
+
   const fetchFaculty = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
+      // Primary query: filter server-side by role + faculty_status.
+      // If the faculty_status column is missing (pre-migration DB), this
+      // fails and we fall back to a role-only query.
       const primaryRes = await supabase
         .from('profiles')
         .select(FACULTY_COLUMNS)
@@ -32,10 +50,12 @@ function FacultyDirectory() {
         .limit(200)
 
       if (primaryRes.error) {
-        const fallbackCols = 'id, name, branch, bio, avatar_url, email, expertise, created_at'
+        // Fallback: narrower column set without the migration-added
+        // faculty_status column. Show admins + any profile with role=faculty
+        // whose faculty_status is not 'pending'/'rejected' (best effort).
         const fallbackRes = await supabase
           .from('profiles')
-          .select(fallbackCols)
+          .select('id, name, branch, bio, avatar_url, role, faculty_status, created_at')
           .order('name', { ascending: true })
           .limit(500)
 
@@ -43,16 +63,15 @@ function FacultyDirectory() {
           throw fallbackRes.error
         }
 
-        const filtered = (fallbackRes.data ?? []).filter((p: Record<string, unknown>) => {
-          const role = p.role
-          const facultyStatus = p.faculty_status
-          if (role === 'admin') return true
-          if (role === 'faculty' && facultyStatus === 'verified') return true
-          return false
-        })
+        const rows = (fallbackRes.data ?? []) as Record<string, unknown>[]
+        const filtered = rows.filter(isApprovedFaculty)
         setFaculty(filtered as unknown as Profile[])
       } else {
-        setFaculty((primaryRes.data ?? []) as unknown as Profile[])
+        const rows = (primaryRes.data ?? []) as Record<string, unknown>[]
+        // Re-verify client-side: server-side filter is authoritative but
+        // we keep the client-side check for safety against schema drift.
+        const filtered = rows.filter(isApprovedFaculty)
+        setFaculty(filtered as unknown as Profile[])
       }
     } catch (err) {
       const e = err as { message?: string; code?: string; details?: string; hint?: string }
@@ -80,7 +99,7 @@ function FacultyDirectory() {
             <GraduationCap style={{ width: 32, height: 32, color: '#ffe066' }} />
             <h1 style={style_h1}>FACULTY DIRECTORY</h1>
           </div>
-          <p style={style_subtitle}>Meet the verified faculty members of the CSE department</p>
+          <p style={style_subtitle}>Meet the approved faculty members of the CSE department</p>
         </div>
 
         {/* Error State */}
@@ -114,8 +133,8 @@ function FacultyDirectory() {
         ) : faculty.length === 0 ? (
           <EmptyState
             icon={<GraduationCap style={{ width: 48, height: 48, color: '#ffe066' }} />}
-            title="No verified faculty yet"
-            body="Faculty members will appear here once they are verified by an administrator"
+            title="No approved faculty yet"
+            body="Faculty members will appear here once they have been approved by an administrator"
           />
         ) : (
           <div style={style_faculty_grid}>
@@ -136,22 +155,8 @@ function FacultyDirectory() {
                     <p style={style_faculty_bio}>{member.bio}</p>
                   )}
 
-                  {member.expertise && member.expertise.length > 0 && (
-                    <div style={style_faculty_expertise_wrapper}>
-                      <div style={style_faculty_expertise_label}>Expertise</div>
-                      <div style={style_faculty_expertise_tags}>
-                        {member.expertise.slice(0, 4).map(area => (
-                          <span key={area} style={style_expertise_tag}>{area}</span>
-                        ))}
-                        {member.expertise.length > 4 && (
-                          <span style={style_expertise_more}>+{member.expertise.length - 4}</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {member.email && (
-                    <div style={style_faculty_email}>{member.email}</div>
+                  {isVerifiedFaculty(member) && (
+                    <span style={style_verified_badge}>✓ Verified</span>
                   )}
                 </div>
               </div>
@@ -203,19 +208,9 @@ const style_faculty_bio: React.CSSProperties = {
   fontSize: '0.8rem', color: '#a8d4f0', lineHeight: 1.5, marginBottom: 12,
   maxHeight: 60, overflow: 'hidden',
 }
-const style_faculty_expertise_wrapper: React.CSSProperties = { marginBottom: 12, width: '100%' }
-const style_faculty_expertise_label: React.CSSProperties = {
-  fontSize: '0.7rem', color: '#6bafd4', marginBottom: 6, textAlign: 'left',
-  textTransform: 'uppercase', fontWeight: 700,
-}
-const style_faculty_expertise_tags: React.CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, justifyContent: 'center' }
-const style_expertise_tag: React.CSSProperties = {
-  fontSize: '0.7rem', color: '#ffe066', background: 'rgba(255,224,102,0.1)',
-  border: '1px solid rgba(255,224,102,0.3)', padding: '4px 8px', fontWeight: 600,
-}
-const style_expertise_more: React.CSSProperties = { fontSize: '0.7rem', color: '#6bafd4' }
-const style_faculty_email: React.CSSProperties = {
-  fontSize: '0.75rem', color: '#00aaff', wordBreak: 'break-all', marginTop: 'auto',
+const style_verified_badge: React.CSSProperties = {
+  fontSize: '0.7rem', color: '#00ffcc', background: 'rgba(0,255,204,0.1)',
+  border: '1px solid rgba(0,255,204,0.3)', padding: '4px 8px', fontWeight: 600,
 }
 
 export default function FacultyPage() {

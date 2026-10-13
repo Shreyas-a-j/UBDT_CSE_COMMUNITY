@@ -179,6 +179,7 @@ export interface FacultyApplication {
   reviewed_at: string | null
   notes: string | null
   created_at: string
+  updated_at: string | null
 }
 
 export type FeedFilter = 'all' | 'events' | 'discussions' | 'showcases' | 'announcements'

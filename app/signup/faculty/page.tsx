@@ -7,6 +7,8 @@ import AuthFormShell from '@/components/AuthFormShell'
 import { createClient } from '@/lib/supabase/client'
 import { validateFacultySignup } from '@/lib/validation'
 
+type SubmitPhase = 'idle' | 'creating-auth' | 'submitting-application' | 'done'
+
 export default function FacultySignUpPage() {
   const supabase = createClient()
 
@@ -21,11 +23,12 @@ export default function FacultySignUpPage() {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
-  const [submitted, setSubmitted] = useState(false)
+  const [phase, setPhase] = useState<SubmitPhase>('idle')
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
+    setPhase('creating-auth')
 
     const validationError = validateFacultySignup({
       name,
@@ -37,13 +40,17 @@ export default function FacultySignUpPage() {
     })
     if (validationError) {
       setError(validationError)
+      setPhase('idle')
       return
     }
 
     setLoading(true)
+
     try {
-      // Step 1: Create auth account (role will be 'student' until admin approves)
-      const { data, error: signUpError } = await supabase.auth.signUp({
+      // Step 1: Create (or sign in to) the auth account.
+      // signUp is idempotent for new accounts; for existing accounts it returns
+      // an error we can surface as a sign-in hint.
+      const { data: authData, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
         options: {
@@ -62,47 +69,81 @@ export default function FacultySignUpPage() {
           signUpError.message.includes('already registered') ||
           signUpError.message.includes('User already registered')
         ) {
-          setError('This email is already registered. Please sign in instead.')
+          setError('This email is already registered. Please sign in and resubmit your faculty application from your profile.')
           return
         }
         throw signUpError
       }
 
-      const userId = data.user?.id
+      const userId = authData.user?.id
       if (!userId) {
-        // Email confirmation required — still submit the application row if possible
-        // We can't insert faculty_applications without the user id; show pending message
-        setSubmitted(true)
+        // Email confirmation is required before the profile row (and thus the
+        // application FK) can be created. Show a pending-state message rather
+        // than failing outright.
+        setPhase('done')
         return
       }
 
-      // Step 2: Insert faculty application row
-      const { error: appError } = await supabase.from('faculty_applications').insert({
-        user_id: userId,
-        full_name: name.trim(),
-        official_email: email.trim(),
-        department: department.trim(),
-        designation: designation.trim(),
-        employee_id: employeeId.trim() || null,
-        status: 'pending',
-      })
+      // Step 2: Insert the faculty application row.
+      setPhase('submitting-application')
+      const { error: appError } = await supabase
+        .from('faculty_applications')
+        .insert({
+          user_id: userId,
+          full_name: name.trim(),
+          official_email: email.trim(),
+          department: department.trim(),
+          designation: designation.trim(),
+          employee_id: employeeId.trim() || null,
+          status: 'pending',
+        })
 
       if (appError) {
-        // Application insert failed — account was created but application not recorded.
-        // Non-fatal: user can contact admin. Don't block the success state.
-        console.error('Faculty application insert failed:', appError.message)
+        // Structured error logging (no service-role key used).
+        console.error('[FacultyApp] insert failed:', {
+          code: appError.code,
+          details: appError.details,
+          hint: appError.hint,
+          message: appError.message,
+          userId,
+        })
+
+        // Map common Supabase error codes to human-readable messages.
+        if (appError.code === '23505') {
+          // PostgreSQL unique-violation — a pending application already exists.
+          setError(
+            'You already have a pending faculty application. Please wait for review or sign in to check its status.'
+          )
+          return
+        }
+        if (appError.code === '23503') {
+          // Foreign-key violation — profile row is missing (race condition
+          // with the auth trigger). Surface a retry hint.
+          setError(
+            'Account created but the application could not be saved (profile not yet ready). Please sign in and try submitting again in a moment.'
+          )
+          return
+        }
+
+        // Generic fallback.
+        setError(
+          'Your account was created, but saving your application failed. Please sign in and try submitting again, or contact support.'
+        )
+        return
       }
 
-      setSubmitted(true)
+      // SUCCESS: Both auth account and application row are persisted.
+      setPhase('done')
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Sign up failed. Please try again.'
       setError(msg)
+      setPhase('idle')
     } finally {
       setLoading(false)
     }
   }
 
-  if (submitted) {
+  if (phase === 'done') {
     return (
       <AuthFormShell title="APPLICATION SUBMITTED" subtitle="Faculty access request received">
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20, alignItems: 'center', textAlign: 'center' }}>
@@ -317,7 +358,9 @@ export default function FacultySignUpPage() {
             {loading ? (
               <>
                 <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
-                <span>SUBMITTING...</span>
+                <span>
+                  {phase === 'submitting-application' ? 'SAVING APPLICATION...' : 'SUBMITTING...'}
+                </span>
               </>
             ) : (
               <>
