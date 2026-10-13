@@ -1,7 +1,7 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
-import { Shield, Users, CheckCircle, XCircle, Clock, Loader2, AlertCircle } from 'lucide-react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Shield, CheckCircle, XCircle, Clock, Loader2, AlertCircle } from 'lucide-react'
 import { FacultyApplication, Profile } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
@@ -23,18 +23,8 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [processingId, setProcessingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (currentUser) {
-      if (!isAdmin(currentUser)) {
-        toast.error('Access denied: Admin privileges required')
-        router.push('/')
-        return
-      }
-      fetchApplications()
-    }
-  }, [currentUser])
-
-  const fetchApplications = async () => {
+  const fetchApplications = useCallback(async () => {
+    if (!currentUser) return
     setLoading(true)
 
     const { data, error } = await supabase
@@ -64,7 +54,18 @@ function AdminDashboard() {
     }
 
     setLoading(false)
-  }
+  }, [currentUser, supabase])
+
+  useEffect(() => {
+    if (currentUser) {
+      if (!isAdmin(currentUser)) {
+        toast.error('Access denied: Admin privileges required')
+        router.push('/')
+        return
+      }
+      queueMicrotask(() => fetchApplications())
+    }
+  }, [currentUser, fetchApplications, router])
 
   const handleApprove = async (applicationId: string) => {
     setProcessingId(applicationId)

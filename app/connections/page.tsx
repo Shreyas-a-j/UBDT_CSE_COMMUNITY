@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useState } from 'react'
 import Link from 'next/link'
 import { Users, UserCheck, UserPlus, Clock, X, Check, Loader2 } from 'lucide-react'
 import { ConnectionRequest, Profile } from '@/lib/types'
@@ -24,10 +24,6 @@ function ConnectionsManager() {
   const [receivedRequests, setReceivedRequests] = useState<ConnectionRequest[]>([])
   const [sentRequests, setSentRequests] = useState<ConnectionRequest[]>([])
   const [loading, setLoading] = useState(true)
-
-  useEffect(() => {
-    if (currentUser) fetchData()
-  }, [currentUser])
 
   const fetchData = async () => {
     if (!currentUser) return
@@ -124,20 +120,6 @@ function ConnectionsManager() {
     }
   }
 
-  const handleRemoveConnection = async (connectionId: string) => {
-    if (!confirm('Remove this connection?')) return
-    const { error } = await supabase
-      .from('connection_requests')
-      .update({ status: 'cancelled' })
-      .eq('id', connectionId)
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Connection removed')
-      fetchData()
-    }
-  }
-
   return (
     <AppShell>
       <div style={{ maxWidth: 1000, margin: '0 auto', padding: 20 }}>
@@ -179,9 +161,13 @@ function ConnectionsManager() {
                 padding: '12px 20px',
                 background: activeTab === tab.key ? '#00aaff' : 'transparent',
                 color: activeTab === tab.key ? '#060a14' : '#a8d4f0',
-                border: '2px solid',
-                borderColor: activeTab === tab.key ? '#0088cc' : '#1e3560',
-                borderBottom: 'none',
+                borderTop: '2px solid',
+                borderTopColor: activeTab === tab.key ? '#0088cc' : '#1e3560',
+                borderRight: '2px solid',
+                borderRightColor: activeTab === tab.key ? '#0088cc' : '#1e3560',
+                borderLeft: '2px solid',
+                borderLeftColor: activeTab === tab.key ? '#0088cc' : '#1e3560',
+                borderBottom: '2px solid transparent',
                 fontSize: '0.875rem',
                 fontWeight: 700,
                 cursor: 'pointer',
@@ -383,7 +369,10 @@ function ConnectionsManager() {
                                 padding: '8px 14px',
                                 background: 'transparent',
                                 color: '#ff6688',
-                                border: '2px solid #ff6688',
+                                borderTop: '2px solid #ff6688',
+                                borderRight: '2px solid #ff6688',
+                                borderLeft: '2px solid #ff6688',
+                                borderBottom: '2px solid transparent',
                                 fontSize: '0.8rem',
                                 fontWeight: 700,
                                 cursor: 'pointer',
@@ -471,7 +460,10 @@ function ConnectionsManager() {
                               padding: '8px 14px',
                               background: 'transparent',
                               color: '#6bafd4',
-                              border: '2px solid #1e3560',
+                              borderTop: '2px solid #1e3560',
+                              borderRight: '2px solid #1e3560',
+                              borderLeft: '2px solid #1e3560',
+                              borderBottom: '2px solid transparent',
                               fontSize: '0.8rem',
                               fontWeight: 700,
                               cursor: 'pointer',

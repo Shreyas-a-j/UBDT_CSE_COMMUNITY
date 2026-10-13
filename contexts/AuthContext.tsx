@@ -66,12 +66,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       interests: fallback.interests,
       role: 'student',
       faculty_status: fallback.faculty_status,
+      designation: null,
+      employee_id: null,
+      expertise: [],
     })
     if (insertError && !insertError.message.toLowerCase().includes('duplicate')) {
-      setError(insertError.message)
+      console.error('Profile insert error:', insertError)
+      // Don't set hard error — the profile may already exist or columns
+      // may be catching up in schema cache. Still try to select.
     }
     const { data: created } = await supabase.from('profiles').select('*').eq('id', authUser.id).maybeSingle()
     setProfile(normalizeProfile(created as Record<string, unknown> | null) ?? fallback)
+    // If profile was just created, propagate it to listeners
+    if (created && !created.role) {
+      // Profile exists but may be from an older schema. Trigger a
+      // refetch after a short delay to pick up refreshed schema cache.
+      setTimeout(() => {
+        if (authUser) fetchProfile(authUser)
+      }, 500)
+    }
   }, [supabase])
 
   const refreshProfile = useCallback(async () => {

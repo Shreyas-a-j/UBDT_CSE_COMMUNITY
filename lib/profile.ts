@@ -69,8 +69,8 @@ export function profileWritableFields(updated: Partial<Profile>) {
     interests: updated.interests,
     section: updated.section,
     year: updated.year,
-    designation: updated.designation,
-    expertise: updated.expertise,
+    // 'designation' is only settable by admins (via faculty application approval)
+    // 'usn' is immutable after registration — protected by protect_profile_privileges trigger
     updated_at: new Date().toISOString(),
   }
 }

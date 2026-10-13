@@ -57,7 +57,27 @@ function SignUpForm() {
     setLoading(true)
     try {
       const skillsList = parseTagList(skills)
+      const formattedUsn = usn.toUpperCase().trim()
 
+      // Double-check USN availability before submitting.
+      // The database unique constraint is the authoritative check;
+      // this provides early user feedback.
+      const { data: existing, error: usnCheckError } = await supabase
+        .from('profiles')
+        .select('id, role')
+        .eq('usn', formattedUsn)
+        .maybeSingle()
+
+      if (usnCheckError) {
+        // Column might not exist yet — log but proceed; DB constraint is authoritative
+        console.error('USN check failed (relying on DB constraint):', usnCheckError)
+      } else if (existing) {
+        setError('This USN is already registered. Please sign in or contact the administrator.')
+        setLoading(false)
+        return
+      }
+
+      // Step 1: Create auth account
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,
@@ -80,6 +100,16 @@ function SignUpForm() {
           signUpError.message.includes('User already registered')
         ) {
           setError('This email is already registered. Please sign in instead.')
+          return
+        }
+        // Check for USN uniqueness constraint violation (PG error code 23505)
+        if (
+          signUpError.message.includes('duplicate key') ||
+          signUpError.message.includes('usn') ||
+          signUpError.message.includes('profiles_student_usn_unique') ||
+          signUpError.message.includes('profiles_usn_key')
+        ) {
+          setError('This USN is already registered. Please sign in or contact the administrator.')
           return
         }
         throw signUpError

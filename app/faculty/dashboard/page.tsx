@@ -1,8 +1,8 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Megaphone, Calendar, Users, Plus, Loader2 } from 'lucide-react'
+import { LayoutDashboard, Megaphone, Calendar, Loader2 } from 'lucide-react'
 import { Event, Announcement } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
@@ -22,18 +22,7 @@ function FacultyDashboard() {
   const [myAnnouncements, setMyAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
 
-  useEffect(() => {
-    if (currentUser) {
-      if (!canPublishFacultyContent(currentUser)) {
-        toast.error('Access denied: Faculty verification required')
-        router.push('/faculty')
-        return
-      }
-      fetchMyContent()
-    }
-  }, [currentUser])
-
-  const fetchMyContent = async () => {
+  const fetchMyContent = useCallback(async () => {
     if (!currentUser) return
     setLoading(true)
 
@@ -56,7 +45,18 @@ function FacultyDashboard() {
     if (announcementsData) setMyAnnouncements(announcementsData as Announcement[])
 
     setLoading(false)
-  }
+  }, [currentUser, supabase])
+
+  useEffect(() => {
+    if (currentUser) {
+      if (!canPublishFacultyContent(currentUser)) {
+        toast.error('Access denied: Faculty verification required')
+        router.push('/faculty')
+        return
+      }
+      queueMicrotask(() => fetchMyContent())
+    }
+  }, [currentUser, fetchMyContent, router])
 
   const handleDeleteAnnouncement = async (id: string) => {
     if (!confirm('Delete this announcement?')) return

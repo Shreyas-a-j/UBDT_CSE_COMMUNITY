@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, use, useEffect, useState, useRef } from 'react'
+import { Suspense, useCallback, use, useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { ArrowLeft, Send, Loader2, AlertCircle } from 'lucide-react'
 import { Message, Profile } from '@/lib/types'
@@ -26,47 +26,11 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
   const [sending, setSending] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
-  useEffect(() => {
-    if (currentUser) {
-      fetchConversation()
-      markAsRead()
-    }
-  }, [conversationId, currentUser])
-
-  useEffect(() => {
-    if (!currentUser) return
-    const channel = supabase
-      .channel(`conversation:${conversationId}`)
-      .on(
-        'postgres_changes',
-        {
-          event: 'INSERT',
-          schema: 'public',
-          table: 'messages',
-          filter: `conversation_id=eq.${conversationId}`,
-        },
-        payload => {
-          const newMessage = payload.new as Message
-          setMessages(prev => [...prev, newMessage])
-          scrollToBottom()
-          markAsRead()
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [conversationId, currentUser])
-
-  useEffect(() => {
-    scrollToBottom()
-  }, [messages])
-
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }
 
-  const fetchConversation = async () => {
+  const fetchConversation = useCallback(async () => {
     if (!currentUser) return
     setLoading(true)
 
@@ -125,7 +89,7 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
     }
 
     setLoading(false)
-  }
+  }, [conversationId, currentUser, supabase])
 
   const markAsRead = async () => {
     if (!currentUser) return
@@ -135,6 +99,42 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
       .eq('conversation_id', conversationId)
       .eq('user_id', currentUser.id)
   }
+
+  useEffect(() => {
+    if (currentUser) {
+      queueMicrotask(() => fetchConversation())
+      markAsRead()
+    }
+  }, [conversationId, currentUser, fetchConversation])
+
+  useEffect(() => {
+    if (!currentUser) return
+    const channel = supabase
+      .channel(`conversation:${conversationId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `conversation_id=eq.${conversationId}`,
+        },
+        payload => {
+          const newMessage = payload.new as Message
+          setMessages(prev => [...prev, newMessage])
+          scrollToBottom()
+          markAsRead()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [conversationId, currentUser])
+
+  useEffect(() => {
+    scrollToBottom()
+  }, [messages])
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault()
