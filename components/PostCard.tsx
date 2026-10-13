@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import {
   Heart, ArrowBigUp, MessageSquare, Share2, ExternalLink, GitBranch,
   Sparkles, Send, Check, Edit2, Trash2, Save, X, Link as LinkIcon,
@@ -9,14 +10,16 @@ import {
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatDate, formatRelativeTime, getAvatarFallback, getYearLabel } from '@/lib/utils'
+import { firstName } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 
 interface PostCardProps { post: Post }
 
 export default function PostCard({ post }: PostCardProps) {
+  const router = useRouter()
   const {
     currentUser, likedPostIds, upvotedPostIds, toggleLikePost, toggleUpvotePost,
-    comments, addComment, updatePost, deletePost, setSelectedProfileForView, setIsProfileModalOpen,
+    comments, addComment, updatePost, deletePost,
   } = useCommunity()
 
   const [showComments, setShowComments] = useState(false)
@@ -45,8 +48,7 @@ export default function PostCard({ post }: PostCardProps) {
   }, [post])
 
   const handleAuthorClick = () => {
-    setSelectedProfileForView({ id: post.author_id, usn: post.author_usn || '', name: post.author_name || 'Author', year: post.author_year || 1, branch: 'CSE', bio: null, avatar_url: post.author_avatar || null, skills: [], created_at: post.created_at })
-    setIsProfileModalOpen(true)
+    router.push(`/people/${post.author_id}`)
   }
   const handleCommentSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!commentInput.trim()) return; addComment(post.id, commentInput.trim()); setCommentInput(''); setShowComments(true) }
   const handleShare = () => { navigator.clipboard?.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2000) }
@@ -276,7 +278,7 @@ export default function PostCard({ post }: PostCardProps) {
               type="text"
               placeholder={
                 currentUser
-                  ? `Reply as ${(currentUser.name || 'Student').split(' ')[0]}...`
+                  ? `Reply as ${firstName(currentUser.name)}...`
                   : 'Sign in to reply...'
               }
               value={commentInput}

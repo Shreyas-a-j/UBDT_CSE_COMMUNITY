@@ -25,7 +25,7 @@ export default function ProfileModal() {
   const isEditingSelf = Boolean(profile && currentUser && profile.id === currentUser.id)
 
   const [isEditMode, setIsEditMode] = useState(false)
-  const [name, setName] = useState(profile?.name || '')
+  const [name, setName] = useState(profile?.name || 'Member')
   const [bio, setBio] = useState(profile?.bio || '')
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '')
   const [avatarThumbhash, setAvatarThumbhash] = useState(profile?.thumbhash || '')
@@ -36,7 +36,7 @@ export default function ProfileModal() {
 
   useEffect(() => {
     if (profile) {
-      setName(profile.name)
+      setName(profile.name || 'Member')
       setBio(profile.bio || '')
       setAvatarUrl(profile.avatar_url || '')
       setAvatarThumbhash(profile.thumbhash || '')
@@ -77,7 +77,7 @@ export default function ProfileModal() {
       // 3. Try to update Supabase user_profiles table (safely catch if offline or RLS blocks)
       try {
         await supabase
-          .from('user_profiles')
+          .from('profiles')
           .update({
             avatar_url: publicUrl,
             thumbhash: thumbHash,
@@ -90,7 +90,7 @@ export default function ProfileModal() {
 
       setAvatarUrl(publicUrl)
       setAvatarThumbhash(thumbHash)
-      await updateProfile({ avatar_url: publicUrl })
+      await updateProfile({ avatar_url: publicUrl, thumbhash: thumbHash })
       setUploadMessage('Avatar updated successfully!')
       setTimeout(() => setUploadMessage(null), 3000)
     } catch (e) {
@@ -335,8 +335,9 @@ export default function ProfileModal() {
           ) : (
             <div className="space-y-4">
               <div>
-                <h3 className="text-base font-extrabold text-white leading-snug">{name}</h3>
+                <h3 className="text-base font-extrabold text-white leading-snug">{name || 'Member'}</h3>
                 <div className="flex flex-wrap items-center gap-2 mt-1.5">
+                  {profile.usn && (
                   <span
                     className="font-sans text-xs font-bold px-2 py-0.5"
                     style={{
@@ -348,6 +349,7 @@ export default function ProfileModal() {
                   >
                     {profile.usn}
                   </span>
+                  )}
                   <span
                     className="text-xs font-bold px-2 py-0.5"
                     style={{

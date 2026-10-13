@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Image from 'next/image'
+import { useRouter } from 'next/navigation'
 import { Calendar, Clock, Video, Users, CheckCircle2, ExternalLink, Edit2, Save, X } from 'lucide-react'
 import { Event } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
@@ -11,7 +12,8 @@ import UserAvatar from '@/components/UserAvatar'
 interface EventCardProps { event: Event; compact?: boolean }
 
 export default function EventCard({ event, compact = false }: EventCardProps) {
-  const { rsvpedEventIds, toggleRsvpEvent, setSelectedProfileForView, setIsProfileModalOpen, currentUser, updateEvent } = useCommunity()
+  const router = useRouter()
+  const { rsvpedEventIds, toggleRsvpEvent, currentUser, updateEvent } = useCommunity()
   const isRsvped = rsvpedEventIds.has(event.id)
   const isHost = currentUser?.id === event.host_id
   const [countdown, setCountdown] = useState('')
@@ -40,11 +42,16 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
     else { setETargetYears([...eTargetYears, yr].sort()) }
   }
   const handleHostClick = () => {
-    setSelectedProfileForView({ id: event.host_id, usn: event.host_usn || '', name: event.host_name || 'Host', year: 1, branch: 'CSE', bio: null, avatar_url: event.host_avatar || null, skills: [], created_at: event.created_at })
-    setIsProfileModalOpen(true)
+    router.push(`/people/${event.host_id}`)
   }
 
-  const typeBadge = { Workshop: { bg: 'rgba(170,102,255,0.15)', color: '#cc99ff', border: 'rgba(170,102,255,0.4)', shadow: '#440066' }, Meeting: { bg: 'rgba(0,255,204,0.12)', color: '#00ffcc', border: 'rgba(0,255,204,0.4)', shadow: '#006655' }, Showcase: { bg: 'rgba(255,224,102,0.12)', color: '#ffe066', border: 'rgba(255,224,102,0.4)', shadow: '#665500' } }[event.type] || { bg: 'rgba(0,170,255,0.15)', color: '#00aaff', border: 'rgba(0,170,255,0.4)', shadow: '#003366' }
+  const typeBadge = ({
+    Workshop: { bg: 'rgba(170,102,255,0.15)', color: '#cc99ff', border: 'rgba(170,102,255,0.4)', shadow: '#440066' },
+    Meeting: { bg: 'rgba(0,255,204,0.12)', color: '#00ffcc', border: 'rgba(0,255,204,0.4)', shadow: '#006655' },
+    Showcase: { bg: 'rgba(255,224,102,0.12)', color: '#ffe066', border: 'rgba(255,224,102,0.4)', shadow: '#665500' },
+    Seminar: { bg: 'rgba(0,170,255,0.15)', color: '#44ccff', border: 'rgba(0,170,255,0.4)', shadow: '#003366' },
+    'Project Session': { bg: 'rgba(0,238,255,0.12)', color: '#00eeff', border: 'rgba(0,238,255,0.4)', shadow: '#003344' },
+  } as Record<string, { bg: string; color: string; border: string; shadow: string }>)[event.type] ?? { bg: 'rgba(0,170,255,0.15)', color: '#00aaff', border: 'rgba(0,170,255,0.4)', shadow: '#003366' }
 
   // Edit Mode
   if (isEditing) {

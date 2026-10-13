@@ -3,12 +3,11 @@
 import React, { useState } from 'react'
 import { X, GraduationCap, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, Mail } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { validateUSN, getYearFromUSN, getYearLabel } from '@/lib/utils'
+import { validateUSN, getYearFromUSN } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
-import type { Profile } from '@/lib/types'
 
 export default function AuthModal() {
-  const { isAuthModalOpen, setIsAuthModalOpen, setCurrentUser } = useCommunity()
+  const { isAuthModalOpen, setIsAuthModalOpen } = useCommunity()
   const supabase = createClient()
 
   const [isSignUp, setIsSignUp] = useState(true)
@@ -48,7 +47,7 @@ export default function AuthModal() {
     setError('')
 
     const formattedUsn = usn.toUpperCase().trim()
-    if (!validateUSN(formattedUsn)) {
+    if (isSignUp && !validateUSN(formattedUsn)) {
       setError('Invalid USN. Expected format: 4UB24CS045')
       return
     }
@@ -83,11 +82,11 @@ export default function AuthModal() {
 
     try {
       if (isSignUp) {
-        const { data, error: signUpError } = await supabase.auth.signUp({
+        const { error: signUpError } = await supabase.auth.signUp({
           email: authEmail,
           password,
           options: {
-            data: { name: name.trim(), usn: formattedUsn, year },
+            data: { name: name.trim(), usn: formattedUsn, year, department: 'CSE' },
           },
         })
 
@@ -102,27 +101,10 @@ export default function AuthModal() {
 
         // If email confirmation is disabled, data.user is available immediately.
         // Auto sign-in so the user doesn't need to verify email first.
-        const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        const { data: _signInData, error: signInErr } = await supabase.auth.signInWithPassword({
           email: authEmail,
           password,
         })
-
-        const resolvedUser = signInData?.user || data.user
-        const userId = resolvedUser?.id || `user-${Date.now()}`
-
-        const newProfile: Profile = {
-          id: userId,
-          usn: formattedUsn,
-          name: name.trim(),
-          year: year || 1,
-          branch: 'CSE',
-          bio: `${getYearLabel(year || 1)} student at UCC.`,
-          avatar_url: null,
-          skills: [],
-          created_at: new Date().toISOString(),
-        }
-        // Store email separately in Supabase (not in Profile type)
-        try { await supabase.from('user_profiles').upsert({ ...newProfile, email: authEmail }) } catch {}
 
         if (signInErr) {
           // Email confirmation may be required — tell user to check email
@@ -132,7 +114,6 @@ export default function AuthModal() {
           setIsSignUp(false)
           return
         }
-        setCurrentUser(newProfile)
       } else {
         const { data, error: signInError } = await supabase.auth.signInWithPassword({
           email: authEmail,
@@ -149,24 +130,6 @@ export default function AuthModal() {
           }
           setLoading(false)
           return
-        }
-        const { data: profileData } = await supabase
-          .from('user_profiles').select('*').eq('id', data.user.id).single()
-        if (profileData) {
-          // Normalize skills: DB may return null for empty array
-          setCurrentUser({ ...profileData, skills: profileData.skills ?? [] })
-        } else {
-          setCurrentUser({
-            id: data.user.id,
-            usn: formattedUsn,
-            name: data.user.user_metadata?.name || 'Student',
-            year: data.user.user_metadata?.year || year,
-            branch: 'CSE',
-            bio: null,
-            avatar_url: null,
-            skills: [],
-            created_at: new Date().toISOString(),
-          })
         }
       }
 
@@ -246,7 +209,7 @@ export default function AuthModal() {
             </div>
           )}
 
-          {/* USN */}
+          {isSignUp && (
           <div>
             <label className="label">USN (University Seat Number)</label>
             <input
@@ -262,6 +225,7 @@ export default function AuthModal() {
               Format: 4UB[YY]CS[Roll] — academic year is auto-detected
             </p>
           </div>
+          )}
 
           {/* Email — always shown */}
           <div>
@@ -367,6 +331,14 @@ export default function AuthModal() {
             </button>
           </div>
 
+          {!isSignUp && (
+            <p style={{ textAlign: 'center', fontSize: '0.75rem' }}>
+              <a href="/forgot-password" style={{ color: '#00aaff', fontWeight: 600 }}>Forgot password?</a>
+            </p>
+          )}
+          <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4' }}>
+            Faculty? <a href="/signup/faculty" style={{ color: '#ffe066' }}>Request faculty access</a>
+          </p>
           <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', paddingTop: 4 }}>
             {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
             <button

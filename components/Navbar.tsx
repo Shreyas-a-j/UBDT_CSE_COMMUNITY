@@ -3,13 +3,16 @@
 import React, { useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import {
   Bell, Search, Plus, Calendar, MessageSquarePlus, User, LogOut, ChevronDown,
   Sparkles, ExternalLink, GraduationCap, LogIn, Moon, Sun, MessageSquare,
+  Users, Network, Inbox, Shield, Menu, X as XIcon,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { useTheme } from '@/contexts/ThemeContext'
-import { getAvatarFallback, getYearLabel } from '@/lib/utils'
+import { getYearLabel } from '@/lib/utils'
+import { displayName, firstName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 
 export default function Navbar() {
@@ -21,11 +24,21 @@ export default function Navbar() {
   } = useCommunity()
 
   const { theme, toggleTheme } = useTheme()
+  const pathname = usePathname()
   const [showNotifs, setShowNotifs] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCreateMenu, setShowCreateMenu] = useState(false)
+  const [showMobileMenu, setShowMobileMenu] = useState(false)
 
   const unreadNotifs = notifications.filter(n => !n.read)
+
+  /** Returns inline style for a nav link based on whether it matches the current pathname */
+  const navLinkStyle = (href: string): React.CSSProperties => {
+    const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href)
+    return isActive
+      ? { borderBottom: '2px solid #00ffcc', color: '#00ffcc' }
+      : {}
+  }
 
   return (
     <header className="sticky top-0 z-40 w-full" style={{ borderBottom: '2px solid #1e3560', background: '#060a14', boxShadow: '0 4px 0px #000, 0 0 20px rgba(0,170,255,0.08)' }}>
@@ -68,33 +81,13 @@ export default function Navbar() {
               </div>
             </Link>
 
-            {/* Quick Nav Pills */}
-            <nav className="hidden md:flex items-center gap-1.5 ml-4" style={{ borderLeft: '2px solid #1e3560', paddingLeft: 16 }}>
-              {[
-                { id: 'all', label: 'FEED', icon: null },
-                { id: 'events', label: 'EVENTS', icon: <Calendar style={{ width: 13, height: 13, color: '#00ffcc' }} /> },
-                { id: 'discussions', label: 'DISCUSS', icon: <MessageSquare style={{ width: 13, height: 13, color: '#00aaff' }} /> },
-                { id: 'showcases', label: 'SHOWCASE', icon: <Sparkles style={{ width: 13, height: 13, color: '#ffe066' }} /> },
-              ].map(item => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setFeedFilter(item.id as any)}
-                  style={{
-                    fontSize: '0.75rem', fontWeight: 700,
-                    padding: '6px 12px', border: '2px solid', cursor: 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 5, transition: 'all 0.05s steps(1)',
-                    background: feedFilter === item.id ? '#00aaff' : 'transparent',
-                    color: feedFilter === item.id ? '#060a14' : '#a8d4f0',
-                    borderColor: feedFilter === item.id ? '#0088cc' : 'transparent',
-                    boxShadow: feedFilter === item.id ? '3px 3px 0px #003366' : 'none',
-                    transform: feedFilter === item.id ? 'translate(-1px,-1px)' : 'none',
-                    letterSpacing: '0.03em',
-                  }}
-                >
-                  {item.icon}{item.label}
-                </button>
-              ))}
+            <nav className="hidden lg:flex items-center gap-1.5 ml-4" style={{ borderLeft: '2px solid #1e3560', paddingLeft: 16 }}>
+              <Link href="/" className="nav-link" style={navLinkStyle('/')} onClick={() => { setFeedFilter('all'); setSearchQuery('') }} aria-current={pathname === '/' ? 'page' : undefined}>FEED</Link>
+              <Link href="/people" className="nav-link" style={navLinkStyle('/people')} aria-current={pathname.startsWith('/people') ? 'page' : undefined}><Users style={{ width: 13, height: 13 }} /> PEOPLE</Link>
+              <Link href="/connections" className="nav-link" style={navLinkStyle('/connections')} aria-current={pathname.startsWith('/connections') ? 'page' : undefined}><Network style={{ width: 13, height: 13 }} /> NETWORK</Link>
+              <Link href="/messages" className="nav-link" style={navLinkStyle('/messages')} aria-current={pathname.startsWith('/messages') ? 'page' : undefined}><Inbox style={{ width: 13, height: 13 }} /> MESSAGES</Link>
+              <Link href="/faculty" className="nav-link" style={navLinkStyle('/faculty')} aria-current={pathname.startsWith('/faculty') ? 'page' : undefined}><GraduationCap style={{ width: 13, height: 13 }} /> FACULTY</Link>
+              {isAdmin(currentUser) && <Link href="/admin" className="nav-link" style={navLinkStyle('/admin')} aria-current={pathname.startsWith('/admin') ? 'page' : undefined}><Shield style={{ width: 13, height: 13 }} /> ADMIN</Link>}
             </nav>
           </div>
 
@@ -117,6 +110,18 @@ export default function Navbar() {
 
           {/* Action Controls */}
           <div className="flex items-center gap-2">
+            {/* Mobile hamburger — visible below lg */}
+            <button
+              type="button"
+              className="lg:hidden"
+              onClick={() => setShowMobileMenu(!showMobileMenu)}
+              style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
+              aria-label="Toggle navigation menu"
+              aria-expanded={showMobileMenu}
+            >
+              {showMobileMenu ? <XIcon style={{ width: 16, height: 16 }} /> : <Menu style={{ width: 16, height: 16 }} />}
+            </button>
+
             {/* Create Dropdown */}
             <div className="relative">
               <button
@@ -197,7 +202,10 @@ export default function Navbar() {
                         notifications.map(n => (
                           <div
                             key={n.id}
-                            onClick={() => markNotificationAsRead(n.id)}
+                            onClick={() => {
+                              markNotificationAsRead(n.id)
+                              if (n.link) window.location.href = n.link
+                            }}
                             style={{ padding: '10px 14px', borderBottom: '1px solid #1e3560', cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(0,170,255,0.06)' }}
                           >
                             <div style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -222,10 +230,10 @@ export default function Navbar() {
                   onClick={() => { setShowUserMenu(!showUserMenu); setShowCreateMenu(false); setShowNotifs(false) }}
                   style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer' }}
                 >
-                  <UserAvatar src={currentUser.avatar_url} name={currentUser.name} size={32} borderColor="#00aaff" />
-                  <div className="hidden lg:flex flex-col" style={{ textAlign: 'left' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.2 }}>{currentUser.name.split(' ')[0]}</span>
-                    <span style={{ fontSize: '0.65rem', color: '#00ffcc' }}>{currentUser.usn}</span>
+                  <UserAvatar src={currentUser.avatar_url} name={displayName(currentUser)} size={32} borderColor="#00aaff" />
+                  <div className="hidden xl:flex flex-col" style={{ textAlign: 'left' }}>
+                    <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.2 }}>{firstName(currentUser.name)}</span>
+                    <span style={{ fontSize: '0.65rem', color: '#00ffcc' }}>{currentUser.usn || currentUser.role}</span>
                   </div>
                   <ChevronDown style={{ width: 12, height: 12, color: '#6bafd4' }} />
                 </button>
@@ -233,18 +241,29 @@ export default function Navbar() {
                 {showUserMenu && (
                   <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 240, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
                     <div style={{ padding: '12px 14px', borderBottom: '2px solid #1e3560' }}>
-                      <p style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>{currentUser.name}</p>
-                      <p style={{ fontSize: '0.7rem', color: '#00ffcc', marginTop: 2 }}>{currentUser.usn}</p>
-                      <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 2 }}>{getYearLabel(currentUser.year)} • CSE</p>
+                      <p style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>{displayName(currentUser)}</p>
+                      <p style={{ fontSize: '0.7rem', color: '#00ffcc', marginTop: 2 }}>{currentUser.usn || currentUser.email || currentUser.role}</p>
+                      <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 2 }}>{getYearLabel(currentUser.year)} • {currentUser.branch || 'CSE'}</p>
+                      {isVerifiedFaculty(currentUser) && <p style={{ fontSize: '0.7rem', color: '#ffe066', marginTop: 4 }}>VERIFIED FACULTY</p>}
                     </div>
                     <div style={{ padding: 4 }}>
+                      <Link href={`/people/${currentUser.id}`} onClick={() => setShowUserMenu(false)}
+                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+                      >
+                        <User style={{ width: 13, height: 13 }} /> VIEW PROFILE
+                      </Link>
                       <button type="button" onClick={() => { setSelectedProfileForView(currentUser); setIsProfileModalOpen(true); setShowUserMenu(false) }}
                         style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
                         onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
                       >
-                        <User style={{ width: 13, height: 13 }} /> VIEW &amp; EDIT PROFILE
+                        <User style={{ width: 13, height: 13 }} /> EDIT PROFILE
                       </button>
+                      <Link href="/messages" onClick={() => setShowUserMenu(false)} className="lg:hidden" style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#a8d4f0', textDecoration: 'none' }}>MESSAGES</Link>
+                      <Link href="/people" onClick={() => setShowUserMenu(false)} className="lg:hidden" style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#a8d4f0', textDecoration: 'none' }}>PEOPLE</Link>
+                      {isVerifiedFaculty(currentUser) && (
+                        <Link href="/faculty/dashboard" onClick={() => setShowUserMenu(false)} style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#ffe066', textDecoration: 'none' }}>FACULTY DASHBOARD</Link>
+                      )}
                       <button type="button" onClick={() => { signOut(); setShowUserMenu(false) }}
                         style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#ff4466', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderTop: '2px solid #1e3560' }}
                         onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,68,102,0.1)' }}
@@ -257,18 +276,75 @@ export default function Navbar() {
                 )}
               </div>
             ) : (
-              <button
-                type="button"
-                onClick={() => setIsAuthModalOpen(true)}
-                style={{ background: '#00ffcc', color: '#060a14', border: '2px solid #00ccaa', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase', letterSpacing: '0.03em' }}
+              <Link
+                href="/signin"
+                style={{ background: '#00ffcc', color: '#060a14', border: '2px solid #00ccaa', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase', letterSpacing: '0.03em', textDecoration: 'none' }}
               >
                 <LogIn style={{ width: 14, height: 14 }} />
                 SIGN IN
-              </button>
+              </Link>
             )}
           </div>
         </div>
       </div>
+
+      {/* Mobile navigation menu — visible below lg */}
+      {showMobileMenu && (
+        <div className="lg:hidden" style={{ background: '#0a0f20', borderTop: '2px solid #1e3560', borderBottom: '2px solid #1e3560' }}>
+          <nav style={{ display: 'flex', flexDirection: 'column' }}>
+            <Link href="/"
+              className="nav-link"
+              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname === '/' ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+              onClick={() => { setFeedFilter('all'); setSearchQuery(''); setShowMobileMenu(false) }}
+              aria-current={pathname === '/' ? 'page' : undefined}
+            >
+              FEED
+            </Link>
+            <Link href="/people"
+              className="nav-link"
+              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/people') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+              onClick={() => setShowMobileMenu(false)}
+              aria-current={pathname.startsWith('/people') ? 'page' : undefined}
+            >
+              <Users style={{ width: 14, height: 14 }} /> PEOPLE
+            </Link>
+            <Link href="/connections"
+              className="nav-link"
+              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/connections') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+              onClick={() => setShowMobileMenu(false)}
+              aria-current={pathname.startsWith('/connections') ? 'page' : undefined}
+            >
+              <Network style={{ width: 14, height: 14 }} /> NETWORK
+            </Link>
+            <Link href="/messages"
+              className="nav-link"
+              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/messages') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+              onClick={() => setShowMobileMenu(false)}
+              aria-current={pathname.startsWith('/messages') ? 'page' : undefined}
+            >
+              <Inbox style={{ width: 14, height: 14 }} /> MESSAGES
+            </Link>
+            <Link href="/faculty"
+              className="nav-link"
+              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/faculty') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+              onClick={() => setShowMobileMenu(false)}
+              aria-current={pathname.startsWith('/faculty') ? 'page' : undefined}
+            >
+              <GraduationCap style={{ width: 14, height: 14 }} /> FACULTY
+            </Link>
+            {isAdmin(currentUser) && (
+              <Link href="/admin"
+                className="nav-link"
+                style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/admin') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
+                onClick={() => setShowMobileMenu(false)}
+                aria-current={pathname.startsWith('/admin') ? 'page' : undefined}
+              >
+                <Shield style={{ width: 14, height: 14 }} /> ADMIN
+              </Link>
+            )}
+          </nav>
+        </div>
+      )}
     </header>
   )
 }
