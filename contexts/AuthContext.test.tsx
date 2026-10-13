@@ -68,11 +68,16 @@ function setupMockChain(
   const insertBuilder = { insert: insertSpy }
   const updateBuilder = { update: updateSpy }
 
+  let callCount = 0
   const fromMock = vi.fn(table => {
     if (table === 'profiles') {
-      // First call: select; subsequent calls: insert/update builders
-      if (selectBuilder.select.mock.calls.length === 0) return selectBuilder
-      return insertBuilder
+      // The hook calls from('profiles') three times per fetchProfile:
+      //   1. select existing  2. insert (if missing)  3. re-select
+      // Cycle through the builders so each call gets the right shape.
+      if (callCount === 0) { callCount++; return selectBuilder }
+      if (callCount === 1) { callCount++; return insertBuilder }
+      callCount++
+      return selectBuilder
     }
     return selectBuilder
   })
@@ -119,7 +124,7 @@ describe('fetchProfile — existing profile', () => {
     await waitFor(() => expect(fetched).not.toBeNull())
     expect(mockSupabase.from).toHaveBeenCalledWith('profiles')
     // Insert must NOT have been called — profile already exists
-    expect(mockSupabase.from('').insert).not.toHaveBeenCalled()
+    expect((mockSupabase as any)._insertSpy).not.toHaveBeenCalled()
     expect(fetched!.id).toBe('user-1')
     rerender()
   })
@@ -153,8 +158,8 @@ describe('fetchProfile — missing profile', () => {
     }, { wrapper: ({ children }) => <AuthProvider>{children}</AuthProvider> })
 
     await waitForNextUpdate()
-    expect(mockSupabase.from('').insert).toHaveBeenCalledTimes(1)
-    const insertArgs = mockSupabase.from('').insert.mock.calls[0][0]
+    expect((mockSupabase as any)._insertSpy).toHaveBeenCalledTimes(1)
+    const insertArgs = (mockSupabase as any)._insertSpy.mock.calls[0][0]
     expect(insertArgs.role).toBe('student')
     expect(insertArgs.faculty_status).toBe('none')
     expect(result).not.toBeNull()

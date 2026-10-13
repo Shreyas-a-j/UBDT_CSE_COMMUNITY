@@ -34,7 +34,9 @@ const AuthContext = createContext<AuthContextType>({
  */
 function logSupabaseError(label: string, err: unknown): void {
   if (!err || typeof err !== 'object') {
-    console.error(`${label}:`, err)
+    // Log unexpected non-object errors with message if available
+    const message = typeof err === 'object' ? JSON.stringify(err) : String(err)
+    console.error(`${label}: ${message}`)
     return
   }
   const e = err as Record<string, unknown>
