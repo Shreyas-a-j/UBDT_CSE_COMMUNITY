@@ -220,35 +220,43 @@ export default function PostCard({ post }: PostCardProps) {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           {isShowcase ? (
             <button type="button" onClick={() => toggleUpvotePost(post.id)}
-              style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
+              style={{
+                fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
                 background: isUpvoted ? '#ffe066' : 'transparent', color: isUpvoted ? '#060a14' : '#a8d4f0',
                 borderColor: isUpvoted ? '#ccb000' : '#1e3560', boxShadow: isUpvoted ? '3px 3px 0px #665500' : '2px 2px 0px #000',
-                transform: isUpvoted ? 'translate(-1px,-1px)' : 'none' }}>
+                transform: isUpvoted ? 'translate(-1px,-1px)' : 'none'
+              }}>
               <ArrowBigUp style={{ width: 15, height: 15, fill: isUpvoted ? '#060a14' : 'none', color: isUpvoted ? '#060a14' : '#ffe066' }} />
               {post.upvote_count ?? 0} UPVOTE
             </button>
           ) : (
             <button type="button" onClick={() => toggleLikePost(post.id)}
-              style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
+              style={{
+                fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
                 background: isLiked ? 'rgba(255,68,102,0.15)' : 'transparent', color: isLiked ? '#ff4466' : '#a8d4f0',
                 borderColor: isLiked ? '#ff4466' : '#1e3560', boxShadow: isLiked ? '2px 2px 0px #661133' : '2px 2px 0px #000',
-                transform: isLiked ? 'translate(-1px,-1px)' : 'none' }}>
+                transform: isLiked ? 'translate(-1px,-1px)' : 'none'
+              }}>
               <Heart style={{ width: 14, height: 14, fill: isLiked ? '#ff4466' : 'none', color: isLiked ? '#ff4466' : '#6bafd4' }} />
               {post.like_count ?? 0} LIKE
             </button>
           )}
           <button type="button" onClick={() => setShowComments(!showComments)}
-            style={{ fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+            style={{
+              fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
               background: showComments ? 'rgba(0,170,255,0.12)' : 'transparent', color: showComments ? '#00aaff' : '#a8d4f0',
-              borderColor: showComments ? '#00aaff' : '#1e3560', boxShadow: '2px 2px 0px #000' }}>
+              borderColor: showComments ? '#00aaff' : '#1e3560', boxShadow: '2px 2px 0px #000'
+            }}>
             <MessageSquare style={{ width: 14, height: 14, color: '#00aaff' }} />
             {postComments.length} REPLY
           </button>
         </div>
 
         <button type="button" onClick={handleShare}
-          style={{ fontSize: '0.72rem', fontWeight: 600, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
-            background: 'transparent', color: '#6bafd4', borderColor: '#1e3560', boxShadow: '2px 2px 0px #000' }}>
+          style={{
+            fontSize: '0.72rem', fontWeight: 600, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
+            background: 'transparent', color: '#6bafd4', borderColor: '#1e3560', boxShadow: '2px 2px 0px #000'
+          }}>
           {copied ? (<><Check style={{ width: 13, height: 13, color: '#00ffcc' }} /><span style={{ color: '#00ffcc' }}>COPIED!</span></>) : (<><Share2 style={{ width: 13, height: 13 }} />SHARE</>)}
         </button>
       </div>
@@ -266,7 +274,11 @@ export default function PostCard({ post }: PostCardProps) {
           <form onSubmit={handleCommentSubmit} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <input
               type="text"
-              placeholder={currentUser ? `Reply as ${currentUser.name.split(' ')[0]}...` : 'Sign in to reply...'}
+              placeholder={
+                currentUser
+                  ? `Reply as ${(currentUser.name || 'Student').split(' ')[0]}...`
+                  : 'Sign in to reply...'
+              }
               value={commentInput}
               onChange={e => setCommentInput(e.target.value)}
               style={{ flex: 1, padding: '8px 12px', background: '#0c1220', border: '2px solid #1e3560', color: '#e8f4fd', fontSize: '0.825rem', outline: 'none', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.4)' }}
