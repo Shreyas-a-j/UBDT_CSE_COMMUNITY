@@ -1,13 +1,20 @@
 -- =========================================================
 -- UBDT CSE Community — complete schema for new installs
--- For existing databases, apply only:
---   supabase/migrations/20261013_network_and_faculty.sql
+--
+-- For existing databases, apply migrations in order:
+--   1. supabase/migrations/20261013_network_and_faculty.sql
+--   2. supabase/migrations/20261013_network_fixes.sql
 -- Then run:  NOTIFY pgrst, 'reload schema';
+--
+-- This file is the canonical reference for new installations.
 -- =========================================================
 
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
+-- =========================================================
+-- 1. Profiles (canonical table)
+-- =========================================================
 create table if not exists public.profiles (
   id uuid references auth.users on delete cascade primary key,
   usn text unique,
@@ -17,112 +24,21 @@ create table if not exists public.profiles (
   bio text,
   avatar_url text,
   skills text[] default '{}',
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists public.events (
-  id uuid default uuid_generate_v4() primary key,
-  host_id uuid references public.profiles(id) on delete cascade not null,
-  title text not null,
-  description text not null,
-  type text not null,
-  event_date date not null,
-  event_time time not null,
-  duration int not null default 60,
-  link text,
-  target_years int[] default '{1, 2, 3, 4}' not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists public.event_rsvps (
-  id uuid default uuid_generate_v4() primary key,
-  event_id uuid references public.events(id) on delete cascade not null,
-  user_id uuid references public.profiles(id) on delete cascade not null,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(event_id, user_id)
+  -- Extended columns (added by migration, always present for new installs)
+  email text,
+  section text,
+  interests text[] default '{}',
+  thumbhash text,
+  role text not null default 'student',
+  faculty_status text not null default 'none',
+  designation text,
+  employee_id text,
+  expertise text[] default '{}',
+  updated_at timestamp with time zone default timezone('utc'::text, now())
 );
 
-create table if not exists public.posts (
-  id uuid default uuid_generate_v4() primary key,
-  author_id uuid references public.profiles(id) on delete cascade not null,
-  type text not null check (type in ('discussion', 'showcase')),
-  title text not null,
-  body text not null,
-  image_url text,
-  github_url text,
-  demo_url text,
-  tech_stack text[] default '{}',
-  tags text[] default '{}',
-  target_years int[] default '{1, 2, 3, 4}' not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists public.comments (
-  id uuid default uuid_generate_v4() primary key,
-  post_id uuid references public.posts(id) on delete cascade not null,
-  author_id uuid references public.profiles(id) on delete cascade not null,
-  body text not null,
-  parent_id uuid references public.comments(id) on delete cascade,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-create table if not exists public.likes (
-  id uuid default uuid_generate_v4() primary key,
-  post_id uuid references public.posts(id) on delete cascade not null,
-  user_id uuid references public.profiles(id) on delete cascade not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(post_id, user_id)
-);
-
-create table if not exists public.upvotes (
-  id uuid default uuid_generate_v4() primary key,
-  post_id uuid references public.posts(id) on delete cascade not null,
-  user_id uuid references public.profiles(id) on delete cascade not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
-  unique(post_id, user_id)
-);
-
-create table if not exists public.notifications (
-  id uuid default uuid_generate_v4() primary key,
-  user_id uuid references public.profiles(id) on delete cascade not null,
-  type text not null,
-  title text not null,
-  body text,
-  link text,
-  read boolean default false not null,
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
--- Latest additive migration (roles, connections, messaging, faculty, RLS):
-create extension if not exists "pgcrypto";
-
--- ---------------------------------------------------------
--- 1. Canonical profiles table (source of truth)
--- Posts/events/comments FKs already reference public.profiles.
--- ---------------------------------------------------------
-create table if not exists public.profiles (
-  id uuid references auth.users on delete cascade primary key,
-  usn text unique,
-  name text not null default 'Member',
-  year int,
-  branch text default 'CSE' not null,
-  bio text,
-  avatar_url text,
-  skills text[] default '{}',
-  created_at timestamp with time zone default timezone('utc'::text, now()) not null
-);
-
-alter table public.profiles add column if not exists email text;
-alter table public.profiles add column if not exists section text;
-alter table public.profiles add column if not exists interests text[] default '{}';
-alter table public.profiles add column if not exists thumbhash text;
-alter table public.profiles add column if not exists role text not null default 'student';
-alter table public.profiles add column if not exists faculty_status text not null default 'none';
-alter table public.profiles add column if not exists designation text;
-alter table public.profiles add column if not exists employee_id text;
-alter table public.profiles add column if not exists expertise text[] default '{}';
-alter table public.profiles add column if not exists updated_at timestamp with time zone default timezone('utc'::text, now());
-
+-- Constraints (safe to add/drop if they exist)
 do $$
 begin
   alter table public.profiles alter column usn drop not null;
@@ -147,63 +63,124 @@ alter table public.profiles drop constraint if exists profiles_faculty_status_ch
 alter table public.profiles add constraint profiles_faculty_status_check
   check (faculty_status in ('none', 'pending', 'verified', 'rejected'));
 
--- Sync legacy user_profiles rows into profiles if that table exists.
-do $$
-begin
-  if exists (
-    select 1 from information_schema.tables
-    where table_schema = 'public' and table_name = 'user_profiles'
-  ) then
-    execute $sync$
-      insert into public.profiles (
-        id, usn, name, year, branch, bio, avatar_url, skills, created_at,
-        email, thumbhash, updated_at
-      )
-      select
-        up.id,
-        nullif(up.usn, ''),
-        coalesce(nullif(up.name, ''), 'Member'),
-        case when up.year between 1 and 4 then up.year else null end,
-        coalesce(up.branch, 'CSE'),
-        up.bio,
-        up.avatar_url,
-        coalesce(up.skills, '{}'),
-        coalesce(up.created_at, timezone('utc'::text, now())),
-        up.email,
-        up.thumbhash,
-        coalesce(up.updated_at, timezone('utc'::text, now()))
-      from public.user_profiles up
-      on conflict (id) do update set
-        usn = coalesce(excluded.usn, public.profiles.usn),
-        name = coalesce(nullif(excluded.name, ''), public.profiles.name),
-        year = coalesce(excluded.year, public.profiles.year),
-        bio = coalesce(excluded.bio, public.profiles.bio),
-        avatar_url = coalesce(excluded.avatar_url, public.profiles.avatar_url),
-        skills = coalesce(excluded.skills, public.profiles.skills),
-        email = coalesce(excluded.email, public.profiles.email),
-        thumbhash = coalesce(excluded.thumbhash, public.profiles.thumbhash);
-    $sync$;
-  end if;
-end $$;
+-- Legacy user_profiles sync: not included here because schema.sql is for
+-- new installs, where user_profiles never exists. Existing databases with
+-- a legacy user_profiles table must apply
+-- migrations/20261013_network_fixes.sql, which performs a fully dynamic
+-- column-mapped sync (PostgreSQL resolves column refs at parse time, so
+-- only existing columns can be referenced).
 
--- ---------------------------------------------------------
--- 2. Expand event + notification types
--- ---------------------------------------------------------
-alter table public.events drop constraint if exists events_type_check;
-alter table public.events add constraint events_type_check
-  check (type in ('Workshop', 'Meeting', 'Showcase', 'Seminar', 'Project Session'));
+create index if not exists profiles_lower_name_idx on public.profiles (lower(name));
+create index if not exists profiles_usn_idx on public.profiles (usn);
+create index if not exists profiles_year_idx on public.profiles (year);
+create index if not exists profiles_role_idx on public.profiles (role);
+create index if not exists profiles_branch_idx on public.profiles (branch);
+create index if not exists profiles_skills_gin on public.profiles using gin (skills);
+create index if not exists profiles_interests_gin on public.profiles using gin (interests);
 
-alter table public.notifications drop constraint if exists notifications_type_check;
-alter table public.notifications add constraint notifications_type_check
-  check (type in (
+-- =========================================================
+-- 2. Events
+-- =========================================================
+create table if not exists public.events (
+  id uuid default uuid_generate_v4() primary key,
+  host_id uuid references public.profiles(id) on delete cascade not null,
+  title text not null,
+  description text not null,
+  type text not null check (type in ('Workshop', 'Meeting', 'Showcase', 'Seminar', 'Project Session')),
+  event_date date not null,
+  event_time time not null,
+  duration int not null default 60,
+  link text,
+  target_years int[] default '{1, 2, 3, 4}' not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- =========================================================
+-- 3. Event RSVPs
+-- =========================================================
+create table if not exists public.event_rsvps (
+  id uuid default uuid_generate_v4() primary key,
+  event_id uuid references public.events(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(event_id, user_id)
+);
+
+-- =========================================================
+-- 4. Posts
+-- =========================================================
+create table if not exists public.posts (
+  id uuid default uuid_generate_v4() primary key,
+  author_id uuid references public.profiles(id) on delete cascade not null,
+  type text not null check (type in ('discussion', 'showcase')),
+  title text not null,
+  body text not null,
+  image_url text,
+  github_url text,
+  demo_url text,
+  tech_stack text[] default '{}',
+  tags text[] default '{}',
+  target_years int[] default '{1, 2, 3, 4}' not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- =========================================================
+-- 5. Comments
+-- =========================================================
+create table if not exists public.comments (
+  id uuid default uuid_generate_v4() primary key,
+  post_id uuid references public.posts(id) on delete cascade not null,
+  author_id uuid references public.profiles(id) on delete cascade not null,
+  body text not null,
+  parent_id uuid references public.comments(id) on delete cascade,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- =========================================================
+-- 6. Likes
+-- =========================================================
+create table if not exists public.likes (
+  id uuid default uuid_generate_v4() primary key,
+  post_id uuid references public.posts(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(post_id, user_id)
+);
+
+-- =========================================================
+-- 7. Upvotes
+-- =========================================================
+create table if not exists public.upvotes (
+  id uuid default uuid_generate_v4() primary key,
+  post_id uuid references public.posts(id) on delete cascade not null,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  unique(post_id, user_id)
+);
+
+-- =========================================================
+-- 8. Notifications
+-- =========================================================
+create table if not exists public.notifications (
+  id uuid default uuid_generate_v4() primary key,
+  user_id uuid references public.profiles(id) on delete cascade not null,
+  type text not null check (type in (
     'comment', 'rsvp', 'event_reminder', 'like', 'upvote',
     'connection_request', 'connection_accepted', 'message',
     'announcement', 'faculty_decision'
-  ));
+  )),
+  title text not null,
+  body text,
+  link text,
+  read boolean default false not null,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
 
--- ---------------------------------------------------------
--- 3. Faculty applications (users cannot self-assign faculty)
--- ---------------------------------------------------------
+create index if not exists notifications_user_created_idx on public.notifications (user_id, created_at desc);
+
+-- =========================================================
+-- 9. Faculty Applications
+-- =========================================================
 create table if not exists public.faculty_applications (
   id uuid default uuid_generate_v4() primary key,
   user_id uuid references public.profiles(id) on delete cascade not null,
@@ -219,13 +196,14 @@ create table if not exists public.faculty_applications (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
+-- Only one pending application per user
 create unique index if not exists faculty_applications_one_pending
   on public.faculty_applications (user_id)
   where status = 'pending';
 
--- ---------------------------------------------------------
--- 4. Connection requests
--- ---------------------------------------------------------
+-- =========================================================
+-- 10. Connection Requests
+-- =========================================================
 create table if not exists public.connection_requests (
   id uuid default uuid_generate_v4() primary key,
   requester_id uuid references public.profiles(id) on delete cascade not null,
@@ -233,10 +211,18 @@ create table if not exists public.connection_requests (
   status text not null default 'pending' check (status in ('pending', 'accepted', 'rejected', 'cancelled')),
   created_at timestamp with time zone default timezone('utc'::text, now()) not null,
   responded_at timestamp with time zone,
-  constraint connection_no_self check (requester_id <> addressee_id),
-  constraint connection_pair unique (requester_id, addressee_id)
+  constraint connection_no_self check (requester_id <> addressee_id)
+  -- Note: connection_pair unique constraint removed; replaced by
+  -- partial unique index on pending status (see below).
+  -- This allows re-sending requests after rejection/cancellation.
 );
 
+-- Only one pending request per (requester, addressee) pair
+create unique index if not exists connection_pending_pair
+  on public.connection_requests (requester_id, addressee_id)
+  where status = 'pending';
+
+-- Only one active (pending or accepted) pair regardless of direction
 create unique index if not exists connection_active_pair
   on public.connection_requests (
     least(requester_id, addressee_id),
@@ -249,9 +235,9 @@ create index if not exists connection_addressee_status_idx
 create index if not exists connection_requester_status_idx
   on public.connection_requests (requester_id, status);
 
--- ---------------------------------------------------------
--- 5. Conversations + messages (1:1, extensible)
--- ---------------------------------------------------------
+-- =========================================================
+-- 11. Conversations + Messages
+-- =========================================================
 create table if not exists public.conversations (
   id uuid default uuid_generate_v4() primary key,
   is_group boolean not null default false,
@@ -270,6 +256,18 @@ create table if not exists public.conversation_participants (
   primary key (conversation_id, user_id)
 );
 
+-- Direct (1:1) conversation pair index: one pair of users => at most one conversation
+create table if not exists public.direct_conversation_pairs (
+  lesser_user uuid not null references public.profiles(id) on delete cascade,
+  greater_user uuid not null references public.profiles(id) on delete cascade,
+  conversation_id uuid not null references public.conversations(id) on delete cascade,
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null,
+  primary key (lesser_user, greater_user)
+);
+
+create index if not exists direct_conversation_pairs_conv_idx
+  on public.direct_conversation_pairs (conversation_id);
+
 create table if not exists public.messages (
   id uuid default uuid_generate_v4() primary key,
   conversation_id uuid references public.conversations(id) on delete cascade not null,
@@ -278,18 +276,14 @@ create table if not exists public.messages (
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
-create unique index if not exists conversation_direct_pair
-  on public.conversation_participants (conversation_id, user_id);
-
--- Exactly two participants for non-group conversations is enforced in functions.
 create index if not exists messages_conversation_created_idx
   on public.messages (conversation_id, created_at desc);
 create index if not exists conversation_participants_user_idx
   on public.conversation_participants (user_id);
 
--- ---------------------------------------------------------
--- 6. Faculty announcements
--- ---------------------------------------------------------
+-- =========================================================
+-- 12. Announcements
+-- =========================================================
 create table if not exists public.announcements (
   id uuid default uuid_generate_v4() primary key,
   author_id uuid references public.profiles(id) on delete cascade not null,
@@ -299,22 +293,11 @@ create table if not exists public.announcements (
   updated_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
--- ---------------------------------------------------------
--- 7. Search / lookup indexes
--- ---------------------------------------------------------
-create index if not exists profiles_lower_name_idx on public.profiles (lower(name));
-create index if not exists profiles_usn_idx on public.profiles (usn);
-create index if not exists profiles_year_idx on public.profiles (year);
-create index if not exists profiles_role_idx on public.profiles (role);
-create index if not exists profiles_branch_idx on public.profiles (branch);
-create index if not exists profiles_skills_gin on public.profiles using gin (skills);
-create index if not exists profiles_interests_gin on public.profiles using gin (interests);
 create index if not exists announcements_created_idx on public.announcements (created_at desc);
-create index if not exists notifications_user_created_idx on public.notifications (user_id, created_at desc);
 
--- ---------------------------------------------------------
--- 8. Helper functions (SECURITY DEFINER only where required)
--- ---------------------------------------------------------
+-- =========================================================
+-- 13. Security Functions
+-- =========================================================
 create or replace function public.is_admin(uid uuid)
 returns boolean
 language sql
@@ -392,6 +375,10 @@ begin
 end;
 $$;
 
+-- ---------------------------------------------------------
+-- Profile privilege protection: prevents non-admin users from
+-- changing role, faculty_status, employee_id, or designation.
+-- ---------------------------------------------------------
 create or replace function public.protect_profile_privileges()
 returns trigger
 language plpgsql
@@ -404,15 +391,25 @@ begin
   end if;
   new.role := old.role;
   new.faculty_status := old.faculty_status;
+  new.employee_id := old.employee_id;
+  new.designation := old.designation;
   return new;
 end;
 $$;
 
-drop trigger if exists trg_protect_profile_privileges on public.profiles;
-create trigger trg_protect_profile_privileges
-before update on public.profiles
-for each row execute procedure public.protect_profile_privileges();
+create or replace function public.update_updated_at_column()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := timezone('utc'::text, now());
+  return new;
+end;
+$$;
 
+-- ---------------------------------------------------------
+-- New user trigger: creates profile row on auth sign-up
+-- ---------------------------------------------------------
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -462,11 +459,9 @@ begin
 end;
 $$;
 
-drop trigger if exists on_auth_user_created on auth.users;
-create trigger on_auth_user_created
-after insert on auth.users
-for each row execute procedure public.handle_new_user();
-
+-- ---------------------------------------------------------
+-- Faculty application status trigger (AFTER UPDATE)
+-- ---------------------------------------------------------
 create or replace function public.on_faculty_application_status()
 returns trigger
 language plpgsql
@@ -509,11 +504,50 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_faculty_application_status on public.faculty_applications;
-create trigger trg_faculty_application_status
-after update on public.faculty_applications
-for each row execute procedure public.on_faculty_application_status();
+-- ---------------------------------------------------------
+-- Faculty application transition enforcement (BEFORE INSERT OR UPDATE)
+-- ---------------------------------------------------------
+create or replace function public.enforce_faculty_application_transition()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status is distinct from 'pending' then
+      raise exception 'Faculty applications must start as pending';
+    end if;
+    if new.reviewed_by is not null or new.reviewed_at is not null then
+      raise exception 'Cannot set reviewer on new application';
+    end if;
+    return new;
+  end if;
 
+  if tg_op = 'UPDATE' then
+    if new.status is distinct from old.status then
+      if not public.is_admin(auth.uid()) then
+        raise exception 'Only administrators can change application status';
+      end if;
+      if old.status = 'approved' and new.status = 'pending' then
+        raise exception 'Cannot revert an approved application to pending';
+      end if;
+    end if;
+
+    if new.reviewed_by is distinct from old.reviewed_by or new.reviewed_at is distinct from old.reviewed_at then
+      if not public.is_admin(auth.uid()) then
+        raise exception 'Only administrators can set reviewer fields';
+      end if;
+    end if;
+
+    return new;
+  end if;
+
+  return new;
+end;
+$$;
+
+-- ---------------------------------------------------------
+-- Connection change trigger + transition enforcement
+-- ---------------------------------------------------------
 create or replace function public.on_connection_change()
 returns trigger
 language plpgsql
@@ -546,11 +580,53 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_connection_change on public.connection_requests;
-create trigger trg_connection_change
-after insert or update on public.connection_requests
-for each row execute procedure public.on_connection_change();
+create or replace function public.enforce_connection_transition()
+returns trigger
+language plpgsql
+as $$
+begin
+  if auth.uid() is null then
+    raise exception 'Not authenticated';
+  end if;
 
+  -- Prevent changing the participants of a connection request
+  if new.requester_id is distinct from old.requester_id or new.addressee_id is distinct from old.addressee_id then
+    raise exception 'Cannot change connection participants';
+  end if;
+
+  -- requester may cancel pending; cannot accept their own request
+  if old.status = 'pending' and new.status = 'cancelled' then
+    if auth.uid() <> old.requester_id and not public.is_admin(auth.uid()) then
+      raise exception 'Only the requester can cancel';
+    end if;
+    new.responded_at := timezone('utc'::text, now());
+    return new;
+  end if;
+
+  if old.status = 'pending' and new.status in ('accepted', 'rejected') then
+    if auth.uid() <> old.addressee_id and not public.is_admin(auth.uid()) then
+      raise exception 'Only the addressee can accept or reject';
+    end if;
+    new.responded_at := timezone('utc'::text, now());
+    return new;
+  end if;
+
+  -- either party may remove an accepted connection by marking cancelled
+  if old.status = 'accepted' and new.status = 'cancelled' then
+    if auth.uid() <> old.requester_id and auth.uid() <> old.addressee_id and not public.is_admin(auth.uid()) then
+      raise exception 'Only participants can remove a connection';
+    end if;
+    new.responded_at := timezone('utc'::text, now());
+    return new;
+  end if;
+
+  raise exception 'Invalid connection status change from % to %', old.status, new.status;
+end;
+$$;
+
+-- ---------------------------------------------------------
+-- Message insert trigger
+-- ---------------------------------------------------------
 create or replace function public.on_message_insert()
 returns trigger
 language plpgsql
@@ -589,11 +665,9 @@ begin
 end;
 $$;
 
-drop trigger if exists trg_message_insert on public.messages;
-create trigger trg_message_insert
-after insert on public.messages
-for each row execute procedure public.on_message_insert();
-
+-- ---------------------------------------------------------
+-- Get-or-create direct conversation (race-safe via unique pair)
+-- ---------------------------------------------------------
 create or replace function public.get_or_create_direct_conversation(other_user uuid)
 returns uuid
 language plpgsql
@@ -603,6 +677,8 @@ as $$
 declare
   me uuid := auth.uid();
   conv_id uuid;
+  lesser uuid;
+  greater uuid;
 begin
   if me is null then
     raise exception 'Not authenticated';
@@ -614,46 +690,132 @@ begin
     raise exception 'You can only message accepted connections';
   end if;
 
-  select c.id into conv_id
-  from public.conversations c
-  where c.is_group = false
-    and exists (
-      select 1 from public.conversation_participants p
-      where p.conversation_id = c.id and p.user_id = me
-    )
-    and exists (
-      select 1 from public.conversation_participants p
-      where p.conversation_id = c.id and p.user_id = other_user
-    )
-    and (
-      select count(*) from public.conversation_participants p
-      where p.conversation_id = c.id
-    ) = 2
-  limit 1;
+  lesser := least(me, other_user);
+  greater := greatest(me, other_user);
 
-  if conv_id is not null then
-    return conv_id;
+  insert into public.direct_conversation_pairs (lesser_user, greater_user, conversation_id)
+  values (lesser, greater, uuid_generate_v4())
+  on conflict (lesser_user, greater_user) do update
+    set conversation_id = EXCLUDED.conversation_id
+  returning conversation_id into conv_id;
+
+  if not exists (select 1 from public.conversations where id = conv_id) then
+    insert into public.conversations (id, is_group) values (conv_id, false);
   end if;
 
-  insert into public.conversations (is_group) values (false) returning id into conv_id;
   insert into public.conversation_participants (conversation_id, user_id)
-  values (conv_id, me), (conv_id, other_user);
+  values (conv_id, me), (conv_id, other_user)
+  on conflict (conversation_id, user_id) do nothing;
+
+  if (select count(*) from public.conversation_participants where conversation_id = conv_id) > 2 then
+    raise exception 'Conversation already has too many participants';
+  end if;
+
   return conv_id;
 end;
 $$;
 
+-- ---------------------------------------------------------
+-- Conversation participant count enforcement
+-- ---------------------------------------------------------
+create or replace function public.enforce_conversation_participant_count()
+returns trigger
+language plpgsql
+as $$
+declare
+  cnt int;
+begin
+  if exists (select 1 from public.conversations c where c.id = new.conversation_id and c.is_group = false) then
+    select count(*) into cnt
+    from public.conversation_participants
+    where conversation_id = new.conversation_id;
+    if cnt >= 2 then
+      raise exception 'Direct conversations support exactly two participants';
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+-- =========================================================
+-- 14. Triggers
+-- =========================================================
+drop trigger if exists trg_protect_profile_privileges on public.profiles;
+create trigger trg_protect_profile_privileges
+before update on public.profiles
+for each row execute procedure public.protect_profile_privileges();
+
+drop trigger if exists trg_update_profiles_updated_at on public.profiles;
+create trigger trg_update_profiles_updated_at
+before update on public.profiles
+for each row execute procedure public.update_updated_at_column();
+
+drop trigger if exists trg_update_announcements_updated_at on public.announcements;
+create trigger trg_update_announcements_updated_at
+before update on public.announcements
+for each row execute procedure public.update_updated_at_column();
+
+drop trigger if exists trg_update_conversations_updated_at on public.conversations;
+create trigger trg_update_conversations_updated_at
+before update on public.conversations
+for each row execute procedure public.update_updated_at_column();
+
+drop trigger if exists trg_update_faculty_app_updated_at on public.faculty_applications;
+create trigger trg_update_faculty_app_updated_at
+before update on public.faculty_applications
+for each row execute procedure public.update_updated_at_column();
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute procedure public.handle_new_user();
+
+drop trigger if exists trg_faculty_application_transition on public.faculty_applications;
+create trigger trg_faculty_application_transition
+before insert or update on public.faculty_applications
+for each row execute procedure public.enforce_faculty_application_transition();
+
+drop trigger if exists trg_faculty_application_status on public.faculty_applications;
+create trigger trg_faculty_application_status
+after update on public.faculty_applications
+for each row execute procedure public.on_faculty_application_status();
+
+drop trigger if exists trg_connection_transition on public.connection_requests;
+create trigger trg_connection_transition
+before update on public.connection_requests
+for each row execute procedure public.enforce_connection_transition();
+
+drop trigger if exists trg_connection_change on public.connection_requests;
+create trigger trg_connection_change
+after insert or update on public.connection_requests
+for each row execute procedure public.on_connection_change();
+
+drop trigger if exists trg_message_insert on public.messages;
+create trigger trg_message_insert
+after insert on public.messages
+for each row execute procedure public.on_message_insert();
+
+drop trigger if exists trg_enforce_participant_count on public.conversation_participants;
+create trigger trg_enforce_participant_count
+before insert on public.conversation_participants
+for each row execute procedure public.enforce_conversation_participant_count();
+
+-- =========================================================
+-- 15. Function permissions
+-- =========================================================
 revoke all on function public.get_or_create_direct_conversation(uuid) from public;
 grant execute on function public.get_or_create_direct_conversation(uuid) to authenticated;
 
 revoke all on function public.emit_notification(uuid, text, text, text, text) from public;
+
 grant execute on function public.is_admin(uuid) to authenticated, anon;
 grant execute on function public.is_verified_faculty(uuid) to authenticated, anon;
 grant execute on function public.are_connected(uuid, uuid) to authenticated, anon;
 grant execute on function public.is_conversation_participant(uuid) to authenticated, anon;
 
--- ---------------------------------------------------------
--- 9. RLS
--- ---------------------------------------------------------
+-- =========================================================
+-- 16. Row Level Security (RLS) Policies
+-- =========================================================
 alter table public.profiles enable row level security;
 alter table public.events enable row level security;
 alter table public.event_rsvps enable row level security;
@@ -668,7 +830,9 @@ alter table public.conversations enable row level security;
 alter table public.conversation_participants enable row level security;
 alter table public.messages enable row level security;
 alter table public.announcements enable row level security;
+alter table public.direct_conversation_pairs enable row level security;
 
+-- Profiles
 drop policy if exists "Public profiles are viewable by everyone" on public.profiles;
 drop policy if exists "Users can update their own profile" on public.profiles;
 drop policy if exists "Users can insert own profile" on public.profiles;
@@ -683,6 +847,7 @@ create policy "Users can insert own profile" on public.profiles
 create policy "Users can update their own profile" on public.profiles
   for update using (auth.uid() = id) with check (auth.uid() = id);
 
+-- Events
 drop policy if exists "Events are viewable by everyone" on public.events;
 drop policy if exists "Authenticated users can create events" on public.events;
 drop policy if exists "Hosts can update their events" on public.events;
@@ -695,12 +860,14 @@ create policy "Hosts can update their events" on public.events
 create policy "Hosts can delete their events" on public.events
   for delete using (auth.uid() = host_id or public.is_admin(auth.uid()));
 
+-- Event RSVPs
 drop policy if exists "RSVPs are viewable by everyone" on public.event_rsvps;
 drop policy if exists "Users can manage their own RSVP" on public.event_rsvps;
 create policy "RSVPs are viewable by everyone" on public.event_rsvps for select using (true);
 create policy "Users can manage their own RSVP" on public.event_rsvps
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Posts
 drop policy if exists "Posts are viewable by everyone" on public.posts;
 drop policy if exists "Authenticated users can create posts" on public.posts;
 drop policy if exists "Authors can update their posts" on public.posts;
@@ -713,6 +880,7 @@ create policy "Authors can update their posts" on public.posts
 create policy "Authors can delete their posts" on public.posts
   for delete using (auth.uid() = author_id or public.is_admin(auth.uid()));
 
+-- Comments
 drop policy if exists "Comments are viewable by everyone" on public.comments;
 drop policy if exists "Authenticated users can create comments" on public.comments;
 drop policy if exists "Authors can delete comments" on public.comments;
@@ -722,18 +890,21 @@ create policy "Authenticated users can create comments" on public.comments
 create policy "Authors can delete comments" on public.comments
   for delete using (auth.uid() = author_id or public.is_admin(auth.uid()));
 
+-- Likes
 drop policy if exists "Likes are viewable by everyone" on public.likes;
 drop policy if exists "Users can toggle their own like" on public.likes;
 create policy "Likes are viewable by everyone" on public.likes for select using (true);
 create policy "Users can toggle their own like" on public.likes
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Upvotes
 drop policy if exists "Upvotes are viewable by everyone" on public.upvotes;
 drop policy if exists "Users can toggle their own upvote" on public.upvotes;
 create policy "Upvotes are viewable by everyone" on public.upvotes for select using (true);
 create policy "Users can toggle their own upvote" on public.upvotes
   for all using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Notifications
 drop policy if exists "Users view own notifications" on public.notifications;
 drop policy if exists "Users can update own notifications" on public.notifications;
 create policy "Users view own notifications" on public.notifications
@@ -741,16 +912,25 @@ create policy "Users view own notifications" on public.notifications
 create policy "Users can update own notifications" on public.notifications
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
 
+-- Faculty Applications
 drop policy if exists "Users read own faculty applications" on public.faculty_applications;
 drop policy if exists "Users submit own faculty application" on public.faculty_applications;
 drop policy if exists "Admins manage faculty applications" on public.faculty_applications;
 create policy "Users read own faculty applications" on public.faculty_applications
   for select using (auth.uid() = user_id or public.is_admin(auth.uid()));
 create policy "Users submit own faculty application" on public.faculty_applications
-  for insert with check (auth.uid() = user_id and status = 'pending');
+  for insert with check (
+    auth.uid() = user_id
+    and status = 'pending'
+    and reviewed_by IS NULL
+    and reviewed_at IS NULL
+  );
 create policy "Admins manage faculty applications" on public.faculty_applications
   for update using (public.is_admin(auth.uid())) with check (public.is_admin(auth.uid()));
+create policy "Faculty view own application" on public.faculty_applications
+  for select using (auth.uid() = user_id);
 
+-- Connection Requests
 drop policy if exists "Users read relevant connections" on public.connection_requests;
 drop policy if exists "Users create connection requests" on public.connection_requests;
 drop policy if exists "Participants update connections" on public.connection_requests;
@@ -766,70 +946,31 @@ create policy "Participants update connections" on public.connection_requests
   for update using (auth.uid() = requester_id or auth.uid() = addressee_id)
   with check (auth.uid() = requester_id or auth.uid() = addressee_id);
 
-create or replace function public.enforce_connection_transition()
-returns trigger
-language plpgsql
-as $$
-begin
-  if auth.uid() is null then
-    raise exception 'Not authenticated';
-  end if;
-  -- requester may cancel pending; cannot accept their own request
-  if old.status = 'pending' and new.status = 'cancelled' then
-    if auth.uid() <> old.requester_id and not public.is_admin(auth.uid()) then
-      raise exception 'Only the requester can cancel';
-    end if;
-    new.responded_at := timezone('utc'::text, now());
-    return new;
-  end if;
-  if old.status = 'pending' and new.status in ('accepted', 'rejected') then
-    if auth.uid() <> old.addressee_id and not public.is_admin(auth.uid()) then
-      raise exception 'Only the addressee can accept or reject';
-    end if;
-    new.responded_at := timezone('utc'::text, now());
-    return new;
-  end if;
-  -- either party may remove an accepted connection by marking cancelled
-  if old.status = 'accepted' and new.status = 'cancelled' then
-    if auth.uid() <> old.requester_id and auth.uid() <> old.addressee_id and not public.is_admin(auth.uid()) then
-      raise exception 'Only participants can remove a connection';
-    end if;
-    new.responded_at := timezone('utc'::text, now());
-    return new;
-  end if;
-  raise exception 'Invalid connection status change';
-end;
-$$;
-
-drop trigger if exists trg_connection_transition on public.connection_requests;
-create trigger trg_connection_transition
-before update on public.connection_requests
-for each row execute procedure public.enforce_connection_transition();
-
+-- Conversations — no direct client inserts; created only via function
 drop policy if exists "Participants read conversations" on public.conversations;
-drop policy if exists "Participants read conversation members" on public.conversation_participants;
-drop policy if exists "Participants read messages" on public.messages;
-drop policy if exists "Participants send messages" on public.messages;
-drop policy if exists "Participants update own read state" on public.conversation_participants;
-
 create policy "Participants read conversations" on public.conversations
   for select using (public.is_conversation_participant(id));
 
+-- Conversation Participants
+drop policy if exists "Participants read conversation members" on public.conversation_participants;
+drop policy if exists "Participants update own read state" on public.conversation_participants;
 create policy "Participants read conversation members" on public.conversation_participants
   for select using (public.is_conversation_participant(conversation_id));
-
 create policy "Participants update own read state" on public.conversation_participants
   for update using (user_id = auth.uid()) with check (user_id = auth.uid());
 
+-- Messages
+drop policy if exists "Participants read messages" on public.messages;
+drop policy if exists "Participants send messages" on public.messages;
 create policy "Participants read messages" on public.messages
   for select using (public.is_conversation_participant(conversation_id));
-
 create policy "Participants send messages" on public.messages
   for insert with check (
     sender_id = auth.uid()
     and public.is_conversation_participant(conversation_id)
   );
 
+-- Announcements
 drop policy if exists "Announcements are viewable by everyone" on public.announcements;
 drop policy if exists "Verified faculty create announcements" on public.announcements;
 drop policy if exists "Authors update announcements" on public.announcements;
@@ -845,13 +986,13 @@ create policy "Authors update announcements" on public.announcements
 create policy "Authors delete announcements" on public.announcements
   for delete using (auth.uid() = author_id or public.is_admin(auth.uid()));
 
--- Conversations are created only via get_or_create_direct_conversation.
--- Allow authenticated insert of conversations/participants only through that function
--- (SECURITY DEFINER bypasses RLS). No direct client inserts.
+-- Direct conversation pairs — no direct client access
+create policy "No direct access to direct_conversation_pairs" on public.direct_conversation_pairs
+  for all using (false) with check (false);
 
--- ---------------------------------------------------------
--- 10. Realtime
--- ---------------------------------------------------------
+-- =========================================================
+-- 17. Realtime Publication
+-- =========================================================
 alter table public.messages replica identity full;
 alter table public.notifications replica identity full;
 alter table public.conversation_participants replica identity full;
