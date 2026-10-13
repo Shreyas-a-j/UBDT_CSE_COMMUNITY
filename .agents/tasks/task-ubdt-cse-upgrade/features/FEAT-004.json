@@ -1,0 +1,29 @@
+{
+  "id": "FEAT-004",
+  "type": "feat",
+  "description": "Build the messaging inbox page at /messages. Uses a two-panel layout: left panel is the conversation list (inbox), right panel is the active conversation. Conversation is selected via ?conv=UUID search param so deep links work and browser back works. Uses useInbox() and useConversation() from hooks/useMessages.ts (already fully implemented with Supabase Realtime). The middleware already protects /messages. This FEAT is independent of FEAT-003 but benefits from profile pages existing — message buttons on /people/[id] push to /messages?conv=UUID.",
+  "status": "pending",
+  "steps": [
+    "1. Create app/messages/page.tsx — 'use client'. Two-panel chat layout. Left panel (inbox list, ~320px wide on desktop, full width on mobile when no conv selected): uses `useInbox()` hook which returns `{ conversations, loading, error, refresh }`. Renders each conversation as a row: other user's UserAvatar, name, last_message_preview (truncated to 60 chars), last_message_at (formatted with formatRelativeTime from lib/utils.ts), unread indicator dot (if unread_count > 0). Clicking a row sets the `conv` search param via `router.push(`/messages?conv=${conv.id}`)`. Active conversation highlighted with border-left: 2px solid #00aaff and background rgba(0,170,255,0.05). Empty state: 'No conversations yet. Connect with students and start chatting.' loading skeleton while useInbox is loading.",
+    "2. Right panel: uses `useConversation(conversationId)` hook which returns `{ messages, other, loading, error, hasMore, loadOlder, send, refresh }`. `conversationId` is read from `useSearchParams().get('conv')`. If no conv selected, show an empty placeholder panel: centered text 'Select a conversation'. If loading, show skeleton rows. If error, show error message. Header: other user's UserAvatar + name + link to /people/[other.id]. 'Load older messages' button at top if hasMore === true (calls loadOlder()). Messages list: scrollable div, auto-scroll to bottom on new messages (useEffect with ref on the scroll container). Each message: sender avatar (inline), sender name, timestamp, body text. Own messages aligned right in accent-blue bubble (#00aaff bg, #060a14 text), other messages aligned left in card color (#1e3560 border, #0d1426 bg). Message input: textarea (1 row, expand on focus), send button, disabled when empty or > 4000 chars. On submit: call `send(body)` from useConversation, clear input.",
+    "3. Mobile responsiveness: on screens < lg, show only the inbox OR the conversation panel based on whether `conv` param is present. When in conversation view on mobile, show a back button (chevron-left) that does `router.push('/messages')` to clear conv param.",
+    "4. Handle the Realtime cleanup: useConversation already subscribes/unsubscribes via the hook's useEffect. No extra cleanup needed in the page — just ensure conversationId changes correctly when the ?conv param changes (the hook's useEffect depends on conversationId).",
+    "5. Handle the 'start conversation' flow: when someone arrives at /messages?conv=UUID from a button on /people/[id], the useConversation hook fetches that conversation. If the user is not a participant, the hook shows an error. This is already handled in useConversation.",
+    "6. Update the message link in NotificationItem in Navbar.tsx: notifications of type 'message' have link='/messages/CONV_ID' (set by on_message_insert trigger). The Navbar currently does `window.location.href = n.link` on notification click. The link format is '/messages/CONV_ID' but the page uses ?conv= param. Fix: change the message notification link handling. The notification link is '/messages/UUID' from the trigger. Two options: (a) Create a redirect route at app/messages/[id]/route.ts that redirects to /messages?conv=[id], OR (b) Create app/messages/[id]/page.tsx that wraps the same messages UI with the conv preselected. Option (a) is cleaner. Create app/messages/[id]/route.ts as a simple redirect: import { redirect } from 'next/navigation'; export function GET(_: Request, { params }: { params: { id: string } }) { redirect(`/messages?conv=${params.id}`) }. Wait — in Next.js 16 App Router, route.ts GET handlers for redirects need to use NextResponse.redirect, not the redirect() function from next/navigation (that's for Server Components). Use NextResponse.redirect instead. Actually, re-read: app/messages/[id]/route.ts using NextResponse.redirect is correct for route handlers. Import { NextResponse } from 'next/server' and return NextResponse.redirect.",
+    "7. Run `npm run build` to confirm no TypeScript errors."
+  ],
+  "acceptance_criteria": [
+    "GET /messages shows the inbox panel (left) and empty selection state (right)",
+    "GET /messages?conv=UUID shows the inbox with that conversation selected and message history loaded",
+    "Messages update in real-time via Supabase Realtime (verified by useConversation hook subscription)",
+    "Sending a message calls useConversation.send() and appends to the list",
+    "Mobile: only one panel visible at a time based on ?conv param",
+    "GET /messages/UUID redirects to /messages?conv=UUID",
+    "`npm run build` exits 0"
+  ],
+  "verification": [
+    "Run `npm run build` from /home/shreyas/Downloads/antigravity_projects/community — must exit 0"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

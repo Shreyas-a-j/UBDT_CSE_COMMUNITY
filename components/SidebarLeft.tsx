@@ -4,7 +4,9 @@ import React from 'react'
 import Image from 'next/image'
 import { GraduationCap, Edit3, Compass, Check, LogIn } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { getAvatarFallback, getYearLabel } from '@/lib/utils'
+import { getYearLabel } from '@/lib/utils'
+import { displayName } from '@/lib/profile'
+import Link from 'next/link'
 import { YearFilter } from '@/lib/types'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -27,13 +29,13 @@ export default function SidebarLeft() {
 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', textAlign: 'center', marginTop: -28, padding: '0 16px 16px' }}>
             <div style={{ marginBottom: 8 }}>
-              <UserAvatar src={currentUser.avatar_url} name={currentUser.name} size={56} borderColor="#00aaff" />
+              <UserAvatar src={currentUser.avatar_url} name={displayName(currentUser)} size={56} borderColor="#00aaff" />
             </div>
 
-            <h2 style={{ fontSize: '0.9rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>{currentUser.name}</h2>
+            <h2 style={{ fontSize: '0.9rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>{displayName(currentUser)}</h2>
 
-            <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
-              <span style={{ fontSize: '0.7rem', color: '#00ffcc', background: 'rgba(0,255,204,0.1)', border: '2px solid rgba(0,255,204,0.4)', padding: '2px 8px', boxShadow: '2px 2px 0px #006655', fontWeight: 700 }}>{currentUser.usn}</span>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+              {currentUser.usn && <span style={{ fontSize: '0.7rem', color: '#00ffcc', background: 'rgba(0,255,204,0.1)', border: '2px solid rgba(0,255,204,0.4)', padding: '2px 8px', boxShadow: '2px 2px 0px #006655', fontWeight: 700 }}>{currentUser.usn}</span>}
               <span style={{ fontSize: '0.7rem', color: '#ffe066', background: 'rgba(255,224,102,0.1)', border: '2px solid rgba(255,224,102,0.35)', padding: '2px 8px', boxShadow: '2px 2px 0px #665500', fontWeight: 700 }}>{getYearLabel(currentUser.year)}</span>
             </div>
 
@@ -50,6 +52,7 @@ export default function SidebarLeft() {
               </div>
             )}
 
+            <Link href={`/people/${currentUser.id}`} className="btn-outline" style={{ width: '100%', marginBottom: 8, fontSize: '0.75rem' }}>VIEW PROFILE</Link>
             <button
               type="button"
               onClick={() => { setSelectedProfileForView(currentUser); setIsProfileModalOpen(true) }}

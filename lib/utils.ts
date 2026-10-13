@@ -95,7 +95,8 @@ export function getCountdown(date: string, time: string): string {
   }
 }
 
-export function getYearLabel(year: number): string {
+export function getYearLabel(year?: number | null): string {
+  if (!year) return 'CSE'
   const labels: Record<number, string> = {
     1: '1st Year',
     2: '2nd Year',
@@ -114,13 +115,15 @@ export function getEventTypeColor(type: string): string {
   return colors[type] || 'bg-gray-100 text-gray-700'
 }
 
-export function getAvatarFallback(name: string): string {
-  return name
-    .split(' ')
-    .map(n => n[0])
+export function getAvatarFallback(name?: string | null): string {
+  const trimmed = (name || '').trim()
+  if (!trimmed) return '?'
+  return trimmed
+    .split(/\s+/)
+    .map(n => n[0] || '')
     .join('')
     .toUpperCase()
-    .slice(0, 2)
+    .slice(0, 2) || '?'
 }
 
 export function getSupabaseImageUrl(bucket: string, path: string, supabaseUrl: string): string {

@@ -1,0 +1,28 @@
+{
+  "id": "FEAT-002",
+  "type": "feat",
+  "description": "Create all auth pages as standalone full-page routes: /signin, /signup (student), /signup/faculty (faculty application), /forgot-password, /reset-password. Each is a 'use client' page using AuthFormShell from components/AuthFormShell.tsx as the outer wrapper (already exists with pixel retro style). Use createClient from '@/lib/supabase/client'. Middleware already redirects authenticated users away from these pages (except /reset-password) and redirects unauthenticated users away from protected routes.",
+  "status": "pending",
+  "steps": [
+    "1. Create app/signin/page.tsx — 'use client'. Import AuthFormShell. Renders a sign-in form with email + password fields, 'Forgot password?' link to /forgot-password, sign-up link to /signup, faculty link to /signup/faculty. On submit: call `supabase.auth.signInWithPassword({ email, password })`. On success: `router.push(searchParams.get('next') || '/')`. Show error messages for 'Invalid login credentials', 'Email not confirmed', etc. using the same error style as AuthModal (red border box with AlertCircle icon). Use `import { useSearchParams, useRouter } from 'next/navigation'`. Apply all CSS classes from globals.css: input, label, btn-primary pattern inline styles consistent with AuthModal. Import pattern: `import { createClient } from '@/lib/supabase/client'`.",
+    "2. Create app/signup/page.tsx — 'use client'. Student registration form. Fields: Full Name (text), USN (text, uppercase, validateUSN from lib/utils.ts), Email (email), Academic Year (select 1-4, auto-detected from USN via getYearFromUSN), Section (text, optional), Skills (comma-separated text, optional), Password (password, min 6), Confirm Password. Use validateStudentSignup from lib/validation.ts for full validation before submit. On submit: call `supabase.auth.signUp({ email, password, options: { data: { name, usn, year, department: 'CSE', section, skills: parseTagList(skillsInput), intent: 'student' } } })`. The handle_new_user DB trigger creates the profile row automatically. After signUp, auto-signIn with signInWithPassword. On success redirect to '/'. Include a link to /signup/faculty for faculty registration.",
+    "3. Create app/signup/faculty/page.tsx — 'use client'. Faculty application form. This is a two-step process: Step 1 creates a regular auth account (role='student'), Step 2 submits a faculty_applications row. Fields: Full Name (text), Official Institutional Email (email), Password (password), Confirm Password, Department (text, default 'CSE'), Designation (text, e.g. 'Assistant Professor'), Employee ID (text, optional). Validation: use validateFacultySignup from lib/validation.ts. On submit: (a) call `supabase.auth.signUp({ email, password, options: { data: { name, department, designation, employee_id, intent: 'faculty' } } })` — this creates a student-role profile with faculty_status='pending' per handle_new_user trigger. (b) After sign-up success, insert into faculty_applications: `supabase.from('faculty_applications').insert({ user_id: data.user.id, full_name: name, official_email: email, department, designation, employee_id: employeeId || null, status: 'pending' })`. Show a 'pending review' success message. Note: the user account gets role='student' until admin approves. Display clear messaging: 'Your account is under review. You will be notified once approved.'",
+    "4. Create app/forgot-password/page.tsx — 'use client'. Single email field. On submit: `supabase.auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/reset-password` })`. Show success message: 'Check your email for a password reset link.' Style consistent with AuthFormShell.",
+    "5. Create app/reset-password/page.tsx — 'use client'. The auth/callback route already exchanges the code for a session. This page shows a new-password + confirm-password form. On submit: `supabase.auth.updateUser({ password: newPassword })`. On success: redirect to '/'. The middleware allows authenticated users on /reset-password. Import `useEffect` and check `supabase.auth.getSession()` on mount — if no session and no hash params, redirect to /forgot-password.",
+    "6. In app/auth/callback/route.ts (already exists) — no changes needed. It already handles `?code=` exchange and redirects to `next` param.",
+    "7. Run `npm run build` to confirm no TypeScript errors."
+  ],
+  "acceptance_criteria": [
+    "GET /signin renders a sign-in form; on successful credentials, redirects to '/' (or 'next' param)",
+    "GET /signup renders a student registration form; successful signup creates a profile via the DB trigger and redirects to '/'",
+    "GET /signup/faculty renders a faculty application form; submitting creates an auth user + faculty_applications row with status='pending'",
+    "GET /forgot-password renders an email field; submitting calls resetPasswordForEmail and shows a success message",
+    "GET /reset-password renders a new-password form; submitting calls updateUser and redirects to '/'",
+    "`npm run build` exits 0"
+  ],
+  "verification": [
+    "Run `npm run build` from /home/shreyas/Downloads/antigravity_projects/community — must exit 0"
+  ],
+  "blocked_reason": null,
+  "findings": ""
+}

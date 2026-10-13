@@ -1,0 +1,7 @@
+{
+  "task_id": "task-ubdt-cse-upgrade",
+  "task_description": "Comprehensive upgrade of UBDT CSE Community app: fix bugs in existing components, build auth pages, people directory with connections, messaging inbox, faculty portal, and integrate navigation/sidebar polish.",
+  "status": "pending",
+  "feature_order": ["FEAT-001", "FEAT-002", "FEAT-003", "FEAT-004", "FEAT-005"],
+  "blocked_reason": null
+}
