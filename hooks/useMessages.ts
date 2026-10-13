@@ -16,23 +16,52 @@ export async function startConversation(otherUserId: string): Promise<string | n
   }
 }
 
-export async function sendMessage(conversationId: string, body: string): Promise<boolean> {
+
+export type SentMessage = {
+  id: string
+  conversation_id: string
+  sender_id: string
+  body: string
+  created_at: string
+}
+
+export async function sendMessage(
+  conversationId: string,
+  body: string
+): Promise<SentMessage | null> {
   const supabase = createClient()
   const trimmed = body.trim()
+
   if (!trimmed || trimmed.length > 4000) {
     toast.error('Message must be between 1 and 4000 characters')
-    return false
+    return null
   }
 
-  const { error } = await supabase.from('messages').insert({
-    conversation_id: conversationId,
-    sender_id: (await supabase.auth.getUser()).data.user?.id,
-    body: trimmed,
-  })
+  const {
+    data: { user },
+    error: authError,
+  } = await supabase.auth.getUser()
+
+  if (authError || !user) {
+    toast.error('Please sign in to send a message')
+    return null
+  }
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      sender_id: user.id,
+      body: trimmed,
+    })
+    .select('id, conversation_id, sender_id, body, created_at')
+    .single()
 
   if (error) {
     toast.error(error.message)
-    return false
+    return null
   }
-  return true
+
+  return data as SentMessage
 }
+

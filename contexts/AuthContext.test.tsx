@@ -51,18 +51,36 @@ function setupMockChain(
   insertResult: { data: unknown; error: unknown },
   reSelectResult: { data: unknown; error: unknown }
 ) {
-  const fromMock = vi.fn(() => ({
+  // Persistent spies so assertions can inspect call counts across the
+  // multiple `.from('profiles')` calls the hook makes.
+  const insertSpy = vi.fn(() => Promise.resolve(insertResult))
+  const updateSpy = vi.fn(() => ({
+    eq: vi.fn(() => Promise.resolve({ data: null, error: null })),
+  }))
+
+  const selectBuilder = {
     select: vi.fn(() => ({
       eq: vi.fn(() => ({
         maybeSingle: vi.fn(() => Promise.resolve(selectResult)),
       })),
     })),
-    insert: vi.fn(() => Promise.resolve(insertResult)),
-    update: vi.fn(() => ({
-      eq: vi.fn(() => Promise.resolve({ data: null, error: null })),
-    })),
-  }))
-  mockSupabase.from.mockImplementation(fromMock)
+  }
+  const insertBuilder = { insert: insertSpy }
+  const updateBuilder = { update: updateSpy }
+
+  const fromMock = vi.fn(table => {
+    if (table === 'profiles') {
+      // First call: select; subsequent calls: insert/update builders
+      if (selectBuilder.select.mock.calls.length === 0) return selectBuilder
+      return insertBuilder
+    }
+    return selectBuilder
+  })
+  mockSupabase.from = fromMock
+
+  // Expose spies for assertions
+  ;(mockSupabase as any)._insertSpy = insertSpy
+  ;(mockSupabase as any)._updateSpy = updateSpy
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +121,7 @@ describe('fetchProfile — existing profile', () => {
     // Insert must NOT have been called — profile already exists
     expect(mockSupabase.from('').insert).not.toHaveBeenCalled()
     expect(fetched!.id).toBe('user-1')
+    rerender()
   })
 })
 
