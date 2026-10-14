@@ -259,6 +259,14 @@ For issues or questions:
 
 ---
 
-**Version:** 1.0.0  
-**Last Updated:** October 13, 2026  
+## 🆕 Latest Updates
+
+### v1.1 (October 14, 2026)
+- Completed the v1.1 upgrade baseline across networking, messaging, faculty, and admin flows.
+- Resolved Vitest/Node typings dependency conflict by pinning `@types/node` to `^22.20.5`.
+
+---
+
+**Version:** 1.1.0  
+**Last Updated:** October 14, 2026  
 **Status:** Production Ready ✅
