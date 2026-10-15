@@ -4,6 +4,26 @@ interface SignedUrlResponse {
   key: string;
 }
 
+/** Shape of the server-side upload fallback response. */
+interface R2UploadResponse {
+  publicUrl?: unknown;
+  key?: unknown;
+}
+
+function isR2UploadResponse(value: unknown): value is R2UploadResponse {
+  return typeof value === 'object' && value !== null;
+}
+
+function isSignedUrlResponse(value: unknown): value is SignedUrlResponse {
+  if (!isR2UploadResponse(value)) return false;
+  const obj = value as Record<string, unknown>;
+  return (
+    typeof obj.uploadUrl === 'string' &&
+    typeof obj.publicUrl === 'string' &&
+    typeof obj.key === 'string'
+  );
+}
+
 /**
  * Uploads a WebP Blob to Cloudflare R2 via an Edge presigned URL endpoint.
  *
@@ -28,7 +48,11 @@ export async function uploadToR2(blob: Blob, path: string): Promise<string> {
     });
 
     if (response.ok) {
-      const { uploadUrl, publicUrl }: SignedUrlResponse = await response.json();
+      const body: unknown = await response.json();
+      if (!isSignedUrlResponse(body)) {
+        throw new Error('Invalid signed-URL response from server');
+      }
+      const { uploadUrl, publicUrl } = body;
 
       const uploadResponse = await fetch(uploadUrl, {
         method: 'PUT',
@@ -67,6 +91,9 @@ export async function uploadToR2(blob: Blob, path: string): Promise<string> {
     throw new Error(`Upload failed (${fallbackResponse.status}): ${errorText}`);
   }
 
-  const result = await fallbackResponse.json();
+  const result: unknown = await fallbackResponse.json();
+  if (!isR2UploadResponse(result) || typeof result.publicUrl !== 'string') {
+    throw new Error('Invalid upload response from server');
+  }
   return result.publicUrl;
 }

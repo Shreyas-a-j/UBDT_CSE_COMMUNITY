@@ -8,6 +8,16 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'Content-Type',
 };
 
+/** Shape of the signed-URL request body we accept from the client. */
+interface SignedUrlRequestBody {
+  filename?: unknown;
+  contentType?: unknown;
+}
+
+function isSignedUrlRequestBody(value: unknown): value is SignedUrlRequestBody {
+  return typeof value === 'object' && value !== null;
+}
+
 export async function OPTIONS() {
   return new NextResponse(null, {
     status: 204,
@@ -17,7 +27,13 @@ export async function OPTIONS() {
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
+    const body: unknown = await req.json();
+    if (!isSignedUrlRequestBody(body)) {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400, headers: corsHeaders }
+      );
+    }
     const { filename, contentType } = body;
 
     if (!filename || typeof filename !== 'string') {
