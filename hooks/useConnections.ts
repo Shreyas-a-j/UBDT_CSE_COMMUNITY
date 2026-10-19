@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useAuth } from '@/contexts/AuthContext'
 import { ConnectionRequest, ConnectionAction } from '@/lib/types'
@@ -11,11 +11,7 @@ export function useConnections() {
   const [outgoing, setOutgoing] = useState<ConnectionRequest[]>([])
   const [incoming, setIncoming] = useState<ConnectionRequest[]>([])
 
-  useEffect(() => {
-    if (profile) fetchConnections()
-  }, [profile])
-
-  const fetchConnections = async () => {
+  const fetchConnections = useCallback(async () => {
     if (!profile) return
 
     const { data } = await supabase
@@ -32,7 +28,11 @@ export function useConnections() {
       setOutgoing(data.filter(r => r.requester_id === profile.id && r.status === 'pending'))
       setIncoming(data.filter(r => r.addressee_id === profile.id && r.status === 'pending'))
     }
-  }
+  }, [profile, supabase])
+
+  useEffect(() => {
+    if (profile) queueMicrotask(() => fetchConnections())
+  }, [profile, fetchConnections])
 
   const actionFor = (otherUserId: string): ConnectionAction => {
     if (!profile) return 'none'

@@ -1,133 +1,170 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import { Calendar, Clock, Sparkles, ArrowBigUp, ShieldCheck, ChevronRight } from 'lucide-react'
+import React from 'react'
+import { format, parseISO } from 'date-fns'
+import { ArrowUpRight, CalendarDays, Heart, Megaphone, MessageSquare, Sparkles } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { getCountdown } from '@/lib/utils'
+import UserAvatar from '@/components/UserAvatar'
+import { displayName } from '@/lib/profile'
 
-export default function SidebarRight() {
-  const { events, posts, setFeedFilter, toggleRsvpEvent, rsvpedEventIds } = useCommunity()
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => { setMounted(true) }, [])
+function EventDate({ date }: { date: string }) {
+  let parsed: Date | null = null
+  try {
+    parsed = parseISO(date)
+  } catch {
+    parsed = null
+  }
 
-  const upcomingEvents = events.slice(0, 3)
-  const topShowcases = posts
-    .filter(p => p.type === 'showcase')
-    .sort((a, b) => (b.upvote_count ?? 0) - (a.upvote_count ?? 0))
-    .slice(0, 3)
+  if (!parsed) return null
 
   return (
-    <aside style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      {/* Upcoming Events */}
-      <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '14px', boxShadow: '4px 4px 0px #000' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderBottom: '2px solid #1e3560', paddingBottom: 8 }}>
-          <h3 style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            <Calendar style={{ width: 14, height: 14, color: '#00ffcc' }} /> UPCOMING EVENTS
-          </h3>
-          <button type="button" onClick={() => setFeedFilter('events')} style={{ fontSize: '0.7rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', display: 'flex', alignItems: 'center', fontWeight: 600 }}>
-            ALL <ChevronRight style={{ width: 12, height: 12 }} />
-          </button>
+    <div className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-md border border-line bg-elevated leading-none">
+      <span className="text-[9px] font-medium uppercase tracking-wide text-dim">
+        {format(parsed, 'MMM')}
+      </span>
+      <span className="mt-0.5 text-[15px] font-semibold text-ink">{format(parsed, 'd')}</span>
+    </div>
+  )
+}
+
+function ViewAll({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-0.5 text-[11.5px] font-medium text-muted transition-colors hover:text-ink"
+    >
+      {label} <ArrowUpRight className="h-3 w-3" />
+    </button>
+  )
+}
+
+export default function SidebarRight() {
+  const { events, posts, announcements, setFeedFilter, setSearchQuery } = useCommunity()
+
+  const upcomingEvents = events.slice(0, 3)
+  const trending = [...posts]
+    .sort((a, b) => {
+      const scoreA = (a.like_count ?? 0) + (a.comment_count ?? 0) + (a.upvote_count ?? 0)
+      const scoreB = (b.like_count ?? 0) + (b.comment_count ?? 0) + (b.upvote_count ?? 0)
+      return scoreB - scoreA
+    })
+    .slice(0, 4)
+  const latestAnnouncements = announcements.slice(0, 2)
+
+  const goTo = (filter: Parameters<typeof setFeedFilter>[0]) => {
+    setFeedFilter(filter)
+    setSearchQuery('')
+  }
+
+  return (
+    <aside className="flex flex-col gap-4" aria-label="Community highlights">
+      <section className="card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+            <CalendarDays className="h-4 w-4 text-dim" />
+            Upcoming events
+          </h2>
+          <ViewAll label="All" onClick={() => goTo('events')} />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {upcomingEvents.length === 0 ? (
-            <p style={{ fontSize: '0.75rem', color: '#3d6b8a', textAlign: 'center', padding: '10px 0' }}>NO UPCOMING EVENTS</p>
-          ) : (
-            upcomingEvents.map(evt => {
-              const isRsvped = rsvpedEventIds.has(evt.id)
-              const countdown = mounted ? getCountdown(evt.event_date, evt.event_time) : ''
-              return (
-                <div key={evt.id} style={{ background: '#0c1220', border: '2px solid #1e3560', padding: '10px', boxShadow: '2px 2px 0px #000' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                    <span style={{
-                      fontSize: '0.68rem', fontWeight: 700, padding: '2px 6px',
-                      background: evt.type === 'Workshop' ? 'rgba(170,102,255,0.15)' : evt.type === 'Meeting' ? 'rgba(0,255,204,0.12)' : 'rgba(255,224,102,0.12)',
-                      color: evt.type === 'Workshop' ? '#cc99ff' : evt.type === 'Meeting' ? '#00ffcc' : '#ffe066',
-                      border: `2px solid ${evt.type === 'Workshop' ? 'rgba(170,102,255,0.35)' : evt.type === 'Meeting' ? 'rgba(0,255,204,0.35)' : 'rgba(255,224,102,0.35)'}`,
-                      textTransform: 'uppercase',
-                    }}>
-                      {evt.type}
+        {upcomingEvents.length === 0 ? (
+          <p className="rounded-md bg-elevated px-3 py-4 text-center text-[12px] text-dim">
+            No upcoming events yet.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {upcomingEvents.map(event => (
+              <li key={event.id} className="flex items-start gap-2.5 rounded-md p-2 transition-colors hover:bg-elevated">
+                <EventDate date={event.event_date} />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-[12.5px] font-medium leading-snug text-ink">
+                    {event.title}
+                  </p>
+                  <p className="mt-1 text-[10.5px] text-dim">
+                    {event.type} · {event.event_time} · {event.rsvp_count ?? 0} going
+                  </p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section className="card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+            <Sparkles className="h-4 w-4 text-dim" />
+            Trending posts
+          </h2>
+          <ViewAll label="Feed" onClick={() => goTo('all')} />
+        </div>
+
+        {trending.length === 0 ? (
+          <p className="rounded-md bg-elevated px-3 py-4 text-center text-[12px] text-dim">
+            Discussions will appear here.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-1">
+            {trending.map(post => (
+              <li key={post.id} className="flex items-start gap-2.5 rounded-md p-2 transition-colors hover:bg-elevated">
+                <UserAvatar
+                  src={post.author_avatar}
+                  name={post.author_name || 'Member'}
+                  size={30}
+                />
+                <div className="min-w-0">
+                  <p className="line-clamp-2 text-[12.5px] font-medium leading-snug text-ink">
+                    {post.title}
+                  </p>
+                  <p className="mt-0.5 truncate text-[10.5px] text-dim">{displayName({ name: post.author_name || 'CSE Student' })}</p>
+                  <p className="mt-1 flex items-center gap-2 text-[10px] text-dim">
+                    <span className="inline-flex items-center gap-1">
+                      <Heart className="h-3 w-3" /> {post.like_count ?? 0}
                     </span>
-                    {countdown && countdown !== 'Event ended' && (
-                      <span style={{ fontSize: '0.7rem', color: '#ffe066', display: 'flex', alignItems: 'center', gap: 4, fontWeight: 600 }}>
-                        <Clock style={{ width: 11, height: 11 }} />{countdown}
-                      </span>
-                    )}
-                  </div>
-                  <h4 style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 600, marginBottom: 8, lineHeight: 1.4, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{evt.title}</h4>
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <span style={{ fontSize: '0.7rem', color: '#6bafd4' }}>{evt.event_time} • {evt.rsvp_count ?? 0} GOING</span>
-                    <button
-                      type="button"
-                      onClick={() => toggleRsvpEvent(evt.id)}
-                      style={{
-                        fontSize: '0.7rem', fontWeight: 700, padding: '4px 10px', border: '2px solid', cursor: 'pointer',
-                        background: isRsvped ? '#00ffcc' : '#00aaff',
-                        color: '#060a14',
-                        borderColor: isRsvped ? '#00ccaa' : '#0088cc',
-                        boxShadow: isRsvped ? '2px 2px 0px #006655' : '2px 2px 0px #003366',
-                        textTransform: 'uppercase',
-                        letterSpacing: '0.02em',
-                      }}
-                    >
-                      {isRsvped ? 'GOING ✓' : 'RSVP'}
-                    </button>
-                  </div>
+                    <span className="inline-flex items-center gap-1">
+                      <MessageSquare className="h-3 w-3" /> {post.comment_count ?? 0}
+                    </span>
+                  </p>
                 </div>
-              )
-            })
-          )}
-        </div>
-      </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
 
-      {/* Top Showcases */}
-      <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '14px', boxShadow: '4px 4px 0px #000' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12, borderBottom: '2px solid #1e3560', paddingBottom: 8 }}>
-          <h3 style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-            <Sparkles style={{ width: 14, height: 14, color: '#ffe066' }} /> TOP SHOWCASES
-          </h3>
-          <button type="button" onClick={() => setFeedFilter('showcases')} style={{ fontSize: '0.7rem', color: '#ffe066', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', display: 'flex', alignItems: 'center', fontWeight: 600 }}>
-            ALL <ChevronRight style={{ width: 12, height: 12 }} />
-          </button>
+      <section className="card p-4">
+        <div className="mb-3 flex items-center justify-between gap-2">
+          <h2 className="flex items-center gap-2 text-[15px] font-semibold text-ink">
+            <Megaphone className="h-4 w-4 text-dim" />
+            Announcements
+          </h2>
+          <ViewAll label="All" onClick={() => goTo('announcements')} />
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {topShowcases.length === 0 ? (
-            <p style={{ fontSize: '0.75rem', color: '#3d6b8a', textAlign: 'center', padding: '10px 0' }}>NO SHOWCASES YET</p>
-          ) : (
-            topShowcases.map(proj => (
-              <div key={proj.id} style={{ background: '#0c1220', border: '2px solid #1e3560', padding: '10px', boxShadow: '2px 2px 0px #000' }}>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-                  <span style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 1, WebkitBoxOrient: 'vertical', flex: 1, marginRight: 8 }}>{proj.title}</span>
-                  <span style={{ fontSize: '0.7rem', color: '#ffe066', background: 'rgba(255,224,102,0.12)', border: '2px solid rgba(255,224,102,0.35)', padding: '2px 6px', display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0, boxShadow: '2px 2px 0px #665500', fontWeight: 700 }}>
-                    <ArrowBigUp style={{ width: 12, height: 12, fill: '#ffe066', color: '#ffe066' }} />
-                    {proj.upvote_count ?? 0}
-                  </span>
-                </div>
-                <p style={{ fontSize: '0.75rem', color: '#6bafd4', lineHeight: 1.5, overflow: 'hidden', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical' }}>{proj.body}</p>
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Community Guidelines */}
-      <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '14px', boxShadow: '4px 4px 0px #000' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 10, borderBottom: '2px solid #1e3560', paddingBottom: 8 }}>
-          <ShieldCheck style={{ width: 14, height: 14, color: '#00ffcc' }} />
-          <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>COMMUNITY RULES</span>
-        </div>
-        <ul style={{ display: 'flex', flexDirection: 'column', gap: 8, listStyle: 'none', padding: 0, margin: 0 }}>
-          {[
-            '▸ Help juniors with constructive feedback',
-            '▸ Share GitHub repos for academic projects',
-            '▸ Keep workshop links free for students',
-            '▸ Practice academic honesty & peer collab',
-          ].map((rule, i) => (
-            <li key={i} style={{ fontSize: '0.75rem', color: '#a8d4f0', lineHeight: 1.5 }}>{rule}</li>
-          ))}
-        </ul>
-      </div>
+        {latestAnnouncements.length === 0 ? (
+          <p className="rounded-md bg-elevated px-3 py-4 text-center text-[12px] text-dim">
+            No announcements right now.
+          </p>
+        ) : (
+          <ul className="flex flex-col gap-2">
+            {latestAnnouncements.map(announcement => (
+              <li key={announcement.id} className="rounded-md border border-line bg-elevated/60 p-3">
+                <p className="line-clamp-2 text-[12.5px] font-medium leading-snug text-ink">
+                  {announcement.title}
+                </p>
+                <p className="mt-1 line-clamp-2 text-[11.5px] leading-relaxed text-muted">
+                  {announcement.body}
+                </p>
+                <p className="mt-2 truncate text-[10.5px] text-dim">
+                  {announcement.author_name || 'Faculty'}
+                  {announcement.author_designation ? ` · ${announcement.author_designation}` : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
     </aside>
   )
 }

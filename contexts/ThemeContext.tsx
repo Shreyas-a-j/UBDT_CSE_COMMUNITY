@@ -15,10 +15,12 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setTheme] = useState<Theme>('dark')
 
   useEffect(() => {
-    const saved = localStorage.getItem('ubdt-theme') as Theme | null
-    const initial = saved || 'dark'
-    setTheme(initial)
-    document.documentElement.classList.toggle('dark', initial === 'dark')
+    queueMicrotask(() => {
+      const saved = localStorage.getItem('ubdt-theme') as Theme | null
+      const initial = saved || 'dark'
+      setTheme(initial)
+      document.documentElement.classList.toggle('dark', initial === 'dark')
+    })
   }, [])
 
   const toggleTheme = () => {

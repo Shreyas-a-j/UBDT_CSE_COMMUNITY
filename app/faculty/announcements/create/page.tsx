@@ -2,9 +2,11 @@
 
 import { Suspense, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Megaphone, Loader2, AlertCircle } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Loader2, Megaphone } from 'lucide-react'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import PageHeader from '@/components/PageHeader'
+import EmptyState from '@/components/EmptyState'
 import { useAuth } from '@/contexts/AuthContext'
 import { canPublishFacultyContent } from '@/lib/profile'
 import { sanitizeText } from '@/lib/validation'
@@ -54,209 +56,144 @@ function CreateAnnouncement() {
 
   if (!currentUser || !canPublishFacultyContent(currentUser)) {
     return (
-      <AppShell>
-        <div style={{ maxWidth: 800, margin: '0 auto', padding: 60, textAlign: 'center' }}>
-          <AlertCircle style={{ width: 48, height: 48, color: '#ff6688', margin: '0 auto 16px' }} />
-          <p style={{ color: '#e8f4fd', fontSize: '1rem' }}>Access denied: Faculty verification required</p>
-        </div>
-      </AppShell>
+      <div className="mx-auto w-full max-w-2xl">
+        <EmptyState
+          icon={<AlertCircle className="h-6 w-6 text-danger" />}
+          title="Access denied"
+          body="Faculty verification is required to publish announcements. Contact an administrator if you believe this is a mistake."
+          action={
+            <button type="button" onClick={() => router.back()} className="btn btn-outline">
+              <ArrowLeft className="h-4 w-4" /> Go back
+            </button>
+          }
+        />
+      </div>
     )
   }
 
+  const canSubmit = Boolean(title.trim() && body.trim()) && !loading
+
   return (
-    <AppShell>
-      <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-        {/* Back button */}
-        <button
-          onClick={() => router.back()}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 20,
-            padding: '8px 12px',
-            background: 'transparent',
-            border: '2px solid #1e3560',
-            color: '#00aaff',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '2px 2px 0px #000',
-          }}
-        >
-          <ArrowLeft style={{ width: 16, height: 16 }} />
-          BACK
-        </button>
+    <div className="mx-auto w-full max-w-2xl">
+      <button
+        type="button"
+        onClick={() => router.back()}
+        className="mb-5 inline-flex items-center gap-1.5 text-[12px] font-medium text-muted transition-colors hover:text-ink"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to dashboard
+      </button>
 
-        {/* Form */}
-        <div
-          style={{
-            background: '#0d1426',
-            border: '2px solid #1e3560',
-            padding: 24,
-            boxShadow: '4px 4px 0px #000',
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
-            <Megaphone style={{ width: 28, height: 28, color: '#ffe066' }} />
-            <h1 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#e8f4fd', margin: 0 }}>
-              CREATE ANNOUNCEMENT
-            </h1>
+      <PageHeader
+        eyebrow="Faculty workspace"
+        title="New announcement"
+        description="Announcements are visible to every student in the community feed."
+      />
+
+      <form onSubmit={handleSubmit} className="card overflow-hidden">
+        <div className="flex items-center gap-2.5 border-b border-line bg-surface px-5 py-4">
+          <span className="flex h-8 w-8 items-center justify-center rounded-md border border-line bg-elevated">
+            <Megaphone className="h-4 w-4 text-accent" />
+          </span>
+          <div>
+            <p className="text-[13px] font-semibold text-ink">Compose</p>
+            <p className="text-[10px] text-dim">Published immediately</p>
           </div>
+        </div>
 
+        <div className="space-y-5 p-5">
           {error && (
             <div
-              style={{
-                padding: '10px 14px',
-                background: 'rgba(255,68,102,0.1)',
-                border: '2px solid rgba(255,68,102,0.4)',
-                color: '#ff6688',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 8,
-                marginBottom: 20,
-                boxShadow: '2px 2px 0px #661133',
-              }}
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/[0.06] px-3 py-2.5 text-[12.5px] text-danger"
             >
-              <AlertCircle style={{ width: 16, height: 16, flexShrink: 0 }} />
-              <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>{error}</span>
+              <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              <span className="break-words">{error}</span>
             </div>
           )}
 
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {/* Title */}
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  color: '#e8f4fd',
-                  marginBottom: 8,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Announcement Title
-              </label>
-              <input
-                type="text"
-                required
-                placeholder="e.g. Project Submission Deadline Extended"
-                value={title}
-                onChange={e => {
-                  setTitle(e.target.value)
-                  setError('')
-                }}
-                maxLength={200}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  background: '#060a14',
-                  border: '2px solid #1e3560',
-                  color: '#e8f4fd',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                }}
-              />
-              <div style={{ fontSize: '0.75rem', color: '#6bafd4', marginTop: 6 }}>
-                {title.length}/200 characters
-              </div>
-            </div>
-
-            {/* Body */}
-            <div>
-              <label
-                style={{
-                  display: 'block',
-                  fontSize: '0.875rem',
-                  fontWeight: 700,
-                  color: '#e8f4fd',
-                  marginBottom: 8,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Announcement Content
-              </label>
-              <textarea
-                required
-                placeholder="Write your announcement here. This will be visible to all students in the community feed."
-                value={body}
-                onChange={e => {
-                  setBody(e.target.value)
-                  setError('')
-                }}
-                maxLength={5000}
-                rows={10}
-                style={{
-                  width: '100%',
-                  padding: '12px 14px',
-                  background: '#060a14',
-                  border: '2px solid #1e3560',
-                  color: '#e8f4fd',
-                  fontSize: '0.9rem',
-                  outline: 'none',
-                  resize: 'vertical',
-                  fontFamily: 'inherit',
-                  lineHeight: 1.6,
-                }}
-              />
-              <div style={{ fontSize: '0.75rem', color: '#6bafd4', marginTop: 6 }}>
-                {body.length}/5000 characters
-              </div>
-            </div>
-
-            {/* Submit */}
-            <button
-              type="submit"
-              disabled={loading || !title.trim() || !body.trim()}
-              style={{
-                padding: '12px 20px',
-                background: loading || !title.trim() || !body.trim() ? '#1e3560' : '#ffe066',
-                color: loading || !title.trim() || !body.trim() ? '#6bafd4' : '#060a14',
-                border: '2px solid',
-                borderColor: loading || !title.trim() || !body.trim() ? '#1e3560' : '#ccb300',
-                fontSize: '0.9rem',
-                fontWeight: 700,
-                cursor: loading || !title.trim() || !body.trim() ? 'not-allowed' : 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 8,
-                boxShadow: loading || !title.trim() || !body.trim() ? 'none' : '4px 4px 0px #665500',
-                textTransform: 'uppercase',
+          <div>
+            <label htmlFor="announcement-title" className="label">
+              Title
+            </label>
+            <input
+              id="announcement-title"
+              type="text"
+              required
+              placeholder="e.g. Project submission deadline extended"
+              value={title}
+              onChange={e => {
+                setTitle(e.target.value)
+                setError('')
               }}
-            >
-              {loading ? (
-                <>
-                  <Loader2 style={{ width: 18, height: 18 }} className="animate-spin" />
-                  PUBLISHING...
-                </>
-              ) : (
-                <>
-                  <Megaphone style={{ width: 18, height: 18 }} />
-                  PUBLISH ANNOUNCEMENT
-                </>
-              )}
-            </button>
-          </form>
+              maxLength={200}
+              className="field"
+            />
+            <div className="mt-1.5 flex justify-end text-[10px] text-dim">
+              {title.length}/200
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="announcement-body" className="label">
+              Content
+            </label>
+            <textarea
+              id="announcement-body"
+              required
+              placeholder="Write the announcement. Include dates, venues and any action students need to take."
+              value={body}
+              onChange={e => {
+                setBody(e.target.value)
+                setError('')
+              }}
+              maxLength={5000}
+              rows={10}
+              className="field-area"
+            />
+            <div className="mt-1.5 flex justify-end text-[10px] text-dim">
+              {body.length}/5000
+            </div>
+          </div>
         </div>
-      </div>
-    </AppShell>
+
+        <div className="flex flex-col-reverse gap-2 border-t border-line bg-surface px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="btn btn-ghost"
+            disabled={loading}
+          >
+            Cancel
+          </button>
+          <button type="submit" disabled={!canSubmit} className="btn btn-accent">
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" /> Publishing…
+              </>
+            ) : (
+              <>
+                <Megaphone className="h-4 w-4" /> Publish announcement
+              </>
+            )}
+          </button>
+        </div>
+      </form>
+    </div>
   )
 }
 
 export default function CreateAnnouncementPage() {
   return (
-    <Suspense
-      fallback={
-        <AppShell>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <Loader2 style={{ width: 48, height: 48, color: '#ffe066' }} className="animate-spin" />
+    <AppShell>
+      <Suspense
+        fallback={
+          <div className="mx-auto flex w-full max-w-2xl justify-center py-24">
+            <Loader2 className="h-6 w-6 animate-spin text-dim" />
           </div>
-        </AppShell>
-      }
-    >
-      <CreateAnnouncement />
-    </Suspense>
+        }
+      >
+        <CreateAnnouncement />
+      </Suspense>
+    </AppShell>
   )
 }

@@ -1,8 +1,9 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, MessageSquare, Sparkles, Link as LinkIcon, GitBranch } from 'lucide-react'
+import { GitBranch, Link as LinkIcon, MessageSquare, Sparkles } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
+import Modal, { ModalCloseButton } from '@/components/Modal'
 
 export default function CreatePostModal() {
   const { isCreatePostOpen, setIsCreatePostOpen, createPost } = useCommunity()
@@ -15,10 +16,10 @@ export default function CreatePostModal() {
   const [demoUrl, setDemoUrl] = useState('')
   const [techStackStr, setTechStackStr] = useState('')
 
-  if (!isCreatePostOpen) return null
+  const close = () => setIsCreatePostOpen(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
     if (!title.trim() || !body.trim()) return
 
     const tags = tagsStr.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
@@ -43,189 +44,174 @@ export default function CreatePostModal() {
     setGithubUrl('')
     setDemoUrl('')
     setTechStackStr('')
-    setIsCreatePostOpen(false)
+    close()
   }
 
   return (
-    <div className="modal-overlay">
-      <div className="modal-content" style={{ background: '#0b1220', border: '2px solid #00aaff', boxShadow: '6px 6px 0px #000, 0 0 24px rgba(0,170,255,0.18)', borderRadius: 0, outline: 'none' }}>
-        {/* Header */}
-        <div style={{ background: '#090e1c', borderBottom: '2px solid #1e3560', padding: '14px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 34, height: 34, background: type === 'showcase' ? '#ffe066' : '#00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #000' }}>
-              {type === 'showcase' ? (
-                <Sparkles style={{ width: 18, height: 18, color: '#060a14' }} />
-              ) : (
-                <MessageSquare style={{ width: 18, height: 18, color: '#060a14' }} />
-              )}
-            </div>
-            <div>
-              <h2 style={{ fontSize: '0.95rem', fontWeight: 700, color: '#e8f4fd', letterSpacing: '0.02em', margin: 0 }}>
-                {type === 'showcase' ? 'Share Project Showcase' : 'Start Discussion Thread'}
-              </h2>
-              <p style={{ fontSize: '0.72rem', color: '#6bafd4', margin: 0 }}>
-                {type === 'showcase' ? 'Present your code and demo to UCC peers' : 'Ask questions or share insights with the community'}
-              </p>
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={() => setIsCreatePostOpen(false)}
-            style={{ background: 'transparent', border: '2px solid #1e3560', padding: '5px', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#e8f4fd' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
+    <Modal open={isCreatePostOpen} onClose={close} labelledBy="create-post-title">
+      <div className="modal-head">
+        <div className="flex items-start gap-3">
+          <span
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border ${
+              type === 'showcase'
+                ? 'border-warn/30 bg-warn/10 text-warn'
+                : 'border-line bg-elevated text-muted'
+            }`}
           >
-            <X style={{ width: 16, height: 16 }} />
-          </button>
-        </div>
-
-        {/* Type Toggle */}
-        <div style={{ padding: '12px 18px', background: '#080d18', borderBottom: '2px solid #1e3560' }}>
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button
-              type="button"
-              onClick={() => setType('discussion')}
-              style={{
-                flex: 1, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
-                border: '2px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em',
-                background: type === 'discussion' ? '#00aaff' : 'transparent',
-                color: type === 'discussion' ? '#060a14' : '#6bafd4',
-                borderColor: type === 'discussion' ? '#0088cc' : '#1e3560',
-                boxShadow: type === 'discussion' ? '3px 3px 0px #003366' : 'none',
-              }}
-            >
-              <MessageSquare style={{ width: 14, height: 14 }} /> Discussion
-            </button>
-            <button
-              type="button"
-              onClick={() => setType('showcase')}
-              style={{
-                flex: 1, padding: '8px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer',
-                border: '2px solid', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
-                textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em',
-                background: type === 'showcase' ? '#ffe066' : 'transparent',
-                color: type === 'showcase' ? '#060a14' : '#6bafd4',
-                borderColor: type === 'showcase' ? '#ccb000' : '#1e3560',
-                boxShadow: type === 'showcase' ? '3px 3px 0px #665500' : 'none',
-              }}
-            >
-              <Sparkles style={{ width: 14, height: 14 }} /> Project Showcase
-            </button>
+            {type === 'showcase' ? <Sparkles className="h-4 w-4" /> : <MessageSquare className="h-4 w-4" />}
+          </span>
+          <div>
+            <h2 id="create-post-title" className="text-[16px] font-semibold text-ink">
+              New post
+            </h2>
+            <p className="mt-0.5 text-[12px] text-muted">
+              Share a question, an insight or a project with the department.
+            </p>
           </div>
         </div>
+        <ModalCloseButton onClick={close} />
+      </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '18px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <div className="modal-body space-y-4">
+          <div
+            className="inline-flex w-full rounded-md border border-line bg-elevated p-1"
+            role="tablist"
+            aria-label="Post type"
+          >
+            {[
+              { id: 'discussion' as const, label: 'Discussion', icon: MessageSquare },
+              { id: 'showcase' as const, label: 'Project showcase', icon: Sparkles },
+            ].map(option => {
+              const active = type === option.id
+              const Icon = option.icon
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setType(option.id)}
+                  className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded text-[12.5px] font-medium transition-colors ${
+                    active ? 'bg-accent-soft text-accent-hover' : 'text-muted hover:bg-surface hover:text-ink'
+                  }`}
+                >
+                  <Icon className="h-3.5 w-3.5" />
+                  {option.label}
+                </button>
+              )
+            })}
+          </div>
+
           <div>
-            <label className="label">Title</label>
+            <label className="label" htmlFor="post-title">Title</label>
             <input
+              id="post-title"
               type="text"
               required
               placeholder={
                 type === 'showcase'
-                  ? 'e.g. SmartAtt — QR Attendance for CSE Labs'
-                  : 'e.g. Tips for Dynamic Programming in placements'
+                  ? 'e.g. SmartAtt — QR attendance for CSE labs'
+                  : 'e.g. How should we prepare for placement DSA rounds?'
               }
               value={title}
               onChange={e => setTitle(e.target.value)}
-              className="input"
+              className="field"
             />
           </div>
 
           <div>
-            <label className="label">Content / Description</label>
+            <label className="label" htmlFor="post-body">
+              {type === 'showcase' ? 'What did you build?' : 'Details'}
+            </label>
             <textarea
+              id="post-body"
               required
               rows={4}
               placeholder={
                 type === 'showcase'
-                  ? 'Describe the problem it solves, architecture, and key features…'
-                  : 'Explain your question, insights, or advice in detail…'
+                  ? 'Describe the problem, the architecture and what you learned…'
+                  : 'Add context so people can give you a useful answer…'
               }
               value={body}
               onChange={e => setBody(e.target.value)}
-              className="textarea"
+              className="field-area"
             />
           </div>
 
-          {/* Showcase-specific fields */}
           {type === 'showcase' && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, padding: '12px', background: '#080d18', border: '2px solid rgba(255,224,102,0.3)', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.5)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="space-y-3 rounded-md border border-line bg-elevated/50 p-3.5">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <GitBranch style={{ width: 12, height: 12, color: '#00aaff' }} /> GitHub Repo URL
+                  <label className="label flex items-center gap-1.5" htmlFor="post-github">
+                    <GitBranch className="h-3 w-3" /> GitHub repository
                   </label>
                   <input
+                    id="post-github"
                     type="url"
                     placeholder="https://github.com/…"
                     value={githubUrl}
                     onChange={e => setGithubUrl(e.target.value)}
-                    className="input"
+                    className="field"
                   />
                 </div>
                 <div>
-                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <LinkIcon style={{ width: 12, height: 12, color: '#ffe066' }} /> Live Demo URL
+                  <label className="label flex items-center gap-1.5" htmlFor="post-demo">
+                    <LinkIcon className="h-3 w-3" /> Live demo
                   </label>
                   <input
+                    id="post-demo"
                     type="url"
-                    placeholder="https://myproject.vercel.app"
+                    placeholder="https://project.vercel.app"
                     value={demoUrl}
                     onChange={e => setDemoUrl(e.target.value)}
-                    className="input"
+                    className="field"
                   />
                 </div>
               </div>
               <div>
-                <label className="label">Tech Stack (comma-separated)</label>
+                <label className="label" htmlFor="post-stack">Tech stack, comma separated</label>
                 <input
+                  id="post-stack"
                   type="text"
-                  placeholder="e.g. Next.js, Supabase, TypeScript"
+                  placeholder="Next.js, Supabase, TypeScript"
                   value={techStackStr}
                   onChange={e => setTechStackStr(e.target.value)}
-                  className="input"
+                  className="field"
                 />
               </div>
             </div>
           )}
 
           <div>
-            <label className="label">Tags (comma-separated)</label>
+            <label className="label" htmlFor="post-tags">Tags, comma separated</label>
             <input
+              id="post-tags"
               type="text"
-              placeholder="e.g. DSA, Placements, WebDev"
+              placeholder="DSA, Placements, WebDev"
               value={tagsStr}
               onChange={e => setTagsStr(e.target.value)}
-              className="input"
+              className="field"
             />
+            <p className="mt-1.5 text-[11px] text-dim">
+              Tags help classmates find this post later.
+            </p>
           </div>
+        </div>
 
-          {/* Footer */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 10, paddingTop: 14, borderTop: '2px solid #1e3560' }}>
-            <button
-              type="button"
-              onClick={() => setIsCreatePostOpen(false)}
-              style={{ padding: '8px 14px', background: 'transparent', border: '2px solid #1e3560', color: '#a8d4f0', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', textTransform: 'uppercase', boxShadow: '2px 2px 0px #000' }}
-            >
-              Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={!title.trim() || !body.trim()}
-              style={{
-                padding: '8px 18px', background: '#00f5c4', color: '#060a14', border: '2px solid #00cca0',
-                fontSize: '0.78rem', fontWeight: 800, cursor: 'pointer', textTransform: 'uppercase',
-                boxShadow: '3px 3px 0px #006650', opacity: (!title.trim() || !body.trim()) ? 0.5 : 1,
-                letterSpacing: '0.03em',
-              }}
-            >
-              Publish {type === 'showcase' ? 'Showcase' : 'Post'}
-            </button>
-          </div>
-        </form>
-      </div>
-    </div>
+        <div className="modal-foot">
+          <button type="button" className="btn btn-ghost" onClick={close}>
+            Cancel
+          </button>
+          <button
+            type="submit"
+            disabled={!title.trim() || !body.trim()}
+            className="btn btn-accent"
+          >
+            Publish {type === 'showcase' ? 'showcase' : 'post'}
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }

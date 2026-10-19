@@ -1,18 +1,11 @@
 'use client'
 
-import { Suspense, use, useEffect, useState } from 'react'
+import { Suspense, use, useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft,
-  Mail,
-  Briefcase,
-  Calendar,
-  GraduationCap,
-  Loader2,
-  MessageCircle,
-  UserX,
+  ArrowLeft, Briefcase, Calendar, GraduationCap, Loader2, Mail, MessageCircle,
 } from 'lucide-react'
-import { Profile, ConnectionRequest, ConnectionStatus } from '@/lib/types'
+import { Profile, ConnectionStatus } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import UserAvatar from '@/components/UserAvatar'
@@ -30,15 +23,10 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
   const { profile: currentUser } = useAuth()
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
-  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus | null>(null)
   const [isConnected, setIsConnected] = useState(false)
 
-  useEffect(() => {
-    fetchProfile()
-    if (currentUser) fetchConnectionStatus()
-  }, [id, currentUser])
-
-  const fetchProfile = async () => {
+  const fetchProfile = useCallback(async () => {
+    setLoading(true)
     const { data, error } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle()
     if (error || !data) {
       toast.error('Profile not found')
@@ -47,9 +35,9 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
     }
     setProfile(data as Profile)
     setLoading(false)
-  }
+  }, [id, router, supabase])
 
-  const fetchConnectionStatus = async () => {
+  const fetchConnectionStatus = useCallback(async () => {
     if (!currentUser) return
     const { data } = await supabase
       .from('connection_requests')
@@ -59,10 +47,14 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
       .maybeSingle()
 
     if (data) {
-      setConnectionStatus(data.status as ConnectionStatus)
-      setIsConnected(data.status === 'accepted')
+      setIsConnected((data.status as ConnectionStatus) === 'accepted')
     }
-  }
+  }, [id, currentUser, supabase])
+
+  useEffect(() => {
+    queueMicrotask(() => fetchProfile())
+    if (currentUser) queueMicrotask(() => fetchConnectionStatus())
+  }, [fetchProfile, fetchConnectionStatus, currentUser])
 
   const handleMessage = async () => {
     if (!currentUser || !isConnected) {
@@ -76,16 +68,16 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
       if (error) throw error
       router.push(`/messages/${convId}`)
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to start conversation'
-      toast.error(msg)
+      const message = err instanceof Error ? err.message : 'Failed to start conversation'
+      toast.error(message)
     }
   }
 
   if (loading) {
     return (
       <AppShell>
-        <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-          <LoadingSkeleton rows={1} />
+        <div className="mx-auto w-full max-w-4xl">
+          <LoadingSkeleton rows={2} />
         </div>
       </AppShell>
     )
@@ -94,244 +86,150 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
   if (!profile) return null
 
   const isSelf = currentUser?.id === profile.id
+  const skills = Array.isArray(profile.skills) ? profile.skills : []
+  const interests = Array.isArray(profile.interests) ? profile.interests : []
 
   return (
     <AppShell>
-      <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
-        {/* Back button */}
+      <div className="mx-auto w-full max-w-4xl">
         <button
+          type="button"
           onClick={() => router.back()}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 20,
-            padding: '8px 12px',
-            background: 'transparent',
-            border: '2px solid #1e3560',
-            color: '#00aaff',
-            fontSize: '0.875rem',
-            fontWeight: 600,
-            cursor: 'pointer',
-            boxShadow: '2px 2px 0px #000',
-          }}
+          className="mb-4 inline-flex items-center gap-1.5 text-[12.5px] font-medium text-muted transition-colors hover:text-ink"
         >
-          <ArrowLeft style={{ width: 16, height: 16 }} />
-          BACK TO DIRECTORY
+          <ArrowLeft className="h-3.5 w-3.5" />
+          Back to directory
         </button>
 
-        {/* Profile Card */}
-        <div
-          style={{
-            background: '#0d1426',
-            border: '2px solid #1e3560',
-            boxShadow: '4px 4px 0px #000',
-            overflow: 'hidden',
-          }}
-        >
-          {/* Cover */}
-          <div
-            style={{
-              height: 120,
-              background: 'linear-gradient(135deg, #0a1525 0%, #0f1f3d 50%, #0a1525 100%)',
-              borderBottom: '2px solid #1e3560',
-            }}
-          />
+        <div className="card overflow-hidden">
+          <div className="relative h-24 overflow-hidden border-b border-line bg-[#191a2b] sm:h-28">
+            <div className="absolute inset-0 dot-grid opacity-25" aria-hidden />
+            <div
+              className="pointer-events-none absolute -right-3 top-1/2 -translate-y-1/2 select-none font-mono text-[76px] font-bold leading-none text-white/[0.04]"
+              aria-hidden
+            >
+              &lt;/&gt;
+            </div>
+          </div>
 
-          {/* Profile Content */}
-          <div style={{ padding: 24, marginTop: -60 }}>
-            {/* Avatar and Name */}
-            <div style={{ display: 'flex', alignItems: 'flex-end', gap: 20, marginBottom: 20 }}>
-              <UserAvatar src={profile.avatar_url} name={displayName(profile)} size={100} borderColor="#00aaff" />
-              <div style={{ flex: 1 }}>
-                <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#e8f4fd', marginBottom: 8 }}>
-                  {displayName(profile)}
-                </h1>
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                  {profile.usn && (
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        color: '#00ffcc',
-                        background: 'rgba(0,255,204,0.1)',
-                        border: '2px solid rgba(0,255,204,0.4)',
-                        padding: '4px 10px',
-                        boxShadow: '2px 2px 0px #006655',
-                        fontWeight: 700,
-                      }}
-                    >
-                      {profile.usn}
-                    </span>
-                  )}
-                  <span
-                    style={{
-                      fontSize: '0.75rem',
-                      color: '#ffe066',
-                      background: 'rgba(255,224,102,0.1)',
-                      border: '2px solid rgba(255,224,102,0.35)',
-                      padding: '4px 10px',
-                      boxShadow: '2px 2px 0px #665500',
-                      fontWeight: 700,
-                    }}
-                  >
-                    {getYearLabel(profile.year)}
-                  </span>
-                  {profile.section && (
-                    <span
-                      style={{
-                        fontSize: '0.75rem',
-                        color: '#6bafd4',
-                        background: 'rgba(107,175,212,0.1)',
-                        border: '1px solid rgba(107,175,212,0.3)',
-                        padding: '4px 10px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      Section {profile.section}
-                    </span>
+          <div className="relative z-10 px-4 pb-5 sm:px-6">
+            <div className="-mt-9 flex flex-wrap items-end justify-between gap-3 sm:-mt-10">
+              <UserAvatar
+                src={profile.avatar_url}
+                name={displayName(profile)}
+                size={76}
+                className="ring-4 ring-surface"
+              />
+              {!isSelf && currentUser && (
+                <div className="flex flex-wrap items-center gap-2 pb-1">
+                  <ConnectButton otherUserId={profile.id} />
+                  {isConnected && (
+                    <button type="button" className="btn btn-soft btn-sm" onClick={handleMessage}>
+                      <MessageCircle className="h-3.5 w-3.5" />
+                      Message
+                    </button>
                   )}
                 </div>
-              </div>
+              )}
+              {isSelf && (
+                <span className="chip mb-1">This is you</span>
+              )}
             </div>
 
-            {/* Action Buttons */}
-            {!isSelf && currentUser && (
-              <div style={{ display: 'flex', gap: 12, marginBottom: 24 }}>
-                <ConnectButton otherUserId={profile.id} />
-                {isConnected && (
-                  <button
-                    onClick={handleMessage}
-                    style={{
-                      flex: '1',
-                      padding: '10px',
-                      background: '#00ffcc',
-                      color: '#060a14',
-                      border: '2px solid #00ccaa',
-                      fontSize: '0.875rem',
-                      fontWeight: 700,
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      gap: 8,
-                      boxShadow: '3px 3px 0px #006655',
-                    }}
-                  >
-                    <MessageCircle style={{ width: 16, height: 16 }} />
-                    MESSAGE
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Bio */}
-            {profile.bio && (
-              <div style={{ marginBottom: 24 }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    color: '#00aaff',
-                    fontWeight: 700,
-                    marginBottom: 8,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  About
-                </h3>
-                <p style={{ fontSize: '0.9rem', color: '#a8d4f0', lineHeight: 1.6, margin: 0 }}>{profile.bio}</p>
-              </div>
-            )}
-
-            {/* Skills */}
-            {profile.skills && profile.skills.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    color: '#00aaff',
-                    fontWeight: 700,
-                    marginBottom: 8,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Skills
-                </h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {profile.skills.map(skill => (
-                    <span
-                      key={skill}
-                      style={{
-                        fontSize: '0.8rem',
-                        color: '#e8f4fd',
-                        background: '#0c1220',
-                        border: '2px solid #1e3560',
-                        padding: '6px 12px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {skill}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Interests */}
-            {profile.interests && profile.interests.length > 0 && (
-              <div style={{ marginBottom: 24 }}>
-                <h3
-                  style={{
-                    fontSize: '0.875rem',
-                    color: '#00aaff',
-                    fontWeight: 700,
-                    marginBottom: 8,
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  Interests
-                </h3>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                  {profile.interests.map(interest => (
-                    <span
-                      key={interest}
-                      style={{
-                        fontSize: '0.8rem',
-                        color: '#00ffcc',
-                        background: 'rgba(0,255,204,0.08)',
-                        border: '1px solid rgba(0,255,204,0.25)',
-                        padding: '6px 12px',
-                        fontWeight: 600,
-                      }}
-                    >
-                      {interest}
-                    </span>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Meta Info */}
-            <div
-              style={{
-                paddingTop: 16,
-                borderTop: '2px solid #1e3560',
-                display: 'flex',
-                gap: 16,
-                flexWrap: 'wrap',
-                fontSize: '0.8rem',
-                color: '#6bafd4',
-              }}
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Calendar style={{ width: 14, height: 14 }} />
-                Joined {formatDate(profile.created_at)}
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <GraduationCap style={{ width: 14, height: 14 }} />
-                {profile.branch}
+            <div className="mt-4">
+              <h1 className="font-display text-[26px] font-semibold tracking-tight text-ink sm:text-[28px]">
+                {displayName(profile)}
+              </h1>
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                {profile.usn && <span className="chip chip-mono">{profile.usn}</span>}
+                <span className="chip">{getYearLabel(profile.year)}</span>
+                {profile.section && <span className="chip">Section {profile.section}</span>}
+                {profile.role === 'faculty' && <span className="chip chip-warn">Faculty</span>}
+                {profile.role === 'admin' && <span className="chip chip-accent">Admin</span>}
               </div>
             </div>
           </div>
+        </div>
+
+        <div className="mt-4 grid items-start gap-4 xl:grid-cols-[minmax(0,1fr)_280px]">
+          <div className="space-y-4">
+            <section className="card p-5">
+              <h2 className="text-[14px] font-semibold text-ink">About</h2>
+              {profile.bio ? (
+                <p className="mt-2.5 max-w-[68ch] whitespace-pre-line text-[14px] leading-relaxed text-muted">
+                  {profile.bio}
+                </p>
+              ) : (
+                <p className="mt-2.5 text-[13px] text-dim">
+                  {displayName(profile)} hasn&apos;t added a bio yet.
+                </p>
+              )}
+            </section>
+
+            <section className="card p-5">
+              <h2 className="text-[14px] font-semibold text-ink">Skills</h2>
+              {skills.length > 0 ? (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {skills.map(skill => (
+                    <span key={skill} className="chip py-1 text-[11.5px]">{skill}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2.5 text-[13px] text-dim">No skills listed.</p>
+              )}
+            </section>
+
+            <section className="card p-5">
+              <h2 className="text-[14px] font-semibold text-ink">Interests</h2>
+              {interests.length > 0 ? (
+                <div className="mt-2.5 flex flex-wrap gap-1.5">
+                  {interests.map(interest => (
+                    <span key={interest} className="chip chip-accent py-1 text-[11.5px]">{interest}</span>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2.5 text-[13px] text-dim">No interests listed.</p>
+              )}
+            </section>
+          </div>
+
+          <aside className="card p-5">
+            <h2 className="text-[14px] font-semibold text-ink">Details</h2>
+            <dl className="mt-3 space-y-3 text-[12.5px]">
+              <div className="flex items-start gap-2.5">
+                <GraduationCap className="mt-0.5 h-4 w-4 shrink-0 text-dim" />
+                <div>
+                  <dt className="text-[11px] text-dim">Department</dt>
+                  <dd className="mt-0.5 text-muted">{profile.branch || 'CSE'}</dd>
+                </div>
+              </div>
+              <div className="flex items-start gap-2.5">
+                <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-dim" />
+                <div>
+                  <dt className="text-[11px] text-dim">Joined</dt>
+                  <dd className="mt-0.5 text-muted">{formatDate(profile.created_at)}</dd>
+                </div>
+              </div>
+              {profile.designation && (
+                <div className="flex items-start gap-2.5">
+                  <Briefcase className="mt-0.5 h-4 w-4 shrink-0 text-dim" />
+                  <div>
+                    <dt className="text-[11px] text-dim">Designation</dt>
+                    <dd className="mt-0.5 text-muted">{profile.designation}</dd>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-start gap-2.5">
+                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-dim" />
+                <div>
+                  <dt className="text-[11px] text-dim">Contact</dt>
+                  <dd className="mt-0.5 text-muted">
+                    {isConnected || isSelf ? 'Message via the inbox' : 'Connect to message'}
+                  </dd>
+                </div>
+              </div>
+            </dl>
+          </aside>
         </div>
       </div>
     </AppShell>
@@ -342,11 +240,9 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
   return (
     <Suspense
       fallback={
-        <AppShell>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <Loader2 style={{ width: 48, height: 48, color: '#00aaff' }} className="animate-spin" />
-          </div>
-        </AppShell>
+        <div className="flex min-h-dvh items-center justify-center bg-canvas">
+          <Loader2 className="h-8 w-8 animate-spin text-accent" />
+        </div>
       }
     >
       <ProfileDetail params={params} />

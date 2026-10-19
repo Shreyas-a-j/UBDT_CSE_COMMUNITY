@@ -3,11 +3,57 @@
 import React, { Suspense, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
-import { AlertCircle, Loader2, Eye, EyeOff, ArrowRight, CheckCircle2 } from 'lucide-react'
+import { AlertCircle, ArrowRight, CheckCircle2, Eye, EyeOff, Loader2 } from 'lucide-react'
 import AuthFormShell from '@/components/AuthFormShell'
 import { createClient } from '@/lib/supabase/client'
 import { validateStudentSignup, parseTagList } from '@/lib/validation'
 import { validateUSN, getYearFromUSN } from '@/lib/utils'
+
+function PasswordField({
+  id,
+  label,
+  value,
+  onChange,
+  placeholder,
+  show,
+  onToggle,
+}: {
+  id: string
+  label: string
+  value: string
+  onChange: (value: string) => void
+  placeholder: string
+  show: boolean
+  onToggle: () => void
+}) {
+  return (
+    <div>
+      <label htmlFor={id} className="label">
+        {label}
+      </label>
+      <div className="relative">
+        <input
+          id={id}
+          type={show ? 'text' : 'password'}
+          required
+          placeholder={placeholder}
+          value={value}
+          onChange={e => onChange(e.target.value)}
+          className="field pr-11"
+          autoComplete="new-password"
+        />
+        <button
+          type="button"
+          onClick={onToggle}
+          className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-dim transition-colors hover:text-ink"
+          aria-label={show ? 'Hide password' : 'Show password'}
+        >
+          {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
+      </div>
+    </div>
+  )
+}
 
 function SignUpForm() {
   const router = useRouter()
@@ -57,7 +103,6 @@ function SignUpForm() {
     setLoading(true)
     try {
       const skillsList = parseTagList(skills)
-      const formattedUsn = usn.toUpperCase().trim()
 
       // Double-check USN availability before submitting.
       // The database unique constraint is the authoritative check;
@@ -145,240 +190,218 @@ function SignUpForm() {
 
   if (success) {
     return (
-      <AuthFormShell title="CHECK YOUR EMAIL" subtitle="Account created successfully">
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, alignItems: 'center', textAlign: 'center' }}>
-          <CheckCircle2 style={{ width: 48, height: 48, color: '#00ffcc' }} />
-          <p style={{ color: '#a8d4f0', fontSize: '0.875rem', lineHeight: 1.6, margin: 0 }}>
-            Your account has been created. Please check your email to verify your address, then{' '}
-            <Link href="/signin" style={{ color: '#00aaff', fontWeight: 600 }}>
+      <AuthFormShell title="Check your email" subtitle="Your account has been created.">
+        <div className="flex flex-col items-center gap-4 text-center">
+          <span className="flex h-12 w-12 items-center justify-center rounded-lg border border-accent/30 bg-accent-soft">
+            <CheckCircle2 className="h-6 w-6 text-accent" />
+          </span>
+          <p className="max-w-sm text-[13px] leading-relaxed text-muted">
+            We sent a verification link to your inbox. Confirm your address, then{' '}
+            <Link href="/signin" className="font-medium text-ink underline-offset-4 hover:underline">
               sign in
-            </Link>
-            .
+            </Link>{' '}
+            to join the feed.
           </p>
         </div>
       </AuthFormShell>
     )
   }
 
+  const passwordsMismatch = Boolean(confirmPassword && confirmPassword !== password)
+
   return (
-    <AuthFormShell title="JOIN UCC COMMUNITY" subtitle="Create your student profile">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <AuthFormShell
+      title="Join the community"
+      subtitle="Create your student profile for the CSE department."
+    >
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && (
           <div
-            style={{
-              padding: '8px 12px',
-              background: 'rgba(255,68,102,0.1)',
-              border: '2px solid rgba(255,68,102,0.4)',
-              color: '#ff6688',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '2px 2px 0px #661133',
-            }}
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/[0.06] px-3 py-2.5 text-[12.5px] text-danger"
           >
-            <AlertCircle style={{ width: 14, height: 14, flexShrink: 0 }} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="break-words">{error}</span>
           </div>
         )}
 
-        {/* Full Name */}
         <div>
-          <label className="label">Full Name</label>
+          <label htmlFor="signup-name" className="label">
+            Full name
+          </label>
           <input
+            id="signup-name"
             type="text"
             required
             placeholder="e.g. Varun Kumar"
             value={name}
-            onChange={e => { setName(e.target.value); setError('') }}
-            className="input"
+            onChange={e => {
+              setName(e.target.value)
+              setError('')
+            }}
+            className="field"
             autoComplete="name"
           />
         </div>
 
-        {/* USN */}
         <div>
-          <label className="label">USN (University Seat Number)</label>
+          <label htmlFor="signup-usn" className="label">
+            USN
+          </label>
           <input
+            id="signup-usn"
             type="text"
             required
             placeholder="e.g. 4UB24CS045"
             value={usn}
             onChange={e => handleUsnChange(e.target.value)}
-            className="input"
-            style={{ textTransform: 'uppercase' }}
+            className="field font-mono uppercase placeholder:normal-case"
             maxLength={12}
           />
-          {usn && !validateUSN(usn) && (
-            <p style={{ fontSize: '0.7rem', color: '#ff6688', marginTop: 4 }}>
+          {usn && !validateUSN(usn) ? (
+            <p className="mt-1.5 text-[11px] text-danger">
               Invalid USN. Expected format: 4UB24CS045
             </p>
-          )}
-          {!usn && (
-            <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 4 }}>
-              Format: 4UB[YY]CS[Roll] — academic year is auto-detected
+          ) : (
+            <p className="mt-1.5 text-[10.5px] text-dim">
+              4UB[YY]CS[Roll] — academic year is detected automatically
             </p>
           )}
         </div>
 
-        {/* Email */}
         <div>
-          <label className="label">Email Address</label>
+          <label htmlFor="signup-email" className="label">
+            Email address
+          </label>
           <input
+            id="signup-email"
             type="email"
             required
-            placeholder="e.g. varun@gmail.com"
+            placeholder="you@example.com"
             value={email}
-            onChange={e => { setEmail(e.target.value); setError('') }}
-            className="input"
+            onChange={e => {
+              setEmail(e.target.value)
+              setError('')
+            }}
+            className="field"
             autoComplete="email"
           />
         </div>
 
-        {/* Academic Year + Section */}
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label">Academic Year</label>
+            <label htmlFor="signup-year" className="label">
+              Academic year
+            </label>
             <select
+              id="signup-year"
               value={year}
               onChange={e => setYear(Number(e.target.value))}
-              className="select"
+              className="field-select"
             >
-              <option value={1}>1st Year</option>
-              <option value={2}>2nd Year</option>
-              <option value={3}>3rd Year</option>
-              <option value={4}>4th Year</option>
+              <option value={1}>1st year</option>
+              <option value={2}>2nd year</option>
+              <option value={3}>3rd year</option>
+              <option value={4}>4th year</option>
             </select>
           </div>
           <div>
-            <label className="label">Section (optional)</label>
+            <label htmlFor="signup-section" className="label">
+              Section <span className="font-normal text-dim">(optional)</span>
+            </label>
             <input
+              id="signup-section"
               type="text"
               placeholder="e.g. A"
               value={section}
               onChange={e => setSection(e.target.value)}
-              className="input"
+              className="field"
               maxLength={10}
             />
           </div>
         </div>
 
-        {/* Skills */}
         <div>
-          <label className="label">Skills &amp; Interests (optional)</label>
+          <label htmlFor="signup-skills" className="label">
+            Skills &amp; interests <span className="font-normal text-dim">(optional)</span>
+          </label>
           <input
+            id="signup-skills"
             type="text"
             placeholder="e.g. Python, React, Machine Learning"
             value={skills}
             onChange={e => setSkills(e.target.value)}
-            className="input"
+            className="field"
           />
-          <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 4 }}>
+          <p className="mt-1.5 text-[10.5px] text-dim">
             Comma-separated — helps connect you with relevant peers
           </p>
         </div>
 
-        {/* Password */}
-        <div>
-          <label className="label">Password</label>
-          <div className="relative">
-            <input
-              type={showPassword ? 'text' : 'password'}
-              required
-              placeholder="Min. 6 characters"
-              value={password}
-              onChange={e => { setPassword(e.target.value); setError('') }}
-              className="input pr-10"
-              autoComplete="new-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowPassword(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-            >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-        </div>
+        <PasswordField
+          id="signup-password"
+          label="Password"
+          placeholder="At least 6 characters"
+          value={password}
+          onChange={v => {
+            setPassword(v)
+            setError('')
+          }}
+          show={showPassword}
+          onToggle={() => setShowPassword(v => !v)}
+        />
 
-        {/* Confirm Password */}
         <div>
-          <label className="label">Confirm Password</label>
-          <div className="relative">
-            <input
-              type={showConfirm ? 'text' : 'password'}
-              required
-              placeholder="Re-enter your password"
-              value={confirmPassword}
-              onChange={e => { setConfirmPassword(e.target.value); setError('') }}
-              className="input pr-10"
-              autoComplete="new-password"
-            />
-            <button
-              type="button"
-              onClick={() => setShowConfirm(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
-            >
-              {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-            </button>
-          </div>
-          {confirmPassword && confirmPassword !== password && (
-            <p style={{ fontSize: '0.7rem', color: '#ff6688', marginTop: 4 }}>
-              Passwords do not match
-            </p>
+          <PasswordField
+            id="signup-confirm"
+            label="Confirm password"
+            placeholder="Re-enter your password"
+            value={confirmPassword}
+            onChange={v => {
+              setConfirmPassword(v)
+              setError('')
+            }}
+            show={showConfirm}
+            onToggle={() => setShowConfirm(v => !v)}
+          />
+          {passwordsMismatch && (
+            <p className="mt-1.5 text-[11px] text-danger">Passwords do not match</p>
           )}
         </div>
 
-        {/* Submit */}
-        <div style={{ paddingTop: 4 }}>
-          <button
-            type="submit"
-            disabled={loading || (!!confirmPassword && confirmPassword !== password)}
-            style={{
-              width: '100%',
-              padding: '10px',
-              background: '#00aaff',
-              color: '#060a14',
-              border: '2px solid #0088cc',
-              fontSize: '0.8125rem',
-              fontWeight: 700,
-              cursor: loading ? 'not-allowed' : 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              gap: 8,
-              boxShadow: '4px 4px 0px #003366',
-              textTransform: 'uppercase',
-              opacity: loading ? 0.7 : 1,
-              letterSpacing: '0.03em',
-            }}
-          >
-            {loading ? (
-              <>
-                <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
-                <span>CREATING ACCOUNT...</span>
-              </>
-            ) : (
-              <>
-                <span>CREATE PROFILE &amp; JOIN</span>
-                <ArrowRight style={{ width: 14, height: 14 }} />
-              </>
-            )}
-          </button>
-        </div>
+        <button
+          type="submit"
+          disabled={loading || passwordsMismatch}
+          className="btn btn-accent btn-lg btn-block mt-1"
+        >
+          {loading ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" /> Creating account…
+            </>
+          ) : (
+            <>
+              Create profile <ArrowRight className="h-4 w-4" />
+            </>
+          )}
+        </button>
 
-        {/* Links */}
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', margin: 0 }}>
-          Already have an account?{' '}
-          <Link href="/signin" style={{ color: '#00ffcc', fontWeight: 600, textDecoration: 'underline' }}>
-            SIGN IN
-          </Link>
-        </p>
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', margin: 0 }}>
-          Faculty?{' '}
-          <Link href="/signup/faculty" style={{ color: '#ffe066', fontWeight: 600 }}>
-            Request faculty access
-          </Link>
-        </p>
+        <div className="mt-2 space-y-2 text-center text-[12px] text-muted">
+          <p>
+            Already have an account?{' '}
+            <Link href="/signin" className="font-medium text-ink underline-offset-4 hover:underline">
+              Sign in
+            </Link>
+          </p>
+          <p>
+            Faculty?{' '}
+            <Link
+              href="/signup/faculty"
+              className="font-medium text-ink underline-offset-4 hover:underline"
+            >
+              Request faculty access
+            </Link>
+          </p>
+        </div>
       </form>
     </AuthFormShell>
   )
@@ -386,13 +409,18 @@ function SignUpForm() {
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={
-      <AuthFormShell title="JOIN UCC COMMUNITY" subtitle="Create your student profile">
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <Loader2 style={{ width: 32, height: 32, color: '#00aaff' }} className="animate-spin" />
-        </div>
-      </AuthFormShell>
-    }>
+    <Suspense
+      fallback={
+        <AuthFormShell
+          title="Join the community"
+          subtitle="Create your student profile for the CSE department."
+        >
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-5 w-5 animate-spin text-dim" />
+          </div>
+        </AuthFormShell>
+      }
+    >
       <SignUpForm />
     </Suspense>
   )

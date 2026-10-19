@@ -1,19 +1,20 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import Image from 'next/image'
+import React, { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  Heart, ArrowBigUp, MessageSquare, Share2, ExternalLink, GitBranch,
-  Sparkles, Send, Check, Edit2, Trash2, Save, X, Link as LinkIcon,
+  ArrowBigUp, Check, Edit2, ExternalLink, GitBranch, Heart, Link as LinkIcon,
+  MessageSquare, Save, Send, Share2, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { formatDate, formatRelativeTime, getAvatarFallback, getYearLabel } from '@/lib/utils'
+import { formatDate, formatRelativeTime, getYearLabel } from '@/lib/utils'
 import { firstName } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 
-interface PostCardProps { post: Post }
+interface PostCardProps {
+  post: Post
+}
 
 export default function PostCard({ post }: PostCardProps) {
   const router = useRouter()
@@ -37,87 +38,192 @@ export default function PostCard({ post }: PostCardProps) {
 
   const isLiked = likedPostIds.has(post.id)
   const isUpvoted = upvotedPostIds.has(post.id)
-  const isAuthor = Boolean(currentUser && (currentUser.id === post.author_id || currentUser.usn === post.author_usn))
+  const isAuthor = Boolean(
+    currentUser && (currentUser.id === post.author_id || currentUser.usn === post.author_usn)
+  )
   const isShowcase = post.type === 'showcase'
   const postComments = comments.filter(c => c.post_id === post.id)
 
-  useEffect(() => { setRelativeTime(formatRelativeTime(post.created_at)) }, [post.created_at])
   useEffect(() => {
-    setETitle(post.title); setEBody(post.body); setETags((post.tags || []).join(', '))
-    setEGithubUrl(post.github_url || ''); setEDemoUrl(post.demo_url || ''); setETechStack((post.tech_stack || []).join(', '))
+    queueMicrotask(() => setRelativeTime(formatRelativeTime(post.created_at)))
+  }, [post.created_at])
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      setETitle(post.title)
+      setEBody(post.body)
+      setETags((post.tags || []).join(', '))
+      setEGithubUrl(post.github_url || '')
+      setEDemoUrl(post.demo_url || '')
+      setETechStack((post.tech_stack || []).join(', '))
+    })
   }, [post])
 
-  const handleAuthorClick = () => {
-    router.push(`/people/${post.author_id}`)
+  const handleCommentSubmit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (!commentInput.trim()) return
+    addComment(post.id, commentInput.trim())
+    setCommentInput('')
+    setShowComments(true)
   }
-  const handleCommentSubmit = (e: React.FormEvent) => { e.preventDefault(); if (!commentInput.trim()) return; addComment(post.id, commentInput.trim()); setCommentInput(''); setShowComments(true) }
-  const handleShare = () => { navigator.clipboard?.writeText(window.location.href); setCopied(true); setTimeout(() => setCopied(false), 2000) }
+
+  const handleShare = () => {
+    navigator.clipboard?.writeText(window.location.href)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
   const handleSaveEdit = async () => {
-    if (!eTitle.trim() || !eBody.trim()) return; setIsSaving(true)
+    if (!eTitle.trim() || !eBody.trim()) return
+    setIsSaving(true)
     try {
       const tags = eTags.split(',').map(t => t.trim().replace(/^#/, '')).filter(Boolean)
       const techStack = eTechStack.split(',').map(t => t.trim()).filter(Boolean)
-      await updatePost(post.id, { title: eTitle.trim(), body: eBody.trim(), tags: tags.length ? tags : ['General', 'CSE'], github_url: eGithubUrl.trim() || null, demo_url: eDemoUrl.trim() || null, tech_stack: techStack })
+      await updatePost(post.id, {
+        title: eTitle.trim(),
+        body: eBody.trim(),
+        tags: tags.length ? tags : ['General', 'CSE'],
+        github_url: eGithubUrl.trim() || null,
+        demo_url: eDemoUrl.trim() || null,
+        tech_stack: techStack,
+      })
       setIsEditing(false)
-    } finally { setIsSaving(false) }
+    } finally {
+      setIsSaving(false)
+    }
   }
-  const handleCancelEdit = () => { setETitle(post.title); setEBody(post.body); setETags((post.tags || []).join(', ')); setEGithubUrl(post.github_url || ''); setEDemoUrl(post.demo_url || ''); setETechStack((post.tech_stack || []).join(', ')); setIsEditing(false) }
-  const handleDelete = async () => { if (window.confirm(`Delete this ${isShowcase ? 'project showcase' : 'discussion'}?`)) { await deletePost(post.id) } }
 
-  // Edit Mode
+  const handleCancelEdit = () => {
+    setETitle(post.title)
+    setEBody(post.body)
+    setETags((post.tags || []).join(', '))
+    setEGithubUrl(post.github_url || '')
+    setEDemoUrl(post.demo_url || '')
+    setETechStack((post.tech_stack || []).join(', '))
+    setIsEditing(false)
+  }
+
+  const handleDelete = async () => {
+    if (window.confirm(`Delete this ${isShowcase ? 'project showcase' : 'discussion'}?`)) {
+      await deletePost(post.id)
+    }
+  }
+
   if (isEditing) {
     return (
-      <article style={{ background: '#0d1426', border: `2px solid ${isShowcase ? '#ffe066' : '#00aaff'}`, padding: '20px', boxShadow: `4px 4px 0px ${isShowcase ? '#665500' : '#003366'}, 0 0 16px ${isShowcase ? 'rgba(255,224,102,0.12)' : 'rgba(0,170,255,0.12)'}` }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBottom: 12, marginBottom: 12, borderBottom: '2px solid #1e3560' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            {isShowcase ? <Sparkles style={{ width: 14, height: 14, color: '#ffe066' }} /> : <MessageSquare style={{ width: 14, height: 14, color: '#00aaff' }} />}
-            <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
-              EDITING {isShowcase ? 'SHOWCASE' : 'DISCUSSION'}
-            </span>
+      <article className="card overflow-hidden">
+        <div className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5">
+          <div className="flex items-center gap-2">
+            {isShowcase ? (
+              <Sparkles className="h-4 w-4 text-warn" />
+            ) : (
+              <MessageSquare className="h-4 w-4 text-muted" />
+            )}
+            <h3 className="font-display text-[13.5px] font-semibold text-ink">
+              Editing {isShowcase ? 'showcase' : 'discussion'}
+            </h3>
           </div>
-          <button type="button" onClick={handleCancelEdit} style={{ background: 'transparent', border: '2px solid #1e3560', padding: 4, cursor: 'pointer', color: '#6bafd4' }}>
-            <X style={{ width: 14, height: 14 }} />
+          <button type="button" className="btn-icon h-8 w-8" onClick={handleCancelEdit} aria-label="Close editor">
+            <X className="h-4 w-4" />
           </button>
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div className="flex flex-col gap-4 p-4 sm:p-5">
           <div>
-            <label className="label">TITLE</label>
-            <input type="text" required value={eTitle} onChange={e => setETitle(e.target.value)} className="input" placeholder="Post title" />
+            <label className="label" htmlFor={`title-${post.id}`}>Title</label>
+            <input
+              id={`title-${post.id}`}
+              type="text"
+              value={eTitle}
+              onChange={e => setETitle(e.target.value)}
+              className="field"
+              placeholder="Post title"
+            />
           </div>
+
           <div>
-            <label className="label">DESCRIPTION</label>
-            <textarea required rows={4} value={eBody} onChange={e => setEBody(e.target.value)} className="textarea" placeholder="Detailed description..." />
+            <label className="label" htmlFor={`body-${post.id}`}>Description</label>
+            <textarea
+              id={`body-${post.id}`}
+              rows={4}
+              value={eBody}
+              onChange={e => setEBody(e.target.value)}
+              className="field-area"
+              placeholder="Detailed description…"
+            />
           </div>
+
           {isShowcase && (
-            <div style={{ padding: 12, background: '#0c1220', border: `2px solid rgba(255,224,102,0.3)`, boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.4)' }}>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+            <div className="rounded-lg border border-line bg-canvas p-3.5">
+              <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><GitBranch style={{ width: 12, height: 12 }} /> GITHUB URL</label>
-                  <input type="url" placeholder="https://github.com/..." value={eGithubUrl} onChange={e => setEGithubUrl(e.target.value)} className="input" />
+                  <label className="label flex items-center gap-1.5" htmlFor={`gh-${post.id}`}>
+                    <GitBranch className="h-3 w-3" /> GitHub URL
+                  </label>
+                  <input
+                    id={`gh-${post.id}`}
+                    type="url"
+                    placeholder="https://github.com/…"
+                    value={eGithubUrl}
+                    onChange={e => setEGithubUrl(e.target.value)}
+                    className="field"
+                  />
                 </div>
                 <div>
-                  <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}><LinkIcon style={{ width: 12, height: 12 }} /> DEMO URL</label>
-                  <input type="url" placeholder="https://myproject.vercel.app" value={eDemoUrl} onChange={e => setEDemoUrl(e.target.value)} className="input" />
+                  <label className="label flex items-center gap-1.5" htmlFor={`demo-${post.id}`}>
+                    <LinkIcon className="h-3 w-3" /> Live demo URL
+                  </label>
+                  <input
+                    id={`demo-${post.id}`}
+                    type="url"
+                    placeholder="https://project.vercel.app"
+                    value={eDemoUrl}
+                    onChange={e => setEDemoUrl(e.target.value)}
+                    className="field"
+                  />
                 </div>
               </div>
-              <label className="label">TECH STACK (COMMA-SEPARATED)</label>
-              <input type="text" placeholder="e.g. Next.js, Supabase, TypeScript" value={eTechStack} onChange={e => setETechStack(e.target.value)} className="input" />
+              <div className="mt-3">
+                <label className="label" htmlFor={`stack-${post.id}`}>Tech stack, comma separated</label>
+                <input
+                  id={`stack-${post.id}`}
+                  type="text"
+                  placeholder="Next.js, Supabase, TypeScript"
+                  value={eTechStack}
+                  onChange={e => setETechStack(e.target.value)}
+                  className="field"
+                />
+              </div>
             </div>
           )}
+
           <div>
-            <label className="label">TAGS (COMMA-SEPARATED)</label>
-            <input type="text" placeholder="e.g. WebDev, DSA, Placements" value={eTags} onChange={e => setETags(e.target.value)} className="input" />
+            <label className="label" htmlFor={`tags-${post.id}`}>Tags, comma separated</label>
+            <input
+              id={`tags-${post.id}`}
+              type="text"
+              placeholder="DSA, Placements, WebDev"
+              value={eTags}
+              onChange={e => setETags(e.target.value)}
+              className="field"
+            />
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 12, borderTop: '2px solid #1e3560' }}>
-            <button type="button" onClick={handleDelete} style={{ fontSize: '0.72rem', fontWeight: 700, color: '#ff4466', background: 'transparent', border: '2px solid #ff4466', padding: '6px 12px', cursor: 'pointer', boxShadow: '2px 2px 0px #661133', display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase' }}>
-              <Trash2 style={{ width: 13, height: 13 }} /> DELETE
+
+          <div className="flex items-center justify-between gap-2 border-t border-line pt-4">
+            <button type="button" onClick={handleDelete} className="btn btn-danger btn-sm">
+              <Trash2 className="h-3.5 w-3.5" /> Delete
             </button>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button type="button" onClick={handleCancelEdit} style={{ fontSize: '0.72rem', fontWeight: 700, color: '#a8d4f0', background: 'transparent', border: '2px solid #1e3560', padding: '6px 12px', cursor: 'pointer', boxShadow: '2px 2px 0px #000', textTransform: 'uppercase' }}>CANCEL</button>
-              <button type="button" onClick={handleSaveEdit} disabled={!eTitle.trim() || !eBody.trim() || isSaving}
-                style={{ fontSize: '0.72rem', fontWeight: 700, color: '#060a14', background: '#00aaff', border: '2px solid #0088cc', padding: '6px 14px', cursor: 'pointer', boxShadow: '3px 3px 0px #003366', display: 'flex', alignItems: 'center', gap: 5, textTransform: 'uppercase', opacity: isSaving ? 0.6 : 1 }}>
-                <Save style={{ width: 13, height: 13 }} /> {isSaving ? 'SAVING...' : 'SAVE'}
+            <div className="flex gap-2">
+              <button type="button" onClick={handleCancelEdit} className="btn btn-ghost btn-sm">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveEdit}
+                disabled={!eTitle.trim() || !eBody.trim() || isSaving}
+                className="btn btn-accent btn-sm"
+              >
+                <Save className="h-3.5 w-3.5" /> {isSaving ? 'Saving…' : 'Save changes'}
               </button>
             </div>
           </div>
@@ -126,168 +232,218 @@ export default function PostCard({ post }: PostCardProps) {
     )
   }
 
-  // Normal View
   return (
-    <article style={{ background: '#0d1426', border: `2px solid ${isShowcase ? '#665500' : '#1e3560'}`, padding: '20px', boxShadow: '4px 4px 0px #000', position: 'relative' }}>
-      {/* Showcase indicator bar */}
-      {isShowcase && <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 3, background: 'linear-gradient(90deg, #ffe066, #00ffcc)' }} />}
-
-      {/* Author Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 12 }}>
-        <button type="button" onClick={handleAuthorClick} style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
-          <UserAvatar src={post.author_avatar} name={post.author_name || 'Author'} size={38} borderColor="#1e3560" />
-          <div style={{ textAlign: 'left' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.825rem', color: '#e8f4fd', fontWeight: 700 }}>{post.author_name}</span>
-              {post.author_year && (
-                <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#00ffcc', background: 'rgba(0,255,204,0.1)', border: '1px solid rgba(0,255,204,0.3)', padding: '1px 6px' }}>{getYearLabel(post.author_year)}</span>
+    <article className="card p-5 transition-colors hover:border-line-strong sm:p-6">
+      {/* Author */}
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          onClick={() => router.push(`/people/${post.author_id}`)}
+          className="group flex min-w-0 items-start gap-3 text-left"
+        >
+          <UserAvatar src={post.author_avatar} name={post.author_name || 'Author'} size={40} />
+          <div className="min-w-0">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <span className="truncate text-[13.5px] font-semibold text-ink group-hover:underline">
+                {post.author_name}
+              </span>
+              {post.author_role === 'faculty' && (
+                <span className="chip chip-accent py-0 text-[10px]">Faculty</span>
               )}
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <span style={{ fontSize: '0.72rem', color: '#00aaff', fontWeight: 500 }}>{post.author_usn}</span>
-              <span style={{ fontSize: '0.72rem', color: '#3d6b8a' }}>•</span>
-              <span style={{ fontSize: '0.72rem', color: '#6bafd4' }}>{relativeTime || formatDate(post.created_at)}</span>
+            <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-dim">
+              {post.author_year && <span>{getYearLabel(post.author_year)}</span>}
+              {post.author_year && <span aria-hidden>·</span>}
+              {post.author_usn && <span className="font-mono text-[10.5px]">{post.author_usn}</span>}
+              {post.author_usn && <span aria-hidden>·</span>}
+              <span>{relativeTime || formatDate(post.created_at)}</span>
+              <span className="whitespace-nowrap sm:hidden">
+                · {isShowcase ? 'Showcase' : 'Discussion'}
+              </span>
             </div>
           </div>
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isShowcase ? (
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#ffe066', background: 'rgba(255,224,102,0.12)', border: '2px solid rgba(255,224,102,0.4)', padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4, boxShadow: '2px 2px 0px #665500', textTransform: 'uppercase' }}>
-              <Sparkles style={{ width: 11, height: 11, color: '#ffe066' }} /> SHOWCASE
-            </span>
-          ) : (
-            <span style={{ fontSize: '0.68rem', fontWeight: 700, color: '#00aaff', background: 'rgba(0,170,255,0.1)', border: '2px solid rgba(0,170,255,0.3)', padding: '2px 8px', display: 'flex', alignItems: 'center', gap: 4, boxShadow: '2px 2px 0px #003366', textTransform: 'uppercase' }}>
-              <MessageSquare style={{ width: 11, height: 11 }} /> DISCUSS
-            </span>
-          )}
+        <div className="flex shrink-0 items-center gap-1">
+          <span
+            className={`type-badge hidden border sm:inline-flex ${
+              isShowcase
+                ? 'border-warning/25 bg-warning/10 text-warning'
+                : 'border-line bg-elevated text-muted'
+            }`}
+          >
+            {isShowcase ? <Sparkles className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
+            {isShowcase ? 'Showcase' : 'Discussion'}
+          </span>
           {isAuthor && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4, paddingLeft: 8, borderLeft: '2px solid #1e3560' }}>
-              <button type="button" onClick={() => setIsEditing(true)} style={{ background: 'transparent', border: '2px solid transparent', padding: 4, cursor: 'pointer', color: '#6bafd4' }} title="Edit">
-                <Edit2 style={{ width: 13, height: 13 }} />
+            <>
+              <button
+                type="button"
+                className="btn-icon h-8 w-8 border-transparent"
+                onClick={() => setIsEditing(true)}
+                aria-label="Edit post"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
               </button>
-              <button type="button" onClick={handleDelete} style={{ background: 'transparent', border: '2px solid transparent', padding: 4, cursor: 'pointer', color: '#6bafd4' }} title="Delete">
-                <Trash2 style={{ width: 13, height: 13 }} />
+              <button
+                type="button"
+                className="btn-icon h-8 w-8 border-transparent hover:text-error"
+                onClick={handleDelete}
+                aria-label="Delete post"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
               </button>
-            </div>
+            </>
           )}
         </div>
       </div>
 
-      {/* Title */}
-      <h3 style={{ fontSize: '1rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.4, marginBottom: 8 }}>{post.title}</h3>
+      {/* Content */}
+      <h3 className="mt-4 text-[17px] font-semibold leading-snug text-ink sm:text-[18px]">
+        {post.title}
+      </h3>
+      <p className="mt-2 max-w-[68ch] whitespace-pre-line text-[14px] leading-relaxed text-muted">
+        {post.body}
+      </p>
 
-      {/* Body */}
-      <p style={{ fontSize: '0.875rem', color: '#cbd5e1', lineHeight: 1.6, marginBottom: 16, whiteSpace: 'pre-line' }}>{post.body}</p>
-
-      {/* Showcase Extras */}
-      {isShowcase && (
-        <div style={{ marginBottom: 16, display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-            {post.demo_url && (
-              <a href={post.demo_url} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: '0.75rem', fontWeight: 700, color: '#060a14', background: '#00ffcc', border: '2px solid #00ccaa', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase' }}>
-                LIVE DEMO <ExternalLink style={{ width: 12, height: 12 }} />
-              </a>
-            )}
-            {post.github_url && (
-              <a href={post.github_url} target="_blank" rel="noopener noreferrer"
-                style={{ fontSize: '0.75rem', fontWeight: 700, color: '#a8d4f0', background: 'transparent', border: '2px solid #1e3560', padding: '6px 14px', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #000', textTransform: 'uppercase' }}>
-                <GitBranch style={{ width: 12, height: 12, color: '#00aaff' }} /> SOURCE CODE
-              </a>
-            )}
-          </div>
-          {post.tech_stack && post.tech_stack.length > 0 && (
-            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
-              <span style={{ fontSize: '0.7rem', color: '#6bafd4', textTransform: 'uppercase', marginRight: 4, fontWeight: 700 }}>STACK:</span>
+      {isShowcase && (post.demo_url || post.github_url || (post.tech_stack?.length ?? 0) > 0) && (
+        <div className="mt-4 flex flex-col gap-3 rounded-md border border-line bg-elevated/50 p-3.5">
+          {(post.demo_url || post.github_url) && (
+            <div className="flex flex-wrap gap-2">
+              {post.demo_url && (
+                <a
+                  href={post.demo_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-accent btn-sm"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" /> Live demo
+                </a>
+              )}
+              {post.github_url && (
+                <a
+                  href={post.github_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="btn btn-soft btn-sm"
+                >
+                  <GitBranch className="h-3.5 w-3.5" /> Source code
+                </a>
+              )}
+            </div>
+          )}
+          {(post.tech_stack?.length ?? 0) > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[10.5px] font-medium text-dim">Built with</span>
               {post.tech_stack.map(tech => (
-                <span key={tech} style={{ fontSize: '0.72rem', color: '#a8d4f0', background: '#0c1220', border: '1px solid #1e3560', padding: '2px 7px' }}>{tech}</span>
+                <span key={tech} className="chip chip-mono">{tech}</span>
               ))}
             </div>
           )}
         </div>
       )}
 
-      {/* Tags */}
-      {post.tags && post.tags.length > 0 && (
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 16 }}>
-          {post.tags.map(t => (
-            <span key={t} style={{ fontSize: '0.72rem', color: '#44ccff', background: 'rgba(0,170,255,0.1)', border: '1px solid rgba(0,170,255,0.3)', padding: '2px 8px', fontWeight: 600 }}>#{t}</span>
+      {(post.tags?.length ?? 0) > 0 && (
+        <div className="mt-3.5 flex flex-wrap gap-1.5">
+          {post.tags.map(tag => (
+            <span key={tag} className="chip border-transparent bg-elevated text-[11px]">
+              #{tag}
+            </span>
           ))}
         </div>
       )}
 
-      {/* Reaction Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: 14, borderTop: '2px solid #1e3560' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          {isShowcase ? (
-            <button type="button" onClick={() => toggleUpvotePost(post.id)}
-              style={{
-                fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
-                background: isUpvoted ? '#ffe066' : 'transparent', color: isUpvoted ? '#060a14' : '#a8d4f0',
-                borderColor: isUpvoted ? '#ccb000' : '#1e3560', boxShadow: isUpvoted ? '3px 3px 0px #665500' : '2px 2px 0px #000',
-                transform: isUpvoted ? 'translate(-1px,-1px)' : 'none'
-              }}>
-              <ArrowBigUp style={{ width: 15, height: 15, fill: isUpvoted ? '#060a14' : 'none', color: isUpvoted ? '#060a14' : '#ffe066' }} />
-              {post.upvote_count ?? 0} UPVOTE
-            </button>
-          ) : (
-            <button type="button" onClick={() => toggleLikePost(post.id)}
-              style={{
-                fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
-                background: isLiked ? 'rgba(255,68,102,0.15)' : 'transparent', color: isLiked ? '#ff4466' : '#a8d4f0',
-                borderColor: isLiked ? '#ff4466' : '#1e3560', boxShadow: isLiked ? '2px 2px 0px #661133' : '2px 2px 0px #000',
-                transform: isLiked ? 'translate(-1px,-1px)' : 'none'
-              }}>
-              <Heart style={{ width: 14, height: 14, fill: isLiked ? '#ff4466' : 'none', color: isLiked ? '#ff4466' : '#6bafd4' }} />
-              {post.like_count ?? 0} LIKE
-            </button>
-          )}
-          <button type="button" onClick={() => setShowComments(!showComments)}
-            style={{
-              fontSize: '0.75rem', fontWeight: 700, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
-              background: showComments ? 'rgba(0,170,255,0.12)' : 'transparent', color: showComments ? '#00aaff' : '#a8d4f0',
-              borderColor: showComments ? '#00aaff' : '#1e3560', boxShadow: '2px 2px 0px #000'
-            }}>
-            <MessageSquare style={{ width: 14, height: 14, color: '#00aaff' }} />
-            {postComments.length} REPLY
+      {/* Actions */}
+      <div className="mt-4 flex items-center gap-1 border-t border-line pt-3">
+        {isShowcase ? (
+          <button
+            type="button"
+            onClick={() => toggleUpvotePost(post.id)}
+            aria-pressed={isUpvoted}
+            className={`btn btn-ghost btn-sm h-8 px-2.5 ${
+              isUpvoted ? 'bg-warning/10 text-warning hover:bg-warning/15 hover:text-warning' : ''
+            }`}
+          >
+            <ArrowBigUp className={`h-4 w-4 ${isUpvoted ? 'fill-current' : ''}`} />
+            <span className="text-[11.5px] tabular-nums">{post.upvote_count ?? 0}</span>
+            <span className="hidden sm:inline">Upvote</span>
           </button>
-        </div>
+        ) : (
+          <button
+            type="button"
+            onClick={() => toggleLikePost(post.id)}
+            aria-pressed={isLiked}
+            className={`btn btn-ghost btn-sm h-8 px-2.5 ${
+              isLiked ? 'bg-accent-soft text-accent-hover hover:bg-accent-soft hover:text-accent-hover' : ''
+            }`}
+          >
+            <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} />
+            <span className="text-[11.5px] tabular-nums">{post.like_count ?? 0}</span>
+            <span className="hidden sm:inline">Like</span>
+          </button>
+        )}
 
-        <button type="button" onClick={handleShare}
-          style={{
-            fontSize: '0.72rem', fontWeight: 600, padding: '6px 12px', border: '2px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, textTransform: 'uppercase',
-            background: 'transparent', color: '#6bafd4', borderColor: '#1e3560', boxShadow: '2px 2px 0px #000'
-          }}>
-          {copied ? (<><Check style={{ width: 13, height: 13, color: '#00ffcc' }} /><span style={{ color: '#00ffcc' }}>COPIED!</span></>) : (<><Share2 style={{ width: 13, height: 13 }} />SHARE</>)}
+        <button
+          type="button"
+          onClick={() => setShowComments(v => !v)}
+          aria-expanded={showComments}
+          className={`btn btn-ghost btn-sm h-8 px-2.5 ${showComments ? 'bg-elevated text-ink' : ''}`}
+        >
+          <MessageSquare className="h-4 w-4" />
+          <span className="text-[11.5px] tabular-nums">{postComments.length}</span>
+          <span className="hidden sm:inline">Reply</span>
+        </button>
+
+        <button
+          type="button"
+          onClick={handleShare}
+          className="btn btn-ghost btn-sm ml-auto h-8 px-2.5"
+        >
+          {copied ? (
+            <>
+              <Check className="h-4 w-4 text-success" />
+              <span className="text-success">Copied</span>
+            </>
+          ) : (
+            <>
+              <Share2 className="h-4 w-4" />
+              <span className="hidden sm:inline">Share</span>
+            </>
+          )}
         </button>
       </div>
 
       {/* Comments */}
       {showComments && (
-        <div style={{ marginTop: 16, paddingTop: 16, borderTop: '2px solid #1e3560', display: 'flex', flexDirection: 'column', gap: 10 }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        <div className="mt-3 border-t border-line pt-3">
+          <div className="flex flex-col gap-2">
             {postComments.length === 0 ? (
-              <p style={{ fontSize: '0.78rem', color: '#3d6b8a', fontStyle: 'italic', padding: '6px 0' }}>NO COMMENTS YET. START THE CONVERSATION!</p>
+              <p className="py-2 text-[12.5px] text-dim">
+                No replies yet. Start the conversation.
+              </p>
             ) : (
-              postComments.map(c => <CommentItem key={c.id} comment={c} />)
+              postComments.map(comment => <CommentItem key={comment.id} comment={comment} />)
             )}
           </div>
-          <form onSubmit={handleCommentSubmit} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+
+          <form onSubmit={handleCommentSubmit} className="mt-3 flex items-center gap-2">
             <input
               type="text"
               placeholder={
-                currentUser
-                  ? `Reply as ${firstName(currentUser.name)}...`
-                  : 'Sign in to reply...'
+                currentUser ? `Reply as ${firstName(currentUser.name)}…` : 'Sign in to reply…'
               }
               value={commentInput}
               onChange={e => setCommentInput(e.target.value)}
-              style={{ flex: 1, padding: '8px 12px', background: '#0c1220', border: '2px solid #1e3560', color: '#e8f4fd', fontSize: '0.825rem', outline: 'none', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.4)' }}
+              aria-label="Write a reply"
+              className="field h-9 flex-1 text-[13px]"
             />
-            <button type="submit" disabled={!commentInput.trim()}
-              style={{ background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', padding: '8px 14px', cursor: 'pointer', boxShadow: '3px 3px 0px #003366', opacity: !commentInput.trim() ? 0.4 : 1 }}>
-              <Send style={{ width: 14, height: 14 }} />
+            <button
+              type="submit"
+              disabled={!commentInput.trim()}
+              className="btn btn-accent h-9 w-9 shrink-0 p-0"
+              aria-label="Send reply"
+            >
+              <Send className="h-4 w-4" />
             </button>
           </form>
         </div>
@@ -298,17 +454,28 @@ export default function PostCard({ post }: PostCardProps) {
 
 function CommentItem({ comment }: { comment: Comment }) {
   const [time, setTime] = useState('')
-  useEffect(() => { setTime(formatRelativeTime(comment.created_at)) }, [comment.created_at])
+
+  useEffect(() => {
+    queueMicrotask(() => setTime(formatRelativeTime(comment.created_at)))
+  }, [comment.created_at])
+
   return (
-    <div style={{ padding: '10px 12px', background: '#090e1c', border: '2px solid #1e3560', boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.3)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
-        <span style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>
-          {comment.author_name}
-          <span style={{ fontSize: '0.72rem', color: '#00aaff', fontWeight: 500, marginLeft: 6 }}>({comment.author_usn})</span>
-        </span>
-        <span style={{ fontSize: '0.7rem', color: '#3d6b8a' }}>{time || formatDate(comment.created_at)}</span>
+    <div className="flex gap-2.5 rounded-md border border-line bg-elevated/40 px-3 py-2.5">
+      <UserAvatar src={comment.author_avatar} name={comment.author_name || 'Member'} size={28} />
+      <div className="min-w-0 flex-1">
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+          <span className="text-[12.5px] font-medium text-ink">{comment.author_name}</span>
+          {comment.author_usn && (
+            <span className="font-mono text-[10px] text-dim">{comment.author_usn}</span>
+          )}
+          <span className="ml-auto text-[10.5px] text-dim">
+            {time || formatDate(comment.created_at)}
+          </span>
+        </div>
+        <p className="mt-0.5 whitespace-pre-line break-words text-[13px] leading-relaxed text-muted">
+          {comment.body}
+        </p>
       </div>
-      <p style={{ fontSize: '0.825rem', color: '#cbd5e1', lineHeight: 1.5 }}>{comment.body}</p>
     </div>
   )
 }

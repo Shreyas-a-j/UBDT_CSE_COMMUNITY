@@ -1,16 +1,18 @@
 'use client'
 
 import { Suspense, useCallback, use, useEffect, useState, useRef } from 'react'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Send, Loader2, AlertCircle } from 'lucide-react'
+import { AlertCircle, ArrowLeft, Loader2, MessageCircle, Send } from 'lucide-react'
 import { Message, Profile } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import UserAvatar from '@/components/UserAvatar'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
+import EmptyState from '@/components/EmptyState'
 import { useAuth } from '@/contexts/AuthContext'
 import { displayName } from '@/lib/profile'
-import { formatRelativeTime } from '@/lib/utils'
+import { formatRelativeTime, getYearLabel } from '@/lib/utils'
 import { validateMessageBody } from '@/lib/validation'
 import toast from 'react-hot-toast'
 
@@ -89,23 +91,23 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
     }
 
     setLoading(false)
-  }, [conversationId, currentUser, supabase])
+  }, [conversationId, currentUser, supabase, router])
 
-  const markAsRead = async () => {
+  const markAsRead = useCallback(async () => {
     if (!currentUser) return
     await supabase
       .from('conversation_participants')
       .update({ last_read_at: new Date().toISOString() })
       .eq('conversation_id', conversationId)
       .eq('user_id', currentUser.id)
-  }
+  }, [conversationId, currentUser, supabase])
 
   useEffect(() => {
     if (currentUser) {
       queueMicrotask(() => fetchConversation())
       markAsRead()
     }
-  }, [conversationId, currentUser, fetchConversation])
+  }, [conversationId, currentUser, fetchConversation, markAsRead])
 
   useEffect(() => {
     if (!currentUser) return
@@ -130,7 +132,7 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
     return () => {
       supabase.removeChannel(channel)
     }
-  }, [conversationId, currentUser])
+  }, [conversationId, currentUser, supabase, markAsRead])
 
   useEffect(() => {
     scrollToBottom()
@@ -163,212 +165,177 @@ function ConversationThread({ params }: { params: Promise<{ id: string }> }) {
 
   if (loading) {
     return (
-      <AppShell>
-        <div style={{ maxWidth: 900, margin: '0 auto', padding: 20 }}>
-          <LoadingSkeleton rows={1} />
+      <div className="mx-auto w-full max-w-3xl">
+        <LoadingSkeleton rows={1} />
+        <div className="mt-4 flex justify-center">
+          <Loader2 className="h-5 w-5 animate-spin text-dim" />
         </div>
-      </AppShell>
+      </div>
     )
   }
 
   if (!otherUser) {
     return (
-      <AppShell>
-        <div style={{ maxWidth: 900, margin: '0 auto', padding: 60, textAlign: 'center' }}>
-          <AlertCircle style={{ width: 48, height: 48, color: '#ff6688', margin: '0 auto 16px' }} />
-          <p style={{ color: '#e8f4fd', fontSize: '1rem' }}>Conversation not found</p>
-        </div>
-      </AppShell>
+      <div className="mx-auto w-full max-w-3xl">
+        <EmptyState
+          icon={<AlertCircle className="h-6 w-6 text-danger" />}
+          title="Conversation not found"
+          body="This conversation may have been removed, or you no longer have access to it."
+          action={
+            <Link href="/messages" className="btn btn-outline">
+              <ArrowLeft className="h-4 w-4" /> Back to inbox
+            </Link>
+          }
+        />
+      </div>
     )
   }
 
   return (
-    <AppShell>
-      <div
-        style={{
-          maxWidth: 900,
-          margin: '0 auto',
-          height: 'calc(100vh - 80px)',
-          display: 'flex',
-          flexDirection: 'column',
-        }}
-      >
-        {/* Header */}
-        <div
-          style={{
-            background: '#0d1426',
-            border: '2px solid #1e3560',
-            padding: 16,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 16,
-            boxShadow: '4px 4px 0px #000',
-            margin: '20px 20px 0',
-          }}
+    <div className="mx-auto flex h-[calc(100dvh-8.5rem)] min-h-[520px] w-full max-w-3xl flex-col">
+      {/* Header */}
+      <div className="flex items-center gap-3 border-b border-line pb-3">
+        <button
+          type="button"
+          onClick={() => router.push('/messages')}
+          className="btn-icon -ml-1 border-transparent"
+          aria-label="Back to messages"
         >
-          <button
-            onClick={() => router.push('/messages')}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: '#00aaff',
-              cursor: 'pointer',
-              padding: 8,
-              display: 'flex',
-              alignItems: 'center',
-            }}
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <Link href={`/people/${otherUser.id}`} className="shrink-0">
+          <UserAvatar src={otherUser.avatar_url} name={displayName(otherUser)} size={38} />
+        </Link>
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/people/${otherUser.id}`}
+            className="block truncate text-[15px] font-semibold text-ink transition-colors hover:text-accent-hover"
           >
-            <ArrowLeft style={{ width: 20, height: 20 }} />
-          </button>
-          <UserAvatar src={otherUser.avatar_url} name={displayName(otherUser)} size={40} />
-          <div style={{ flex: 1 }}>
-            <h2 style={{ fontSize: '1.125rem', fontWeight: 700, color: '#e8f4fd', margin: 0 }}>
-              {displayName(otherUser)}
-            </h2>
-            <div style={{ fontSize: '0.8rem', color: '#6bafd4' }}>
-              {otherUser.usn && <span>{otherUser.usn}</span>}
-            </div>
-          </div>
+            {displayName(otherUser)}
+          </Link>
+          <p className="truncate text-[10.5px] text-dim">
+            {otherUser.usn ? `${otherUser.usn} · ` : ''}
+            {getYearLabel(otherUser.year)}
+          </p>
         </div>
+        <span className="hidden items-center gap-1.5 text-[11px] text-dim sm:inline-flex">
+          <MessageCircle className="h-3.5 w-3.5" />
+          Private thread
+        </span>
+      </div>
 
-        {/* Messages */}
-        <div
-          style={{
-            flex: 1,
-            overflowY: 'auto',
-            padding: 20,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 12,
-          }}
-        >
-          {messages.length === 0 ? (
-            <div style={{ textAlign: 'center', padding: 60, color: '#6bafd4' }}>
-              <p>No messages yet. Start the conversation!</p>
-            </div>
-          ) : (
-            messages.map((msg, idx) => {
-              const isCurrentUser = msg.sender_id === currentUser?.id
-              const showAvatar = idx === 0 || messages[idx - 1].sender_id !== msg.sender_id
+      {/* Messages */}
+      <div className="flex-1 space-y-1 overflow-y-auto px-0.5 py-5">
+        {messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+            <span className="flex h-12 w-12 items-center justify-center rounded-xl border border-line bg-elevated text-dim">
+              <MessageCircle className="h-5 w-5" />
+            </span>
+            <p className="font-display text-[15px] font-semibold text-ink">No messages yet</p>
+            <p className="max-w-xs text-[12.5px] leading-relaxed text-muted">
+              Say hello to {displayName(otherUser).split(' ')[0]}. This thread is only visible to the
+              two of you.
+            </p>
+          </div>
+        ) : (
+          messages.map((msg, idx) => {
+            const isCurrentUser = msg.sender_id === currentUser?.id
+            const prev = messages[idx - 1]
+            const showAvatar = idx === 0 || prev.sender_id !== msg.sender_id
+            const showDay =
+              idx === 0 ||
+              new Date(prev.created_at).toDateString() !== new Date(msg.created_at).toDateString()
 
-              return (
+            return (
+              <div key={msg.id}>
+                {showDay && (
+                  <div className="flex items-center gap-3 py-4">
+                    <span className="h-px flex-1 bg-line" />
+                    <span className="text-[10px] font-medium uppercase tracking-wide text-dim">
+                      {new Date(msg.created_at).toLocaleDateString(undefined, {
+                        month: 'short',
+                        day: 'numeric',
+                      })}
+                    </span>
+                    <span className="h-px flex-1 bg-line" />
+                  </div>
+                )}
                 <div
-                  key={msg.id}
-                  style={{
-                    display: 'flex',
-                    gap: 12,
-                    alignItems: 'flex-start',
-                    flexDirection: isCurrentUser ? 'row-reverse' : 'row',
-                  }}
+                  className={`flex items-start gap-2.5 ${
+                    showAvatar ? 'mt-3' : 'mt-1'
+                  } ${isCurrentUser ? 'flex-row-reverse' : 'flex-row'}`}
                 >
                   {showAvatar ? (
                     <UserAvatar
-                      src={isCurrentUser ? currentUser.avatar_url : otherUser.avatar_url}
+                      src={isCurrentUser ? currentUser?.avatar_url : otherUser.avatar_url}
                       name={isCurrentUser ? displayName(currentUser) : displayName(otherUser)}
-                      size={32}
+                      size={30}
                     />
                   ) : (
-                    <div style={{ width: 32 }} />
+                    <div className="w-[30px] shrink-0" aria-hidden />
                   )}
                   <div
-                    style={{
-                      maxWidth: '70%',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      alignItems: isCurrentUser ? 'flex-end' : 'flex-start',
-                    }}
+                    className={`flex max-w-[82%] flex-col ${
+                      isCurrentUser ? 'items-end' : 'items-start'
+                    }`}
                   >
                     <div
-                      style={{
-                        padding: '10px 14px',
-                        background: isCurrentUser ? '#00aaff' : '#0d1426',
-                        color: isCurrentUser ? '#060a14' : '#e8f4fd',
-                        border: isCurrentUser ? '2px solid #0088cc' : '2px solid #1e3560',
-                        fontSize: '0.9rem',
-                        lineHeight: 1.5,
-                        boxShadow: '2px 2px 0px #000',
-                        wordWrap: 'break-word',
-                      }}
+                      className={`whitespace-pre-wrap break-words px-3.5 py-2.5 text-[13.5px] leading-relaxed ${
+                        isCurrentUser
+                          ? 'rounded-2xl rounded-tr-md bg-ink text-canvas'
+                          : 'rounded-2xl rounded-tl-md border border-line bg-elevated text-ink'
+                      }`}
                     >
                       {msg.body}
                     </div>
-                    <div
-                      style={{
-                        fontSize: '0.7rem',
-                        color: '#6bafd4',
-                        marginTop: 4,
-                        paddingLeft: isCurrentUser ? 0 : 4,
-                        paddingRight: isCurrentUser ? 4 : 0,
-                      }}
-                    >
+                    <span className="mt-1 px-1 text-[10px] text-dim">
                       {formatRelativeTime(msg.created_at)}
-                    </div>
+                    </span>
                   </div>
                 </div>
-              )
-            })
-          )}
-          <div ref={messagesEndRef} />
-        </div>
+              </div>
+            )
+          })
+        )}
+        <div ref={messagesEndRef} />
+      </div>
 
-        {/* Input */}
-        <form
-          onSubmit={handleSend}
-          style={{
-            background: '#0d1426',
-            border: '2px solid #1e3560',
-            padding: 16,
-            margin: '0 20px 20px',
-            display: 'flex',
-            gap: 12,
-            boxShadow: '4px 4px 0px #000',
-          }}
-        >
+      {/* Composer */}
+      <form
+        onSubmit={handleSend}
+        className="border-t border-line bg-canvas pt-3"
+      >
+        <div className="flex items-end gap-2">
           <input
             type="text"
-            placeholder="Type a message..."
+            placeholder="Write a message…"
+            aria-label="Message"
             value={messageBody}
             onChange={e => setMessageBody(e.target.value)}
             disabled={sending}
-            style={{
-              flex: 1,
-              padding: '10px 14px',
-              background: '#060a14',
-              border: '2px solid #1e3560',
-              color: '#e8f4fd',
-              fontSize: '0.9rem',
-              outline: 'none',
-            }}
+            className="field h-11"
             maxLength={4000}
           />
           <button
             type="submit"
             disabled={!messageBody.trim() || sending}
-            style={{
-              padding: '10px 16px',
-              background: messageBody.trim() && !sending ? '#00aaff' : '#1e3560',
-              color: messageBody.trim() && !sending ? '#060a14' : '#6bafd4',
-              border: '2px solid',
-              borderColor: messageBody.trim() && !sending ? '#0088cc' : '#1e3560',
-              fontSize: '0.875rem',
-              fontWeight: 700,
-              cursor: messageBody.trim() && !sending ? 'pointer' : 'not-allowed',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: messageBody.trim() && !sending ? '3px 3px 0px #003366' : 'none',
-            }}
+            className="btn btn-accent h-11 shrink-0 px-4"
+            aria-label="Send message"
           >
             {sending ? (
-              <Loader2 style={{ width: 16, height: 16 }} className="animate-spin" />
+              <Loader2 className="h-4 w-4 animate-spin" />
             ) : (
-              <Send style={{ width: 16, height: 16 }} />
+              <Send className="h-4 w-4" />
             )}
-            SEND
+            <span className="hidden sm:inline">Send</span>
           </button>
-        </form>
-      </div>
-    </AppShell>
+        </div>
+        <p className="mt-2 flex items-center justify-between text-[10px] text-dim">
+          <span>Enter to send</span>
+          <span>{messageBody.length}/4000</span>
+        </p>
+      </form>
+    </div>
   )
 }
 
@@ -376,14 +343,14 @@ export default function MessageThreadPage({ params }: { params: Promise<{ id: st
   return (
     <Suspense
       fallback={
-        <AppShell>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <Loader2 style={{ width: 48, height: 48, color: '#00aaff' }} className="animate-spin" />
-          </div>
-        </AppShell>
+        <div className="flex min-h-dvh items-center justify-center bg-canvas">
+          <Loader2 className="h-6 w-6 animate-spin text-dim" />
+        </div>
       }
     >
-      <ConversationThread params={params} />
+      <AppShell>
+        <ConversationThread params={params} />
+      </AppShell>
     </Suspense>
   )
 }

@@ -1,5 +1,7 @@
 'use client'
 
+import React from 'react'
+
 export default function EmptyState({
   icon,
   title,
@@ -12,11 +14,15 @@ export default function EmptyState({
   action?: React.ReactNode
 }) {
   return (
-    <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '40px 20px', textAlign: 'center', boxShadow: '4px 4px 0px #000' }}>
-      {icon && <div style={{ marginBottom: 16, display: 'flex', justifyContent: 'center' }}>{icon}</div>}
-      <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#e8f4fd', marginBottom: 8 }}>{title}</h3>
-      <p style={{ fontSize: '0.825rem', color: '#6bafd4', marginBottom: action ? 20 : 0, lineHeight: 1.6 }}>{body}</p>
-      {action}
+    <div className="card flex flex-col items-center px-6 py-14 text-center sm:py-16">
+      {icon && (
+        <div className="mb-5 flex h-14 w-14 items-center justify-center rounded-lg border border-line bg-elevated text-muted">
+          {icon}
+        </div>
+      )}
+      <h3 className="text-[16px] font-semibold text-ink">{title}</h3>
+      <p className="mt-2 max-w-sm text-[13.5px] leading-relaxed text-muted">{body}</p>
+      {action && <div className="mt-6">{action}</div>}
     </div>
   )
 }

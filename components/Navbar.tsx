@@ -1,219 +1,321 @@
 'use client'
 
-import React, { useState } from 'react'
-import Image from 'next/image'
+import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import {
-  Bell, Search, Plus, Calendar, MessageSquarePlus, User, LogOut, ChevronDown,
-  Sparkles, ExternalLink, GraduationCap, LogIn, Moon, Sun, MessageSquare,
-  Users, Network, Inbox, Shield, Menu, X as XIcon,
+  Bell, Calendar, ChevronDown, LayoutDashboard, LogIn, LogOut,
+  Menu, MessageSquarePlus, Moon, Plus, Search, Shield, Sun, User, X,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getYearLabel } from '@/lib/utils'
-import { displayName, firstName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
+import { displayName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
+import SearchInput from '@/components/SearchInput'
+import MobileNavigation from '@/components/MobileNavigation'
+
+function useDismiss(open: boolean, close: () => void) {
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const onPointerDown = (event: MouseEvent) => {
+      if (ref.current && !ref.current.contains(event.target as Node)) close()
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close()
+    }
+    document.addEventListener('mousedown', onPointerDown)
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.removeEventListener('mousedown', onPointerDown)
+      document.removeEventListener('keydown', onKeyDown)
+    }
+  }, [open, close])
+
+  return ref
+}
+
+const NAV_ITEMS = [
+  { href: '/', label: 'Feed' },
+  { href: '/people', label: 'People' },
+  { href: '/faculty', label: 'Faculty' },
+  { href: '/connections', label: 'Network' },
+  { href: '/messages', label: 'Messages' },
+] as const
 
 export default function Navbar() {
   const {
     currentUser, notifications, markNotificationAsRead, markAllNotificationsAsRead,
-    feedFilter, setFeedFilter, searchQuery, setSearchQuery,
-    setIsCreatePostOpen, setIsCreateEventOpen, setIsProfileModalOpen,
-    setIsAuthModalOpen, setSelectedProfileForView, signOut,
+    setFeedFilter, setSearchQuery, setIsCreatePostOpen, setIsCreateEventOpen,
+    setIsProfileModalOpen, setIsAuthModalOpen, setSelectedProfileForView, signOut,
   } = useCommunity()
 
   const { theme, toggleTheme } = useTheme()
   const pathname = usePathname()
+  const router = useRouter()
+
   const [showNotifs, setShowNotifs] = useState(false)
   const [showUserMenu, setShowUserMenu] = useState(false)
   const [showCreateMenu, setShowCreateMenu] = useState(false)
   const [showMobileMenu, setShowMobileMenu] = useState(false)
+  const [showSearch, setShowSearch] = useState(false)
 
-  const unreadNotifs = notifications.filter(n => !n.read)
+  const notifRef = useDismiss(showNotifs, () => setShowNotifs(false))
+  const userRef = useDismiss(showUserMenu, () => setShowUserMenu(false))
+  const createRef = useDismiss(showCreateMenu, () => setShowCreateMenu(false))
 
-  /** Returns inline style for a nav link based on whether it matches the current pathname */
-  const navLinkStyle = (href: string): React.CSSProperties => {
-    const isActive = href === '/' ? pathname === '/' : pathname.startsWith(href)
-    return isActive
-      ? { borderBottom: '2px solid #00ffcc', color: '#00ffcc' }
-      : {}
+  const unreadNotifs = notifications.filter(notification => !notification.read)
+  const admin = isAdmin(currentUser)
+  const facultyMember = isVerifiedFaculty(currentUser)
+
+  const closeOverlays = () => {
+    setShowNotifs(false)
+    setShowUserMenu(false)
+    setShowCreateMenu(false)
+    setShowMobileMenu(false)
+    setShowSearch(false)
+  }
+
+  useEffect(() => {
+    queueMicrotask(closeOverlays)
+  }, [pathname])
+
+  useEffect(() => {
+    if (!showSearch) return
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowSearch(false)
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => document.removeEventListener('keydown', onKeyDown)
+  }, [showSearch])
+
+  const isActive = (href: string) =>
+    href === '/' ? pathname === '/' : pathname.startsWith(href)
+
+  const resetFeed = () => {
+    setFeedFilter('all')
+    setSearchQuery('')
+  }
+
+  const openCreate = (kind: 'post' | 'event') => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true)
+      return
+    }
+    if (kind === 'post') setIsCreatePostOpen(true)
+    else setIsCreateEventOpen(true)
+    setShowCreateMenu(false)
   }
 
   return (
-    <header className="sticky top-0 z-40 w-full" style={{ borderBottom: '2px solid #1e3560', background: '#060a14', boxShadow: '0 4px 0px #000, 0 0 20px rgba(0,170,255,0.08)' }}>
-      {/* Top Banner */}
-      <div style={{ background: '#0a0f20', borderBottom: '2px solid #1e3560', padding: '5px 16px' }}>
-        <div className="app-container flex items-center justify-center">
-          <div className="flex items-center gap-2">
-            <span className="animate-pixel-blink" style={{ width: 8, height: 8, background: '#00ffcc', display: 'inline-block', boxShadow: '0 0 6px #00ffcc' }} />
-            <span style={{ fontSize: '0.72rem', color: '#a8d4f0', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 600 }}>
-              UCC — Dept. of Computer Science &amp; Engineering
+    <>
+      <header className="sticky top-0 z-50 border-b border-header-line bg-header">
+        <div className="app-container flex h-16 items-center gap-2 sm:gap-3">
+          <button
+            type="button"
+            onClick={() => {
+              setShowMobileMenu(value => !value)
+              setShowSearch(false)
+            }}
+            aria-label={showMobileMenu ? 'Close navigation' : 'Open navigation'}
+            aria-expanded={showMobileMenu}
+            className="header-icon lg:hidden"
+          >
+            {showMobileMenu ? <X className="h-[18px] w-[18px]" /> : <Menu className="h-[18px] w-[18px]" />}
+          </button>
+
+          <Link
+            href="/"
+            onClick={() => {
+              resetFeed()
+              closeOverlays()
+            }}
+            className="flex min-w-0 shrink-0 items-center gap-2.5"
+            aria-label="UBDT CSE Community — home"
+          >
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold tracking-tight text-accent-hover">
+              &lt;/&gt;
             </span>
-            <a
-              href="https://ubdtce.org" target="_blank" rel="noopener noreferrer"
-              style={{ fontSize: '0.72rem', color: '#00aaff', textDecoration: 'underline', display: 'inline-flex', alignItems: 'center', gap: 2, fontWeight: 600 }}
-            >
-              ubdtce.org <ExternalLink style={{ width: 11, height: 11 }} />
-            </a>
-          </div>
-        </div>
-      </div>
+            <span className="hidden min-[380px]:flex min-w-0 flex-col leading-none">
+              <span className="truncate text-[14px] font-semibold tracking-tight text-header-ink">
+                UBDT <span className="text-header-muted">CSE</span>
+              </span>
+              <span className="mt-1 truncate text-[10px] tracking-tight text-header-muted">
+                Developer community
+              </span>
+            </span>
+          </Link>
 
-      <div className="app-container">
-        <div className="flex items-center justify-between gap-3" style={{ height: 64 }}>
-          {/* Brand Logo */}
-          <div className="flex items-center gap-3">
-            <Link
-              href="/"
-              onClick={() => { setFeedFilter('all'); setSearchQuery('') }}
-              className="flex items-center gap-3"
-              style={{ textDecoration: 'none' }}
-            >
-              <div style={{ width: 42, height: 42, background: '#0d1426', border: '2px solid #00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '3px 3px 0px #003366' }}>
-                <GraduationCap style={{ width: 24, height: 24, color: '#00ffcc' }} />
-              </div>
-              <div className="flex flex-col">
-                <span style={{ fontWeight: 800, fontSize: '1.15rem', color: '#e8f4fd', lineHeight: 1.2, display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.02em' }}>
-                  UCC <span style={{ color: '#00ffcc', textShadow: '0 0 8px rgba(0,255,204,0.3)', fontSize: '0.8rem', fontWeight: 800 }}>HUB</span>
-                </span>
-                <span style={{ fontSize: '0.65rem', color: '#6bafd4', fontWeight: 600, letterSpacing: '0.04em' }}>COMMUNITY PORTAL</span>
-              </div>
-            </Link>
+          <nav className="ml-3 hidden items-center gap-0.5 lg:flex" aria-label="Primary">
+            {NAV_ITEMS.map(item => (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="nav-link"
+                aria-current={isActive(item.href) ? 'page' : undefined}
+                onClick={() => {
+                  if (item.href === '/') resetFeed()
+                  closeOverlays()
+                }}
+              >
+                {item.label}
+              </Link>
+            ))}
+          </nav>
 
-            <nav className="hidden lg:flex items-center gap-1.5 ml-4" style={{ borderLeft: '2px solid #1e3560', paddingLeft: 16 }}>
-              <Link href="/" className="nav-link" style={navLinkStyle('/')} onClick={() => { setFeedFilter('all'); setSearchQuery('') }} aria-current={pathname === '/' ? 'page' : undefined}>FEED</Link>
-              <Link href="/people" className="nav-link" style={navLinkStyle('/people')} aria-current={pathname.startsWith('/people') ? 'page' : undefined}><Users style={{ width: 13, height: 13 }} /> PEOPLE</Link>
-              <Link href="/connections" className="nav-link" style={navLinkStyle('/connections')} aria-current={pathname.startsWith('/connections') ? 'page' : undefined}><Network style={{ width: 13, height: 13 }} /> NETWORK</Link>
-              <Link href="/messages" className="nav-link" style={navLinkStyle('/messages')} aria-current={pathname.startsWith('/messages') ? 'page' : undefined}><Inbox style={{ width: 13, height: 13 }} /> MESSAGES</Link>
-              <Link href="/faculty" className="nav-link" style={navLinkStyle('/faculty')} aria-current={pathname.startsWith('/faculty') ? 'page' : undefined}><GraduationCap style={{ width: 13, height: 13 }} /> FACULTY</Link>
-              {isAdmin(currentUser) && <Link href="/admin" className="nav-link" style={navLinkStyle('/admin')} aria-current={pathname.startsWith('/admin') ? 'page' : undefined}><Shield style={{ width: 13, height: 13 }} /> ADMIN</Link>}
-            </nav>
-          </div>
-
-          {/* Search */}
-          <div className="flex-1 max-w-xs lg:max-w-md hidden sm:block">
-            <div className="relative" style={{ border: '2px solid #1e3560', background: '#0c1220', display: 'flex', alignItems: 'center', padding: '5px 12px', gap: 8, boxShadow: 'inset 2px 2px 0px rgba(0,0,0,0.5)' }}>
-              <Search style={{ width: 15, height: 15, color: '#6bafd4', flexShrink: 0 }} />
-              <input
-                type="text"
-                placeholder="Search discussions, events, tags..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                style={{ border: 'none', outline: 'none', flex: 1, fontSize: '0.8125rem', color: '#e8f4fd', background: 'transparent' }}
-              />
-              {searchQuery && (
-                <button type="button" onClick={() => setSearchQuery('')} style={{ color: '#6bafd4', background: 'none', border: 'none', cursor: 'pointer', fontSize: '0.75rem' }}>✕</button>
-              )}
+          <div className="ml-auto flex min-w-0 items-center gap-1 sm:gap-1.5">
+            <div className="hidden w-56 xl:block 2xl:w-72">
+              <SearchInput inputClassName="h-9 text-[13px]" />
             </div>
-          </div>
 
-          {/* Action Controls */}
-          <div className="flex items-center gap-2">
-            {/* Mobile hamburger — visible below lg */}
             <button
               type="button"
-              className="lg:hidden"
-              onClick={() => setShowMobileMenu(!showMobileMenu)}
-              style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
-              aria-label="Toggle navigation menu"
-              aria-expanded={showMobileMenu}
+              onClick={() => {
+                setShowSearch(value => !value)
+                setShowMobileMenu(false)
+                setShowCreateMenu(false)
+                setShowNotifs(false)
+                setShowUserMenu(false)
+              }}
+              aria-label="Search"
+              aria-expanded={showSearch}
+              className="header-icon xl:hidden"
             >
-              {showMobileMenu ? <XIcon style={{ width: 16, height: 16 }} /> : <Menu style={{ width: 16, height: 16 }} />}
+              <Search className="h-[18px] w-[18px]" />
             </button>
 
-            {/* Create Dropdown */}
-            <div className="relative">
+            <div className="relative" ref={createRef}>
               <button
                 type="button"
                 onClick={() => {
-                  if (!currentUser) { setIsAuthModalOpen(true); return }
-                  setShowCreateMenu(!showCreateMenu); setShowNotifs(false); setShowUserMenu(false)
+                  if (!currentUser) {
+                    setIsAuthModalOpen(true)
+                    return
+                  }
+                  setShowCreateMenu(value => !value)
+                  setShowSearch(false)
+                  setShowNotifs(false)
+                  setShowUserMenu(false)
                 }}
-                style={{ background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #003366', transition: 'all 0.05s steps(1)', textTransform: 'uppercase', letterSpacing: '0.03em' }}
+                aria-expanded={showCreateMenu}
+                aria-haspopup="menu"
+                aria-label="Create post or event"
+                className="btn btn-accent h-9 px-2.5 sm:px-3.5"
               >
-                <Plus style={{ width: 14, height: 14 }} />
-                <span className="hidden sm:inline">CREATE</span>
-                <ChevronDown style={{ width: 12, height: 12 }} />
+                <Plus className="h-4 w-4" />
+                <span className="hidden sm:inline">Create</span>
               </button>
 
               {showCreateMenu && (
-                <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 200, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
-                  <button type="button" onClick={() => { setIsCreatePostOpen(true); setShowCreateMenu(false) }}
-                    style={{ width: '100%', padding: '10px 14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderBottom: '2px solid #1e3560' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
+                <div className="absolute right-0 top-full z-50 mt-3.5 w-64 overflow-hidden rounded-xl border border-line-strong bg-surface p-1.5 shadow-pop">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated"
+                    onClick={() => openCreate('post')}
                   >
-                    <MessageSquarePlus style={{ width: 14, height: 14, color: '#00aaff' }} />
-                    NEW DISCUSSION
+                    <MessageSquarePlus className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">Start a post</span>
+                      <span className="block text-[11.5px] text-muted">Ask a question or share a project</span>
+                    </span>
                   </button>
-                  <button type="button" onClick={() => { setIsCreateEventOpen(true); setShowCreateMenu(false) }}
-                    style={{ width: '100%', padding: '10px 14px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00ffcc' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated"
+                    onClick={() => openCreate('event')}
                   >
-                    <Calendar style={{ width: 14, height: 14, color: '#00ffcc' }} />
-                    HOST EVENT
+                    <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <span className="min-w-0">
+                      <span className="block text-[13px] font-medium text-ink">Host an event</span>
+                      <span className="block text-[11.5px] text-muted">Schedule a workshop or session</span>
+                    </span>
                   </button>
                 </div>
               )}
             </div>
 
-            {/* Theme Toggle */}
             <button
-              type="button" onClick={toggleTheme}
-              style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
-              onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
-              onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
-              aria-label="Toggle theme"
+              type="button"
+              onClick={toggleTheme}
+              aria-label={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
+              className="header-icon hidden sm:inline-flex"
             >
-              {theme === 'dark' ? <Sun style={{ width: 15, height: 15, color: '#ffe066' }} /> : <Moon style={{ width: 15, height: 15, color: '#00aaff' }} />}
+              {theme === 'dark' ? <Sun className="h-[18px] w-[18px]" /> : <Moon className="h-[18px] w-[18px]" />}
             </button>
 
-            {/* Notifications */}
             {currentUser && (
-              <div className="relative">
+              <div className="relative" ref={notifRef}>
                 <button
                   type="button"
-                  onClick={() => { setShowNotifs(!showNotifs); setShowCreateMenu(false); setShowUserMenu(false) }}
-                  style={{ padding: '7px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer', position: 'relative', display: 'flex', alignItems: 'center' }}
-                  aria-label="Notifications"
+                  onClick={() => {
+                    setShowNotifs(value => !value)
+                    setShowSearch(false)
+                    setShowCreateMenu(false)
+                    setShowUserMenu(false)
+                  }}
+                  aria-label={`Notifications${unreadNotifs.length ? ` (${unreadNotifs.length} unread)` : ''}`}
+                  aria-expanded={showNotifs}
+                  className="header-icon"
                 >
-                  <Bell style={{ width: 16, height: 16, color: '#6bafd4' }} />
+                  <Bell className="h-[18px] w-[18px]" />
                   {unreadNotifs.length > 0 && (
-                    <span style={{ position: 'absolute', top: 2, right: 2, width: 8, height: 8, background: '#ff4466', boxShadow: '0 0 6px #ff4466', display: 'block' }} />
+                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold leading-none text-[#14151f]">
+                      {unreadNotifs.length > 9 ? '9+' : unreadNotifs.length}
+                    </span>
                   )}
                 </button>
 
                 {showNotifs && (
-                  <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 300, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
-                    <div style={{ padding: '10px 14px', borderBottom: '2px solid #1e3560', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, letterSpacing: '0.04em' }}>NOTIFICATIONS</span>
+                  <div className="absolute right-0 top-full z-50 mt-3.5 w-[min(22rem,calc(100vw-2rem))] overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop">
+                    <div className="flex items-center justify-between gap-2 border-b border-line px-4 py-3">
+                      <span className="text-[13px] font-semibold text-ink">Notifications</span>
                       {unreadNotifs.length > 0 && (
-                        <button type="button" onClick={markAllNotificationsAsRead} style={{ fontSize: '0.7rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}>
-                          MARK ALL READ
+                        <button
+                          type="button"
+                          className="text-[11.5px] font-medium text-accent-hover hover:underline"
+                          onClick={markAllNotificationsAsRead}
+                        >
+                          Mark all read
                         </button>
                       )}
                     </div>
-                    <div style={{ maxHeight: 240, overflowY: 'auto' }}>
+                    <div className="max-h-80 overflow-y-auto">
                       {notifications.length === 0 ? (
-                        <div style={{ padding: 16, textAlign: 'center', fontSize: '0.75rem', color: '#3d6b8a' }}>NO NOTIFICATIONS</div>
+                        <p className="px-4 py-7 text-center text-[12px] text-dim">Nothing here yet.</p>
                       ) : (
-                        notifications.map(n => (
-                          <div
-                            key={n.id}
+                        notifications.map(notification => (
+                          <button
+                            key={notification.id}
+                            type="button"
+                            className={`flex w-full items-start gap-2.5 border-b border-line px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-elevated ${
+                              notification.read ? '' : 'bg-accent/[0.06]'
+                            }`}
                             onClick={() => {
-                              markNotificationAsRead(n.id)
-                              if (n.link) window.location.href = n.link
+                              markNotificationAsRead(notification.id)
+                              if (notification.link) router.push(notification.link)
+                              setShowNotifs(false)
                             }}
-                            style={{ padding: '10px 14px', borderBottom: '1px solid #1e3560', cursor: 'pointer', background: n.read ? 'transparent' : 'rgba(0,170,255,0.06)' }}
                           >
-                            <div style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 600, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                              {n.title}
-                              {!n.read && <span style={{ width: 6, height: 6, background: '#00aaff', display: 'inline-block', boxShadow: '0 0 4px #00aaff' }} />}
-                            </div>
-                            {n.body && <p style={{ fontSize: '0.7rem', color: '#a8d4f0', marginTop: 4, lineHeight: 1.5 }}>{n.body}</p>}
-                          </div>
+                            <span
+                              className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${
+                                notification.read ? 'bg-line-strong' : 'bg-accent'
+                              }`}
+                            />
+                            <span className="min-w-0">
+                              <span className="block text-[13px] font-medium text-ink">
+                                {notification.title}
+                              </span>
+                              {notification.body && (
+                                <span className="mt-0.5 block text-[11.5px] leading-relaxed text-muted">
+                                  {notification.body}
+                                </span>
+                              )}
+                            </span>
+                          </button>
                         ))
                       )}
                     </div>
@@ -222,129 +324,128 @@ export default function Navbar() {
               </div>
             )}
 
-            {/* Profile or Sign In */}
             {currentUser ? (
-              <div className="relative">
+              <div className="relative" ref={userRef}>
                 <button
                   type="button"
-                  onClick={() => { setShowUserMenu(!showUserMenu); setShowCreateMenu(false); setShowNotifs(false) }}
-                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 8px', background: 'transparent', border: '2px solid #1e3560', cursor: 'pointer' }}
+                  onClick={() => {
+                    setShowUserMenu(value => !value)
+                    setShowSearch(false)
+                    setShowCreateMenu(false)
+                    setShowNotifs(false)
+                  }}
+                  aria-label="Account menu"
+                  aria-expanded={showUserMenu}
+                  className="flex items-center gap-1.5 rounded-md border border-header-line bg-white/[0.04] p-0.5 transition-colors hover:bg-white/[0.08] sm:pr-1.5"
                 >
-                  <UserAvatar src={currentUser.avatar_url} name={displayName(currentUser)} size={32} borderColor="#00aaff" />
-                  <div className="hidden xl:flex flex-col" style={{ textAlign: 'left' }}>
-                    <span style={{ fontSize: '0.75rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.2 }}>{firstName(currentUser.name)}</span>
-                    <span style={{ fontSize: '0.65rem', color: '#00ffcc' }}>{currentUser.usn || currentUser.role}</span>
-                  </div>
-                  <ChevronDown style={{ width: 12, height: 12, color: '#6bafd4' }} />
+                  <UserAvatar
+                    src={currentUser.avatar_url}
+                    name={displayName(currentUser)}
+                    size={28}
+                    borderColor="rgba(255,255,255,0.16)"
+                  />
+                  <ChevronDown className="hidden h-3.5 w-3.5 text-header-muted sm:block" />
                 </button>
 
                 {showUserMenu && (
-                  <div style={{ position: 'absolute', right: 0, marginTop: 4, width: 240, background: '#0d1426', border: '2px solid #1e3560', boxShadow: '6px 6px 0px #000', zIndex: 50 }}>
-                    <div style={{ padding: '12px 14px', borderBottom: '2px solid #1e3560' }}>
-                      <p style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700 }}>{displayName(currentUser)}</p>
-                      <p style={{ fontSize: '0.7rem', color: '#00ffcc', marginTop: 2 }}>{currentUser.usn || currentUser.email || currentUser.role}</p>
-                      <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 2 }}>{getYearLabel(currentUser.year)} • {currentUser.branch || 'CSE'}</p>
-                      {isVerifiedFaculty(currentUser) && <p style={{ fontSize: '0.7rem', color: '#ffe066', marginTop: 4 }}>VERIFIED FACULTY</p>}
+                  <div className="absolute right-0 top-full z-50 mt-3.5 w-[17rem] overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop">
+                    <div className="border-b border-line px-4 py-3">
+                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(currentUser)}</p>
+                      <p className="mt-0.5 truncate text-[11px] text-muted">
+                        {currentUser.usn || currentUser.email || currentUser.role}
+                      </p>
+                      <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-dim">
+                        <span>{getYearLabel(currentUser.year)}</span>
+                        <span aria-hidden>·</span>
+                        <span>{currentUser.branch || 'CSE'}</span>
+                        {facultyMember && (
+                          <span className="chip chip-accent py-px">Verified faculty</span>
+                        )}
+                      </p>
                     </div>
-                    <div style={{ padding: 4 }}>
-                      <Link href={`/people/${currentUser.id}`} onClick={() => setShowUserMenu(false)}
-                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}
+                    <div className="p-1.5">
+                      <Link
+                        href={`/people/${currentUser.id}`}
+                        onClick={closeOverlays}
+                        className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-muted transition-colors hover:bg-elevated hover:text-ink"
                       >
-                        <User style={{ width: 13, height: 13 }} /> VIEW PROFILE
+                        <User className="h-3.5 w-3.5" /> View profile
                       </Link>
-                      <button type="button" onClick={() => { setSelectedProfileForView(currentUser); setIsProfileModalOpen(true); setShowUserMenu(false) }}
-                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#a8d4f0', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8 }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#101930'; (e.currentTarget as HTMLElement).style.color = '#00aaff' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none'; (e.currentTarget as HTMLElement).style.color = '#a8d4f0' }}
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-muted transition-colors hover:bg-elevated hover:text-ink"
+                        onClick={() => {
+                          setSelectedProfileForView(currentUser)
+                          setIsProfileModalOpen(true)
+                          setShowUserMenu(false)
+                        }}
                       >
-                        <User style={{ width: 13, height: 13 }} /> EDIT PROFILE
+                        <User className="h-3.5 w-3.5" /> Edit profile
                       </button>
-                      <Link href="/messages" onClick={() => setShowUserMenu(false)} className="lg:hidden" style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#a8d4f0', textDecoration: 'none' }}>MESSAGES</Link>
-                      <Link href="/people" onClick={() => setShowUserMenu(false)} className="lg:hidden" style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#a8d4f0', textDecoration: 'none' }}>PEOPLE</Link>
-                      {isVerifiedFaculty(currentUser) && (
-                        <Link href="/faculty/dashboard" onClick={() => setShowUserMenu(false)} style={{ display: 'flex', padding: '10px 12px', fontSize: '0.75rem', color: '#ffe066', textDecoration: 'none' }}>FACULTY DASHBOARD</Link>
+                      {facultyMember && (
+                        <Link
+                          href="/faculty/dashboard"
+                          onClick={closeOverlays}
+                          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-muted transition-colors hover:bg-elevated hover:text-ink"
+                        >
+                          <LayoutDashboard className="h-3.5 w-3.5" /> Faculty dashboard
+                        </Link>
                       )}
-                      <button type="button" onClick={() => { signOut(); setShowUserMenu(false) }}
-                        style={{ width: '100%', padding: '10px 12px', textAlign: 'left', fontSize: '0.75rem', fontWeight: 600, color: '#ff4466', background: 'none', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 8, borderTop: '2px solid #1e3560' }}
-                        onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(255,68,102,0.1)' }}
-                        onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'none' }}
+                      {admin && (
+                        <Link
+                          href="/admin"
+                          onClick={closeOverlays}
+                          className="flex items-center gap-2.5 rounded-lg px-3 py-2 text-[13px] text-muted transition-colors hover:bg-elevated hover:text-ink"
+                        >
+                          <Shield className="h-3.5 w-3.5" /> Administration
+                        </Link>
+                      )}
+                      <div className="my-1 h-px bg-line" />
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-left text-[13px] text-danger transition-colors hover:bg-danger/10"
+                        onClick={async () => {
+                          setShowUserMenu(false)
+                          await signOut()
+                        }}
                       >
-                        <LogOut style={{ width: 13, height: 13 }} /> SIGN OUT
+                        <LogOut className="h-3.5 w-3.5" /> Sign out
                       </button>
                     </div>
                   </div>
                 )}
               </div>
             ) : (
-              <Link
-                href="/signin"
-                style={{ background: '#00ffcc', color: '#060a14', border: '2px solid #00ccaa', padding: '7px 14px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '3px 3px 0px #006655', textTransform: 'uppercase', letterSpacing: '0.03em', textDecoration: 'none' }}
-              >
-                <LogIn style={{ width: 14, height: 14 }} />
-                SIGN IN
+              <Link href="/signin" aria-label="Sign in" className="btn btn-solid h-9 px-2.5 sm:px-3.5">
+                <LogIn className="h-4 w-4" />
+                <span className="hidden sm:inline">Sign in</span>
               </Link>
             )}
           </div>
         </div>
-      </div>
 
-      {/* Mobile navigation menu — visible below lg */}
-      {showMobileMenu && (
-        <div className="lg:hidden" style={{ background: '#0a0f20', borderTop: '2px solid #1e3560', borderBottom: '2px solid #1e3560' }}>
-          <nav style={{ display: 'flex', flexDirection: 'column' }}>
-            <Link href="/"
-              className="nav-link"
-              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname === '/' ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-              onClick={() => { setFeedFilter('all'); setSearchQuery(''); setShowMobileMenu(false) }}
-              aria-current={pathname === '/' ? 'page' : undefined}
-            >
-              FEED
-            </Link>
-            <Link href="/people"
-              className="nav-link"
-              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/people') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-              onClick={() => setShowMobileMenu(false)}
-              aria-current={pathname.startsWith('/people') ? 'page' : undefined}
-            >
-              <Users style={{ width: 14, height: 14 }} /> PEOPLE
-            </Link>
-            <Link href="/connections"
-              className="nav-link"
-              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/connections') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-              onClick={() => setShowMobileMenu(false)}
-              aria-current={pathname.startsWith('/connections') ? 'page' : undefined}
-            >
-              <Network style={{ width: 14, height: 14 }} /> NETWORK
-            </Link>
-            <Link href="/messages"
-              className="nav-link"
-              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/messages') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-              onClick={() => setShowMobileMenu(false)}
-              aria-current={pathname.startsWith('/messages') ? 'page' : undefined}
-            >
-              <Inbox style={{ width: 14, height: 14 }} /> MESSAGES
-            </Link>
-            <Link href="/faculty"
-              className="nav-link"
-              style={{ padding: '12px 20px', borderBottom: '1px solid #1e3560', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/faculty') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-              onClick={() => setShowMobileMenu(false)}
-              aria-current={pathname.startsWith('/faculty') ? 'page' : undefined}
-            >
-              <GraduationCap style={{ width: 14, height: 14 }} /> FACULTY
-            </Link>
-            {isAdmin(currentUser) && (
-              <Link href="/admin"
-                className="nav-link"
-                style={{ padding: '12px 20px', display: 'flex', alignItems: 'center', gap: 8, ...(pathname.startsWith('/admin') ? { color: '#00ffcc', borderLeft: '3px solid #00ffcc' } : {}) }}
-                onClick={() => setShowMobileMenu(false)}
-                aria-current={pathname.startsWith('/admin') ? 'page' : undefined}
-              >
-                <Shield style={{ width: 14, height: 14 }} /> ADMIN
-              </Link>
-            )}
-          </nav>
-        </div>
-      )}
-    </header>
+        {showSearch && (
+          <>
+            <button
+              type="button"
+              aria-label="Close search"
+              onClick={() => setShowSearch(false)}
+              className="fixed inset-x-0 bottom-0 top-16 z-40 bg-black/35"
+            />
+            <div className="absolute inset-x-0 top-full z-50 border-b border-header-line bg-header px-4 py-3 shadow-pop sm:px-6">
+              <div className="mx-auto w-full max-w-[1600px]">
+                <SearchInput
+                  autoFocus
+                  onSearch={() => setShowSearch(false)}
+                  className="w-full sm:ml-auto sm:max-w-md"
+                />
+              </div>
+            </div>
+          </>
+        )}
+      </header>
+
+      <MobileNavigation open={showMobileMenu} onClose={() => setShowMobileMenu(false)} />
+    </>
   )
 }

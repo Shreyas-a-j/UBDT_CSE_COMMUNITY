@@ -283,18 +283,20 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   }, [supabase])
 
   useEffect(() => {
-    fetchData()
+    queueMicrotask(() => fetchData())
   }, [fetchData])
 
   useEffect(() => {
-    if (currentUser?.id) {
-      fetchUserState(currentUser.id)
-    } else {
-      setLikedPostIds(new Set())
-      setUpvotedPostIds(new Set())
-      setRsvpedEventIds(new Set())
-      setNotifications([])
-    }
+    queueMicrotask(() => {
+      if (currentUser?.id) {
+        fetchUserState(currentUser.id)
+      } else {
+        setLikedPostIds(new Set())
+        setUpvotedPostIds(new Set())
+        setRsvpedEventIds(new Set())
+        setNotifications([])
+      }
+    })
   }, [currentUser?.id, fetchUserState])
 
   useEffect(() => {

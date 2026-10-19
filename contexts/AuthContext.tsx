@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
 import { Profile } from '@/lib/types'
@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<Profile | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const fetchProfileRef = useRef<((authUser: User) => Promise<void>) | null>(null)
 
   const fetchProfile = useCallback(async (authUser: User) => {
     // 1. Select existing profile first — never assume it needs to be created.
@@ -127,10 +128,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // retry once after a short delay to pick up any schema-cache lag.
     if (created && !created.role) {
       setTimeout(() => {
-        if (authUser) fetchProfile(authUser)
+        if (authUser) void fetchProfileRef.current?.(authUser)
       }, 500)
     }
   }, [supabase])
+
+  useEffect(() => {
+    fetchProfileRef.current = fetchProfile
+  }, [fetchProfile])
 
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user)

@@ -1,315 +1,398 @@
 'use client'
 
 import React, { useMemo } from 'react'
-import Navbar from '@/components/Navbar'
-import SidebarLeft from '@/components/SidebarLeft'
+import {
+  CalendarDays, Code2, Megaphone, MessageSquare, Plus, Search, Sparkles, X,
+} from 'lucide-react'
+import AppShell from '@/components/AppShell'
 import SidebarRight from '@/components/SidebarRight'
 import EventCard from '@/components/EventCard'
 import PostCard from '@/components/PostCard'
-import CreatePostModal from '@/components/CreatePostModal'
-import CreateEventModal from '@/components/CreateEventModal'
-import ProfileModal from '@/components/ProfileModal'
-import AuthModal from '@/components/AuthModal'
+import AnnouncementCard from '@/components/AnnouncementCard'
+import SectionHeader from '@/components/SectionHeader'
+import FilterTabs, { FilterTab } from '@/components/FilterTabs'
+import EmptyState from '@/components/EmptyState'
+import UserAvatar from '@/components/UserAvatar'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { Calendar, MessageSquare, Sparkles, Plus, GraduationCap } from 'lucide-react'
-import { YearFilter } from '@/lib/types'
+import { displayName } from '@/lib/profile'
+import { FeedFilter, YearFilter } from '@/lib/types'
 
-// Pixel style helper
-const px = (base: React.CSSProperties): React.CSSProperties => base
+const YEAR_OPTIONS: { id: YearFilter; label: string }[] = [
+  { id: 0, label: 'All batches' },
+  { id: 1, label: '1st year' },
+  { id: 2, label: '2nd year' },
+  { id: 3, label: '3rd year' },
+  { id: 4, label: '4th year' },
+]
 
 export default function Home() {
   const {
-    posts, events, feedFilter, setFeedFilter, yearFilter, setYearFilter,
+    currentUser, posts, events, announcements, feedLoading, feedError,
+    feedFilter, setFeedFilter, yearFilter, setYearFilter,
     searchQuery, setSearchQuery, setIsCreatePostOpen, setIsCreateEventOpen,
+    setIsAuthModalOpen,
   } = useCommunity()
 
   const filteredPosts = useMemo(() => {
-    return posts.filter(post => {
-      if (feedFilter === 'events') return false
-      if (feedFilter === 'discussions' && post.type !== 'discussion') return false
-      if (feedFilter === 'showcases' && post.type !== 'showcase') return false
-      if (yearFilter !== 0) {
-        if (post.author_year && post.author_year !== yearFilter) {
-          if (!post.target_years.includes(yearFilter)) return false
+    return posts
+      .filter(post => {
+        if (feedFilter === 'events' || feedFilter === 'announcements') return false
+        if (feedFilter === 'discussions' && post.type !== 'discussion') return false
+        if (feedFilter === 'showcases' && post.type !== 'showcase') return false
+        if (yearFilter !== 0) {
+          if (post.author_year && post.author_year !== yearFilter) {
+            if (!post.target_years.includes(yearFilter)) return false
+          }
         }
-      }
-      if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
-        const matchTitle = post.title.toLowerCase().includes(q)
-        const matchBody = post.body.toLowerCase().includes(q)
-        const matchAuthor = (post.author_name || '').toLowerCase().includes(q)
-        const matchUsn = (post.author_usn || '').toLowerCase().includes(q)
-        const matchTags = post.tags.some(t => t.toLowerCase().includes(q))
-        const matchTech = (post.tech_stack || []).some(t => t.toLowerCase().includes(q))
-        if (!matchTitle && !matchBody && !matchAuthor && !matchUsn && !matchTags && !matchTech) return false
-      }
-      return true
-    }).sort((a, b) => {
-      // Always rank top-liked discussions and showcases at the top
-      const scoreA = (a.like_count ?? 0) + (a.upvote_count ?? 0)
-      const scoreB = (b.like_count ?? 0) + (b.upvote_count ?? 0)
-      if (scoreB !== scoreA) {
-        return scoreB - scoreA
-      }
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-    })
+        if (searchQuery.trim()) {
+          const query = searchQuery.toLowerCase()
+          const matches =
+            post.title.toLowerCase().includes(query) ||
+            post.body.toLowerCase().includes(query) ||
+            (post.author_name || '').toLowerCase().includes(query) ||
+            (post.author_usn || '').toLowerCase().includes(query) ||
+            post.tags.some(tag => tag.toLowerCase().includes(query)) ||
+            (post.tech_stack || []).some(tech => tech.toLowerCase().includes(query))
+          if (!matches) return false
+        }
+        return true
+      })
+      .sort((a, b) => {
+        const scoreA = (a.like_count ?? 0) + (a.upvote_count ?? 0)
+        const scoreB = (b.like_count ?? 0) + (b.upvote_count ?? 0)
+        if (scoreB !== scoreA) return scoreB - scoreA
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+      })
   }, [posts, feedFilter, yearFilter, searchQuery])
 
   const filteredEvents = useMemo(() => {
-    if (feedFilter === 'discussions' || feedFilter === 'showcases') return []
+    if (feedFilter === 'discussions' || feedFilter === 'showcases' || feedFilter === 'announcements') {
+      return []
+    }
     return events.filter(event => {
       if (yearFilter !== 0 && !event.target_years.includes(yearFilter)) return false
       if (searchQuery.trim()) {
-        const q = searchQuery.toLowerCase()
-        const match = event.title.toLowerCase().includes(q)
-          || event.description.toLowerCase().includes(q)
-          || (event.host_name || '').toLowerCase().includes(q)
-          || event.type.toLowerCase().includes(q)
-        if (!match) return false
+        const query = searchQuery.toLowerCase()
+        return (
+          event.title.toLowerCase().includes(query) ||
+          event.description.toLowerCase().includes(query) ||
+          (event.host_name || '').toLowerCase().includes(query) ||
+          event.type.toLowerCase().includes(query)
+        )
       }
       return true
     })
   }, [events, feedFilter, yearFilter, searchQuery])
 
-  const totalItemCount = filteredPosts.length + filteredEvents.length
+  const filteredAnnouncements = useMemo(() => {
+    if (feedFilter === 'events' || feedFilter === 'discussions' || feedFilter === 'showcases') {
+      return []
+    }
+    return announcements.filter(announcement => {
+      if (!searchQuery.trim()) return true
+      const query = searchQuery.toLowerCase()
+      return (
+        announcement.title.toLowerCase().includes(query) ||
+        announcement.body.toLowerCase().includes(query) ||
+        (announcement.author_name || '').toLowerCase().includes(query)
+      )
+    })
+  }, [announcements, feedFilter, searchQuery])
 
-  const filterTabs = [
-    { id: 'all', label: `ALL (${posts.length + events.length})`, icon: null, activeColor: '#00aaff', activeShadow: '#003366' },
-    { id: 'events', label: `EVENTS (${events.length})`, icon: <Calendar style={{ width: 12, height: 12, color: '#00ffcc' }} />, activeColor: '#00ffcc', activeShadow: '#006655' },
-    { id: 'discussions', label: `DISCUSS (${posts.filter(p => p.type === 'discussion').length})`, icon: <MessageSquare style={{ width: 12, height: 12, color: '#44ccff' }} />, activeColor: '#00aaff', activeShadow: '#003366' },
-    { id: 'showcases', label: `SHOWCASE (${posts.filter(p => p.type === 'showcase').length})`, icon: <Sparkles style={{ width: 12, height: 12, color: '#ffe066' }} />, activeColor: '#ffe066', activeShadow: '#665500' },
+  const discussionCount = posts.filter(post => post.type === 'discussion').length
+  const showcaseCount = posts.filter(post => post.type === 'showcase').length
+
+  const tabs: FilterTab<FeedFilter>[] = [
+    { id: 'all', label: 'All', count: posts.length + events.length + announcements.length },
+    { id: 'discussions', label: 'Discussions', count: discussionCount },
+    { id: 'showcases', label: 'Showcases', count: showcaseCount },
+    { id: 'events', label: 'Events', count: events.length },
+    { id: 'announcements', label: 'Announcements', count: announcements.length },
   ]
 
-  const yearChips = [
-    { id: 0, label: 'ALL' },
-    { id: 1, label: '1ST' },
-    { id: 2, label: '2ND' },
-    { id: 3, label: '3RD' },
-    { id: 4, label: '4TH' },
-  ]
+  const showPosts = feedFilter !== 'events' && feedFilter !== 'announcements'
+  const showEvents = feedFilter === 'all' || feedFilter === 'events'
+  const showAnnouncements = feedFilter === 'all' || feedFilter === 'announcements'
+
+  const totalItemCount =
+    (showPosts ? filteredPosts.length : 0) +
+    (showEvents ? filteredEvents.length : 0) +
+    (showAnnouncements ? filteredAnnouncements.length : 0)
+
+  const openComposer = () => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true)
+      return
+    }
+    setIsCreatePostOpen(true)
+  }
+
+  const openEventComposer = () => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true)
+      return
+    }
+    setIsCreateEventOpen(true)
+  }
+
+  const postsHeading =
+    feedFilter === 'showcases'
+      ? 'Project showcase'
+      : feedFilter === 'discussions'
+        ? 'Discussions'
+        : 'Latest posts'
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', background: '#060a14', color: '#a8d4f0' }}>
-      <Navbar />
-
-      <main style={{ flex: 1 }} className="app-container w-full">
-        <div className="feed-layout">
-          {/* Left Sidebar */}
-          <div className="sidebar-left">
-            <SidebarLeft />
-          </div>
-
-          {/* Main Feed */}
-          <div className="feed-main space-y-4">
-            {/* Hero Banner */}
-            <div style={{ padding: '22px', background: '#0d1426', border: '2px solid #1e3560', boxShadow: '4px 4px 0px #000, 0 0 20px rgba(0,170,255,0.08)', position: 'relative', overflow: 'hidden' }}>
-              {/* Corner pixel decorations */}
-              <div style={{ position: 'absolute', top: 0, left: 0, width: 8, height: 8, background: '#00aaff' }} />
-              <div style={{ position: 'absolute', top: 0, right: 0, width: 8, height: 8, background: '#00ffcc' }} />
-              <div style={{ position: 'absolute', bottom: 0, left: 0, width: 8, height: 8, background: '#00ffcc' }} />
-              <div style={{ position: 'absolute', bottom: 0, right: 0, width: 8, height: 8, background: '#00aaff' }} />
-              {/* Background grid highlight */}
-              <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(135deg, rgba(0,170,255,0.04) 0%, transparent 60%)', pointerEvents: 'none' }} />
-
-              <div className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'rgba(0,170,255,0.15)', border: '2px solid rgba(0,170,255,0.4)', padding: '3px 10px', marginBottom: 10, boxShadow: '2px 2px 0px #003366' }}>
-                    <span className="animate-pixel-blink" style={{ width: 6, height: 6, background: '#00ffcc', display: 'inline-block' }} />
-                    <span style={{ fontSize: '0.6875rem', color: '#44ccff', textTransform: 'uppercase', letterSpacing: '0.04em', fontWeight: 700 }}>
-                      UCC COMMUNITY HUB • LIVE
-                    </span>
-                  </div>
-                  <h1 style={{ fontSize: '1.45rem', color: '#e8f4fd', lineHeight: 1.25, fontWeight: 800, marginBottom: 8, letterSpacing: '-0.01em' }}>
-                    CONNECT. LEARN. SHOWCASE.
-                  </h1>
-                  <p style={{ fontSize: '0.85rem', color: '#a8d4f0', lineHeight: 1.6, maxWidth: 480, fontWeight: 400 }}>
-                    Peer discussions, virtual workshops, project demos, and semester resources for 1st to 4th year CSE batches.
-                  </p>
-                </div>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flexShrink: 0 }}>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreatePostOpen(true)}
-                    style={{ background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', padding: '9px 16px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '4px 4px 0px #003366', textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = '#44ccff'; (e.currentTarget as HTMLElement).style.transform = 'translate(-2px,-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '6px 6px 0px #003366' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = '#00aaff'; (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = '4px 4px 0px #003366' }}
-                  >
-                    <Plus style={{ width: 15, height: 15 }} />
-                    CREATE POST
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsCreateEventOpen(true)}
-                    style={{ background: 'transparent', color: '#00ffcc', border: '2px solid #00ffcc', padding: '9px 16px', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6, boxShadow: '4px 4px 0px #006655', textTransform: 'uppercase', transition: 'all 0.05s steps(1)', letterSpacing: '0.03em' }}
-                    onMouseEnter={e => { (e.currentTarget as HTMLElement).style.background = 'rgba(0,255,204,0.1)'; (e.currentTarget as HTMLElement).style.transform = 'translate(-2px,-2px)'; (e.currentTarget as HTMLElement).style.boxShadow = '6px 6px 0px #006655' }}
-                    onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = 'transparent'; (e.currentTarget as HTMLElement).style.transform = 'none'; (e.currentTarget as HTMLElement).style.boxShadow = '4px 4px 0px #006655' }}
-                  >
-                    <Calendar style={{ width: 15, height: 15 }} />
-                    HOST WORKSHOP
-                  </button>
-                </div>
+    <AppShell>
+      <div className="mx-auto grid w-full max-w-[860px] items-start gap-6 min-[1360px]:max-w-none min-[1360px]:grid-cols-[minmax(0,1fr)_300px]">
+        <div className="min-w-0 space-y-5">
+          {/* Page masthead */}
+          <section className="card overflow-hidden">
+            <div className="relative h-24 overflow-hidden bg-[#191a2b] sm:h-28">
+              <div className="absolute inset-0 dot-grid opacity-30" aria-hidden />
+              <div
+                className="pointer-events-none absolute -right-4 top-1/2 hidden -translate-y-1/2 select-none font-mono text-[94px] font-bold leading-none text-white/[0.04] sm:block"
+                aria-hidden
+              >
+                &lt;/&gt;
               </div>
-            </div>
-
-            {/* Filter Bar */}
-            <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '8px', boxShadow: '4px 4px 0px #000' }}>
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                {/* Feed type tabs */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4, flexWrap: 'wrap' }}>
-                  {filterTabs.map(tab => (
-                    <button
-                      key={tab.id}
-                      type="button"
-                      onClick={() => setFeedFilter(tab.id as any)}
-                      style={{
-                        padding: '6px 12px', fontSize: '0.75rem', fontWeight: 700,
-                        cursor: 'pointer', border: '2px solid', display: 'flex', alignItems: 'center', gap: 6,
-                        transition: 'all 0.05s steps(1)', textTransform: 'uppercase', letterSpacing: '0.02em',
-                        background: feedFilter === tab.id ? tab.activeColor : 'transparent',
-                        color: feedFilter === tab.id ? '#060a14' : '#6bafd4',
-                        borderColor: feedFilter === tab.id ? tab.activeColor : 'transparent',
-                        boxShadow: feedFilter === tab.id ? `3px 3px 0px ${tab.activeShadow}` : 'none',
-                        transform: feedFilter === tab.id ? 'translate(-1px,-1px)' : 'none',
-                      }}
-                    >
-                      {tab.icon}{tab.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Year chips */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <span style={{ fontSize: '0.7rem', color: '#6bafd4', fontWeight: 700, textTransform: 'uppercase', marginRight: 4, letterSpacing: '0.03em' }}>BATCH:</span>
-                  {yearChips.map(chip => (
-                    <button
-                      key={chip.id}
-                      type="button"
-                      onClick={() => setYearFilter(chip.id as YearFilter)}
-                      style={{
-                        padding: '4px 9px', fontSize: '0.72rem', fontWeight: 700,
-                        cursor: 'pointer', border: '2px solid', transition: 'all 0.05s steps(1)', textTransform: 'uppercase',
-                        background: yearFilter === chip.id ? '#00aaff' : '#0c1220',
-                        color: yearFilter === chip.id ? '#060a14' : '#a8d4f0',
-                        borderColor: yearFilter === chip.id ? '#0088cc' : '#1e3560',
-                        boxShadow: yearFilter === chip.id ? '2px 2px 0px #003366' : '2px 2px 0px #000',
-                        transform: yearFilter === chip.id ? 'translate(-1px,-1px)' : 'none',
-                      }}
-                    >
-                      {chip.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Search indicator */}
-            {searchQuery && (
-              <div style={{ padding: '8px 14px', background: 'rgba(0,170,255,0.08)', border: '2px solid rgba(0,170,255,0.3)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '2px 2px 0px #001133' }}>
-                <span style={{ fontSize: '0.8rem', color: '#44ccff' }}>
-                  RESULTS FOR: <strong style={{ color: '#e8f4fd' }}>"{searchQuery}"</strong> ({totalItemCount} found)
+              <div className="absolute inset-y-0 left-5 flex items-center gap-3 sm:left-6">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] text-accent-hover">
+                  <Code2 className="h-5 w-5" />
                 </span>
-                <button
-                  type="button"
-                  onClick={() => setSearchQuery('')}
-                  style={{ fontSize: '0.75rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
-                >
-                  CLEAR
+                <div>
+                  <p className="text-[11px] font-medium text-header-muted">Department of Computer Science</p>
+                  <p className="mt-0.5 text-[13px] font-semibold text-header-ink">Learn · build · share</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between sm:p-6">
+              <div className="min-w-0">
+                <h1 className="font-display text-[28px] font-semibold leading-tight tracking-tight text-ink sm:text-[30px]">
+                  Community feed
+                </h1>
+                <p className="mt-1.5 max-w-xl text-[13.5px] leading-relaxed text-muted">
+                  Discussions, project showcases and workshops from every CSE batch.
+                </p>
+              </div>
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
+                <button type="button" onClick={openComposer} className="btn btn-solid">
+                  <Plus className="h-4 w-4" />
+                  New post
+                </button>
+                <button type="button" onClick={openEventComposer} className="btn btn-outline">
+                  <CalendarDays className="h-4 w-4" />
+                  Host event
                 </button>
               </div>
-            )}
+            </div>
+          </section>
 
-            {/* Feed Content */}
-            {totalItemCount === 0 ? (
-              <div style={{ background: '#0d1426', border: '2px solid #1e3560', padding: '40px 20px', textAlign: 'center', boxShadow: '4px 4px 0px #000' }}>
-                <div style={{ fontSize: '2rem', marginBottom: 12 }}>🎓</div>
-                <h3 style={{ fontSize: '1rem', fontWeight: 800, color: '#e8f4fd', marginBottom: 8, letterSpacing: '0.02em' }}>NO POSTS FOUND</h3>
-                <p style={{ fontSize: '0.825rem', color: '#6bafd4', marginBottom: 20, lineHeight: 1.6 }}>
-                  {searchQuery ? `Nothing matched "${searchQuery}". Try different keywords.` : 'Be the first to start a discussion or host a workshop!'}
-                </p>
-                <div style={{ display: 'flex', justifyContent: 'center', gap: 12 }}>
-                  <button type="button" onClick={() => setIsCreatePostOpen(true)} className="btn-primary">CREATE POST</button>
-                  <button type="button" onClick={() => setIsCreateEventOpen(true)} className="btn-outline">HOST EVENT</button>
-                </div>
-              </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                {/* 1. Top Discussions & Showcases section (always at top) */}
-                {filteredPosts.length > 0 && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {feedFilter === 'all' && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px' }}>
-                        <span style={{ fontSize: '0.78rem', color: '#00aaff', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.04em' }}>
-                          <Sparkles style={{ width: 14, height: 14, color: '#ffe066' }} />
-                          TOP DISCUSSIONS &amp; SHOWCASES
-                        </span>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <button type="button" onClick={() => setFeedFilter('discussions')} style={{ fontSize: '0.72rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
-                            DISCUSS ({posts.filter(p => p.type === 'discussion').length})
-                          </button>
-                          <span style={{ color: '#3d6b8a' }}>•</span>
-                          <button type="button" onClick={() => setFeedFilter('showcases')} style={{ fontSize: '0.72rem', color: '#ffe066', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
-                            SHOWCASE ({posts.filter(p => p.type === 'showcase').length})
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                    {filteredPosts.map(post => <PostCard key={post.id} post={post} />)}
-                  </div>
-                )}
-
-                {/* 2. Events section */}
-                {filteredEvents.length > 0 && (feedFilter === 'all' || feedFilter === 'events') && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    {feedFilter === 'all' && (
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '0 4px', paddingTop: filteredPosts.length > 0 ? 8 : 0 }}>
-                        <span style={{ fontSize: '0.78rem', color: '#00ffcc', fontWeight: 700, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6, letterSpacing: '0.04em' }}>
-                          <Calendar style={{ width: 14, height: 14, color: '#00ffcc' }} />
-                          UPCOMING EVENTS
-                        </span>
-                        <button type="button" onClick={() => setFeedFilter('events')} style={{ fontSize: '0.72rem', color: '#00aaff', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
-                          VIEW ALL ({events.length})
-                        </button>
-                      </div>
-                    )}
-                    {filteredEvents.map(evt => <EventCard key={evt.id} event={evt} />)}
-                  </div>
-                )}
-              </div>
-            )}
+          {/* Composer */}
+          <div className="card flex items-center gap-3 p-3 sm:p-3.5">
+            <UserAvatar
+              src={currentUser?.avatar_url}
+              name={displayName(currentUser)}
+              size={38}
+            />
+            <button
+              type="button"
+              onClick={openComposer}
+              className="min-w-0 flex-1 rounded-md border border-line bg-elevated px-3.5 py-2.5 text-left text-[13px] text-dim transition-colors hover:border-line-strong hover:text-muted"
+            >
+              <span className="block truncate">Share a question, project or idea…</span>
+            </button>
+            <button
+              type="button"
+              onClick={openComposer}
+              className="btn btn-accent btn-sm shrink-0"
+              aria-label="Create a post"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">Create</span>
+            </button>
           </div>
 
-          {/* Right Sidebar */}
-          <div className="sidebar-right">
+          {/* Filters */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <FilterTabs
+              tabs={tabs}
+              value={feedFilter}
+              onChange={setFeedFilter}
+              ariaLabel="Filter the feed"
+            />
+
+            <div className="flex shrink-0 items-center gap-2">
+              <label htmlFor="batch-filter" className="text-[11.5px] text-dim">
+                Batch
+              </label>
+              <select
+                id="batch-filter"
+                value={yearFilter}
+                onChange={event => setYearFilter(Number(event.target.value) as YearFilter)}
+                className="field-select h-9 w-[132px]"
+              >
+                {YEAR_OPTIONS.map(option => (
+                  <option key={option.id} value={option.id}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {searchQuery && (
+            <div className="flex items-center justify-between gap-3 rounded-md border border-accent/25 bg-accent-soft px-3.5 py-2.5">
+              <p className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
+                <Search className="h-3.5 w-3.5 shrink-0 text-accent-hover" />
+                <span className="truncate">
+                  {totalItemCount} result{totalItemCount === 1 ? '' : 's'} for{' '}
+                  <span className="font-medium text-ink">&ldquo;{searchQuery}&rdquo;</span>
+                </span>
+              </p>
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="inline-flex shrink-0 items-center gap-1 text-[11.5px] font-medium text-muted transition-colors hover:text-ink"
+              >
+                <X className="h-3 w-3" /> Clear
+              </button>
+            </div>
+          )}
+
+          {feedError && (
+            <p className="rounded-md border border-line bg-surface px-3.5 py-2.5 text-[12px] text-dim">
+              Some feed data could not be refreshed. {feedError}
+            </p>
+          )}
+
+          {feedLoading ? (
+            <div className="space-y-4" aria-busy="true" aria-label="Loading the feed">
+              {[0, 1, 2].map(item => (
+                <div key={item} className="card flex items-start gap-3 p-5">
+                  <div className="h-10 w-10 shrink-0 rounded-full bg-elevated" />
+                  <div className="min-w-0 flex-1 space-y-2.5">
+                    <div className="h-3 w-1/3 rounded bg-elevated" />
+                    <div className="h-4 w-4/5 rounded bg-elevated" />
+                    <div className="h-3 w-full rounded bg-elevated" />
+                    <div className="h-3 w-2/3 rounded bg-elevated" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : totalItemCount === 0 ? (
+            <EmptyState
+              icon={
+                searchQuery ? (
+                  <Search className="h-6 w-6" />
+                ) : feedFilter === 'events' ? (
+                  <CalendarDays className="h-6 w-6" />
+                ) : feedFilter === 'announcements' ? (
+                  <Megaphone className="h-6 w-6" />
+                ) : (
+                  <MessageSquare className="h-6 w-6" />
+                )
+              }
+              title={
+                searchQuery
+                  ? 'Nothing matched that search'
+                  : feedFilter === 'events'
+                    ? 'No upcoming events yet'
+                    : feedFilter === 'announcements'
+                      ? 'No announcements yet'
+                      : 'The feed is quiet'
+              }
+              body={
+                searchQuery
+                  ? `No posts, projects or events matched “${searchQuery}”. Try a different keyword or clear the filters.`
+                  : feedFilter === 'events'
+                    ? 'Workshops, reviews and meetups will appear here once they are scheduled.'
+                    : feedFilter === 'announcements'
+                      ? 'Faculty announcements will appear here when they are published.'
+                      : 'Start the first discussion, share a project, or schedule something for your batch.'
+              }
+              action={
+                searchQuery ? (
+                  <button type="button" className="btn btn-outline" onClick={() => setSearchQuery('')}>
+                    Clear search
+                  </button>
+                ) : feedFilter === 'events' ? (
+                  <button type="button" className="btn btn-accent" onClick={openEventComposer}>
+                    <CalendarDays className="h-4 w-4" /> Host an event
+                  </button>
+                ) : feedFilter === 'announcements' ? undefined : (
+                  <button type="button" className="btn btn-accent" onClick={openComposer}>
+                    <Plus className="h-4 w-4" /> Create a post
+                  </button>
+                )
+              }
+            />
+          ) : (
+            <div className="space-y-7">
+              {showAnnouncements && filteredAnnouncements.length > 0 && (
+                <section className="space-y-3" aria-labelledby="announcements-heading">
+                  <SectionHeader
+                    id="announcements-heading"
+                    title="Announcements"
+                    count={filteredAnnouncements.length}
+                    icon={<Megaphone className="h-4 w-4" />}
+                  />
+                  <div className="space-y-4">
+                    {filteredAnnouncements.map(announcement => (
+                      <AnnouncementCard key={announcement.id} announcement={announcement} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {showPosts && filteredPosts.length > 0 && (
+                <section className="space-y-3" aria-labelledby="posts-heading">
+                  <SectionHeader
+                    id="posts-heading"
+                    title={postsHeading}
+                    count={filteredPosts.length}
+                    icon={
+                      feedFilter === 'showcases' ? (
+                        <Sparkles className="h-4 w-4" />
+                      ) : (
+                        <MessageSquare className="h-4 w-4" />
+                      )
+                    }
+                  />
+                  <div className="space-y-4">
+                    {filteredPosts.map(post => (
+                      <PostCard key={post.id} post={post} />
+                    ))}
+                  </div>
+                </section>
+              )}
+
+              {showEvents && filteredEvents.length > 0 && (
+                <section className="space-y-3" aria-labelledby="events-heading">
+                  <SectionHeader
+                    id="events-heading"
+                    title="Upcoming events"
+                    count={filteredEvents.length}
+                    icon={<CalendarDays className="h-4 w-4" />}
+                  />
+                  <div className="space-y-4">
+                    {filteredEvents.map(event => (
+                      <EventCard key={event.id} event={event} />
+                    ))}
+                  </div>
+                </section>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="hidden min-[1360px]:block">
+          <div className="sticky top-[88px]">
             <SidebarRight />
           </div>
         </div>
-      </main>
-
-      {/* Footer */}
-      <footer style={{ borderTop: '2px solid #1e3560', background: '#090e1c', padding: '20px 0', marginTop: 'auto' }}>
-        <div className="app-container" style={{ display: 'flex', flexDirection: 'column', gap: 8, alignItems: 'center', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <GraduationCap style={{ width: 18, height: 18, color: '#00aaff' }} />
-            <span style={{ fontSize: '0.8rem', color: '#e8f4fd', fontWeight: 700, letterSpacing: '0.04em' }}>
-              UCC — COMPUTER SCIENCE &amp; ENGINEERING
-            </span>
-            <span style={{ fontSize: '0.75rem', color: '#6bafd4' }}>• COMMUNITY PORTAL</span>
-          </div>
-          <div style={{ display: 'flex', gap: 16 }}>
-            <a href="https://ubdtce.org" target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#00aaff', textDecoration: 'underline', fontWeight: 600 }}>ubdtce.org</a>
-            <button type="button" onClick={() => { setFeedFilter('all'); window.scrollTo({ top: 0, behavior: 'smooth' }) }} style={{ fontSize: '0.75rem', color: '#6bafd4', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}>
-              BACK TO TOP ↑
-            </button>
-          </div>
-        </div>
-      </footer>
-
-      {/* Global Modals */}
-      <CreatePostModal />
-      <CreateEventModal />
-      <ProfileModal />
-      <AuthModal />
-    </div>
+      </div>
+    </AppShell>
   )
 }

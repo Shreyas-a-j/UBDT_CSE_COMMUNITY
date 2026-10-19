@@ -8,61 +8,42 @@ interface UserAvatarProps {
   name?: string
   size?: number
   className?: string
+  /** Optional ring colour. Defaults to the hairline border token. */
   borderColor?: string
 }
 
 export default function UserAvatar({
   src,
-  name = 'User',
-  size = 32,
+  name = 'Member',
+  size = 36,
   className = '',
-  borderColor = '#1e3560',
+  borderColor,
 }: UserAvatarProps) {
   const [imgError, setImgError] = useState(false)
-
   const hasValidImage = Boolean(src && !imgError && typeof src === 'string' && src.trim().length > 0)
 
   return (
-    <div
-      className={className}
+    <span
+      className={`inline-flex shrink-0 items-center justify-center overflow-hidden rounded-full border bg-elevated font-mono font-semibold leading-none text-muted ${className}`}
       style={{
         width: size,
         height: size,
-        border: `2px solid ${borderColor}`,
-        background: '#0c1220',
-        overflow: 'hidden',
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        flexShrink: 0,
-        boxShadow: '2px 2px 0px rgba(0,0,0,0.5)',
+        borderColor: borderColor ?? 'var(--color-line)',
+        fontSize: Math.max(10, Math.floor(size * 0.36)),
       }}
     >
       {hasValidImage ? (
         <img
-          src={src!}
+          src={src as string}
           alt={name}
+          loading="lazy"
+          decoding="async"
           onError={() => setImgError(true)}
-          style={{
-            width: '100%',
-            height: '100%',
-            objectFit: 'cover',
-            display: 'block',
-          }}
+          className="block h-full w-full object-cover"
         />
       ) : (
-        <span
-          style={{
-            fontSize: Math.max(10, Math.floor(size * 0.42)),
-            color: '#00ffcc',
-            fontWeight: 700,
-            lineHeight: 1,
-            userSelect: 'none',
-          }}
-        >
-          {getAvatarFallback(name)}
-        </span>
+        <span aria-hidden>{getAvatarFallback(name)}</span>
       )}
-    </div>
+    </span>
   )
 }

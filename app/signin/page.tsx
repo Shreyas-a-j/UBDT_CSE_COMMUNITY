@@ -3,7 +3,7 @@
 import React, { Suspense, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
-import { AlertCircle, Loader2, Eye, EyeOff, ArrowRight, Mail } from 'lucide-react'
+import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2 } from 'lucide-react'
 import AuthFormShell from '@/components/AuthFormShell'
 import { createClient } from '@/lib/supabase/client'
 
@@ -65,121 +65,103 @@ function SignInForm() {
   }
 
   return (
-    <AuthFormShell title="WELCOME BACK" subtitle="Sign in to UCC Community">
-      <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+    <AuthFormShell title="Welcome back" subtitle="Sign in to your UBDT CSE Community account.">
+      <form onSubmit={handleSubmit} className="flex flex-col gap-4">
         {error && (
           <div
-            style={{
-              padding: '8px 12px',
-              background: 'rgba(255,68,102,0.1)',
-              border: '2px solid rgba(255,68,102,0.4)',
-              color: '#ff6688',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              boxShadow: '2px 2px 0px #661133',
-            }}
+            role="alert"
+            className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/[0.06] px-3 py-2.5 text-[12.5px] text-danger"
           >
-            <AlertCircle style={{ width: 14, height: 14, flexShrink: 0 }} />
-            <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
+            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+            <span className="break-words">{error}</span>
           </div>
         )}
 
-        {/* Email */}
         <div>
-          <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-            <Mail style={{ width: 13, height: 13, color: '#00aaff' }} /> Email Address
+          <label htmlFor="signin-email" className="label">
+            Email address
           </label>
           <input
+            id="signin-email"
             type="email"
             required
-            placeholder="e.g. varun@gmail.com"
+            placeholder="you@example.com"
             value={email}
-            onChange={e => { setEmail(e.target.value); setError('') }}
-            className="input"
+            onChange={e => {
+              setEmail(e.target.value)
+              setError('')
+            }}
+            className="field"
             autoComplete="email"
           />
         </div>
 
-        {/* Password */}
         <div>
-          <label className="label">Password</label>
+          <div className="mb-1.5 flex items-baseline justify-between gap-2">
+            <label htmlFor="signin-password" className="label mb-0">
+              Password
+            </label>
+            <Link
+              href="/forgot-password"
+              className="text-[11.5px] font-medium text-muted transition-colors hover:text-ink"
+            >
+              Forgot password?
+            </Link>
+          </div>
           <div className="relative">
             <input
+              id="signin-password"
               type={showPassword ? 'text' : 'password'}
               required
               placeholder="Your password"
               value={password}
-              onChange={e => { setPassword(e.target.value); setError('') }}
-              className="input pr-10"
+              onChange={e => {
+                setPassword(e.target.value)
+                setError('')
+              }}
+              className="field pr-11"
               autoComplete="current-password"
             />
             <button
               type="button"
               onClick={() => setShowPassword(v => !v)}
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+              className="absolute right-1 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-dim transition-colors hover:text-ink"
+              aria-label={showPassword ? 'Hide password' : 'Show password'}
             >
-              {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </button>
           </div>
         </div>
 
-        {/* Forgot password */}
-        <p style={{ textAlign: 'right', margin: 0 }}>
-          <Link href="/forgot-password" style={{ color: '#00aaff', fontSize: '0.75rem', fontWeight: 600 }}>
-            Forgot password?
-          </Link>
-        </p>
-
-        {/* Submit */}
-        <button
-          type="submit"
-          disabled={loading}
-          style={{
-            width: '100%',
-            padding: '10px',
-            background: '#00aaff',
-            color: '#060a14',
-            border: '2px solid #0088cc',
-            fontSize: '0.8125rem',
-            fontWeight: 700,
-            cursor: loading ? 'not-allowed' : 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            gap: 8,
-            boxShadow: '4px 4px 0px #003366',
-            textTransform: 'uppercase',
-            opacity: loading ? 0.7 : 1,
-            letterSpacing: '0.03em',
-          }}
-        >
+        <button type="submit" disabled={loading} className="btn btn-accent btn-lg btn-block mt-1">
           {loading ? (
             <>
-              <Loader2 style={{ width: 14, height: 14 }} className="animate-spin" />
-              <span>SIGNING IN...</span>
+              <Loader2 className="h-4 w-4 animate-spin" /> Signing in…
             </>
           ) : (
             <>
-              <span>SIGN IN</span>
-              <ArrowRight style={{ width: 14, height: 14 }} />
+              Sign in <ArrowRight className="h-4 w-4" />
             </>
           )}
         </button>
 
-        {/* Links */}
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', margin: 0 }}>
-          Don&apos;t have an account?{' '}
-          <Link href="/signup" style={{ color: '#00ffcc', fontWeight: 600, textDecoration: 'underline' }}>
-            SIGN UP
-          </Link>
-        </p>
-        <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', margin: 0 }}>
-          Faculty?{' '}
-          <Link href="/signup/faculty" style={{ color: '#ffe066', fontWeight: 600 }}>
-            Request faculty access
-          </Link>
-        </p>
+        <div className="mt-2 space-y-2 text-center text-[12px] text-muted">
+          <p>
+            New here?{' '}
+            <Link href="/signup" className="font-medium text-ink underline-offset-4 hover:underline">
+              Create an account
+            </Link>
+          </p>
+          <p>
+            Faculty?{' '}
+            <Link
+              href="/signup/faculty"
+              className="font-medium text-ink underline-offset-4 hover:underline"
+            >
+              Request faculty access
+            </Link>
+          </p>
+        </div>
       </form>
     </AuthFormShell>
   )
@@ -187,13 +169,15 @@ function SignInForm() {
 
 export default function SignInPage() {
   return (
-    <Suspense fallback={
-      <AuthFormShell title="WELCOME BACK" subtitle="Sign in to UCC Community">
-        <div style={{ display: 'flex', justifyContent: 'center', padding: 40 }}>
-          <Loader2 style={{ width: 32, height: 32, color: '#00aaff' }} className="animate-spin" />
-        </div>
-      </AuthFormShell>
-    }>
+    <Suspense
+      fallback={
+        <AuthFormShell title="Welcome back" subtitle="Sign in to your UBDT CSE Community account.">
+          <div className="flex justify-center py-10">
+            <Loader2 className="h-5 w-5 animate-spin text-dim" />
+          </div>
+        </AuthFormShell>
+      }
+    >
       <SignInForm />
     </Suspense>
   )

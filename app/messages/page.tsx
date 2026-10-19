@@ -1,11 +1,12 @@
 'use client'
 
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { MessageCircle, Loader2, Search, Send } from 'lucide-react'
+import { Loader2, MessageCircle, Search, Send } from 'lucide-react'
 import { Conversation } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import PageHeader from '@/components/PageHeader'
 import UserAvatar from '@/components/UserAvatar'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
@@ -20,28 +21,7 @@ function MessagesInbox() {
   const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
 
-  useEffect(() => {
-    if (currentUser) fetchConversations()
-  }, [currentUser])
-
-  useEffect(() => {
-    if (!currentUser) return
-    const channel = supabase
-      .channel(`messages:${currentUser.id}`)
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'messages' },
-        () => {
-          fetchConversations()
-        }
-      )
-      .subscribe()
-    return () => {
-      supabase.removeChannel(channel)
-    }
-  }, [currentUser])
-
-  const fetchConversations = async () => {
+  const fetchConversations = useCallback(async () => {
     if (!currentUser) return
     setLoading(true)
 
@@ -110,7 +90,28 @@ function MessagesInbox() {
 
     setConversations(enriched)
     setLoading(false)
-  }
+  }, [currentUser, supabase])
+
+  useEffect(() => {
+    if (currentUser) queueMicrotask(() => fetchConversations())
+  }, [currentUser, fetchConversations])
+
+  useEffect(() => {
+    if (!currentUser) return
+    const channel = supabase
+      .channel(`messages:${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'messages' },
+        () => {
+          fetchConversations()
+        }
+      )
+      .subscribe()
+    return () => {
+      supabase.removeChannel(channel)
+    }
+  }, [currentUser, fetchConversations, supabase])
 
   const filteredConversations = conversations.filter(conv => {
     if (!searchQuery) return true
@@ -119,185 +120,126 @@ function MessagesInbox() {
     return otherName.includes(searchQuery.toLowerCase()) || preview.includes(searchQuery.toLowerCase())
   })
 
+  const totalUnread = conversations.reduce((sum, conv) => sum + (conv.unread_count ?? 0), 0)
+
   return (
-    <AppShell>
-      <div style={{ maxWidth: 1000, margin: '0 auto', padding: 20 }}>
-        {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <MessageCircle style={{ width: 28, height: 28, color: '#00aaff' }} />
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#e8f4fd', margin: 0 }}>MESSAGES</h1>
-          </div>
-          <p style={{ fontSize: '0.875rem', color: '#6bafd4', margin: 0 }}>
-            Private conversations with your connections
-          </p>
-        </div>
+    <div className="mx-auto w-full max-w-3xl">
+      <PageHeader
+        eyebrow="Inbox"
+        title="Messages"
+        description="Private conversations with people in your network."
+        actions={
+          !loading && totalUnread > 0 ? (
+            <span className="chip chip-accent self-start">
+              <span className="h-1.5 w-1.5 rounded-full bg-accent" />
+              {totalUnread} unread
+            </span>
+          ) : undefined
+        }
+      />
 
-        {/* Search */}
-        <div
-          style={{
-            background: '#0d1426',
-            border: '2px solid #1e3560',
-            padding: 16,
-            marginBottom: 24,
-            boxShadow: '4px 4px 0px #000',
-          }}
-        >
-          <div style={{ position: 'relative' }}>
-            <Search
-              style={{
-                position: 'absolute',
-                left: 12,
-                top: '50%',
-                transform: 'translateY(-50%)',
-                width: 16,
-                height: 16,
-                color: '#6bafd4',
-              }}
-            />
-            <input
-              type="text"
-              placeholder="Search conversations..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              style={{
-                width: '100%',
-                padding: '10px 12px 10px 38px',
-                background: '#060a14',
-                border: '2px solid #1e3560',
-                color: '#e8f4fd',
-                fontSize: '0.875rem',
-                outline: 'none',
-              }}
-            />
-          </div>
-        </div>
-
-        {/* Conversations List */}
-        {loading ? (
-          <LoadingSkeleton rows={4} />
-        ) : filteredConversations.length === 0 ? (
-          <EmptyState
-            icon={<MessageCircle style={{ width: 48, height: 48, color: '#00aaff' }} />}
-            title={searchQuery ? 'No conversations found' : 'No messages yet'}
-            body={
-              searchQuery
-                ? 'Try a different search term'
-                : 'Start a conversation by messaging one of your connections'
-            }
-            action={
-              !searchQuery ? (
-                <Link
-                  href="/connections"
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '10px 16px',
-                    background: '#00aaff',
-                    color: '#060a14',
-                    border: '2px solid #0088cc',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                    boxShadow: '3px 3px 0px #003366',
-                  }}
-                >
-                  <Send style={{ width: 16, height: 16 }} />
-                  VIEW CONNECTIONS
-                </Link>
-              ) : undefined
-            }
-          />
-        ) : (
-          <div style={{ display: 'grid', gap: 12 }}>
-            {filteredConversations.map(conv => {
-              const other = conv.other
-              if (!other) return null
-
-              return (
-                <Link
-                  key={conv.id}
-                  href={`/messages/${conv.id}`}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: 16,
-                    background: conv.unread_count && conv.unread_count > 0 ? 'rgba(0,170,255,0.05)' : '#0d1426',
-                    border: '2px solid',
-                    borderColor: conv.unread_count && conv.unread_count > 0 ? '#00aaff' : '#1e3560',
-                    textDecoration: 'none',
-                    boxShadow: '3px 3px 0px #000',
-                    transition: 'all 0.05s',
-                  }}
-                >
-                  <UserAvatar src={other.avatar_url} name={displayName(other)} size={56} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
-                      <span
-                        style={{
-                          fontSize: '1rem',
-                          fontWeight: 700,
-                          color: '#e8f4fd',
-                        }}
-                      >
-                        {displayName(other)}
-                      </span>
-                      {conv.unread_count && conv.unread_count > 0 && (
-                        <span
-                          style={{
-                            fontSize: '0.7rem',
-                            background: '#00aaff',
-                            color: '#060a14',
-                            padding: '2px 6px',
-                            fontWeight: 700,
-                            borderRadius: 10,
-                          }}
-                        >
-                          {conv.unread_count}
-                        </span>
-                      )}
-                    </div>
-                    <div
-                      style={{
-                        fontSize: '0.85rem',
-                        color: '#6bafd4',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {conv.last_message_preview || 'No messages yet'}
-                    </div>
-                  </div>
-                  {conv.last_message_at && (
-                    <div style={{ fontSize: '0.75rem', color: '#6bafd4', whiteSpace: 'nowrap' }}>
-                      {formatRelativeTime(conv.last_message_at)}
-                    </div>
-                  )}
-                </Link>
-              )
-            })}
-          </div>
-        )}
+      <div className="relative mb-4">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-dim" />
+        <input
+          type="text"
+          placeholder="Search conversations"
+          aria-label="Search conversations"
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+          className="field pl-9"
+        />
       </div>
-    </AppShell>
+
+      {loading ? (
+        <LoadingSkeleton rows={4} />
+      ) : filteredConversations.length === 0 ? (
+        <EmptyState
+          icon={<MessageCircle className="h-6 w-6" />}
+          title={searchQuery ? 'No conversations found' : 'No messages yet'}
+          body={
+            searchQuery
+              ? 'Try a different name or keyword.'
+              : 'Start a conversation by messaging one of your connections.'
+          }
+          action={
+            !searchQuery ? (
+              <Link href="/connections" className="btn btn-accent">
+                <Send className="h-4 w-4" /> View connections
+              </Link>
+            ) : undefined
+          }
+        />
+      ) : (
+        <div className="card divide-y divide-line overflow-hidden">
+          {filteredConversations.map(conv => {
+            const other = conv.other
+            if (!other) return null
+            const unread = Boolean(conv.unread_count && conv.unread_count > 0)
+
+            return (
+              <Link
+                key={conv.id}
+                href={`/messages/${conv.id}`}
+                className={`group relative flex items-center gap-3.5 px-4 py-4 transition-colors sm:px-5 ${
+                  unread ? 'bg-accent/[0.03]' : 'hover:bg-elevated'
+                }`}
+              >
+                {unread && (
+                  <span
+                    aria-hidden
+                    className="absolute inset-y-0 left-0 w-0.5 bg-accent"
+                  />
+                )}
+                <UserAvatar src={other.avatar_url} name={displayName(other)} size={44} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`truncate text-[14px] ${
+                        unread ? 'font-semibold text-ink' : 'font-medium text-ink/90'
+                      }`}
+                    >
+                      {displayName(other)}
+                    </span>
+                    {unread && (
+                      <span className="inline-flex min-w-5 items-center justify-center rounded-full bg-accent px-1.5 py-px text-[10px] font-bold text-[#14151f]">
+                        {conv.unread_count}
+                      </span>
+                    )}
+                  </div>
+                  <p
+                    className={`mt-0.5 truncate text-[12.5px] ${
+                      unread ? 'text-muted' : 'text-dim'
+                    }`}
+                  >
+                    {conv.last_message_preview || 'No messages yet'}
+                  </p>
+                </div>
+                {conv.last_message_at && (
+                  <span className="shrink-0 self-start pt-1 text-[10.5px] text-dim">
+                    {formatRelativeTime(conv.last_message_at)}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
 export default function MessagesPage() {
   return (
-    <Suspense
-      fallback={
-        <AppShell>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <Loader2 style={{ width: 48, height: 48, color: '#00aaff' }} className="animate-spin" />
+    <AppShell>
+      <Suspense
+        fallback={
+          <div className="mx-auto flex w-full max-w-3xl justify-center py-24">
+            <Loader2 className="h-6 w-6 animate-spin text-dim" />
           </div>
-        </AppShell>
-      }
-    >
-      <MessagesInbox />
-    </Suspense>
+        }
+      >
+        <MessagesInbox />
+      </Suspense>
+    </AppShell>
   )
 }

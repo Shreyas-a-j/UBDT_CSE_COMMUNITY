@@ -2,16 +2,17 @@
 
 import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
-import { LayoutDashboard, Megaphone, Calendar, Loader2 } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Calendar, LayoutDashboard, Loader2, Megaphone, Plus } from 'lucide-react'
 import { Event, Announcement } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
+import PageHeader from '@/components/PageHeader'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
 import { useAuth } from '@/contexts/AuthContext'
 import { canPublishFacultyContent } from '@/lib/profile'
 import { formatDate, formatEventDateTime } from '@/lib/utils'
-import { useRouter } from 'next/navigation'
 import toast from 'react-hot-toast'
 
 function FacultyDashboard() {
@@ -74,261 +75,150 @@ function FacultyDashboard() {
   }
 
   return (
-    <AppShell>
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: 20 }}>
-        {/* Header */}
-        <div style={{ marginBottom: 24 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-            <LayoutDashboard style={{ width: 28, height: 28, color: '#ffe066' }} />
-            <h1 style={{ fontSize: '1.75rem', fontWeight: 800, color: '#e8f4fd', margin: 0 }}>
-              FACULTY DASHBOARD
-            </h1>
-          </div>
-          <p style={{ fontSize: '0.875rem', color: '#6bafd4', margin: 0 }}>
-            Manage your announcements and events
-          </p>
-        </div>
-
-        {loading ? (
-          <LoadingSkeleton rows={3} />
-        ) : (
-          <div style={{ display: 'grid', gap: 24 }}>
-            {/* Quick Actions */}
-            <div
-              style={{
-                background: '#0d1426',
-                border: '2px solid #1e3560',
-                padding: 20,
-                boxShadow: '4px 4px 0px #000',
+    <div className="mx-auto w-full max-w-5xl">
+      <PageHeader
+        eyebrow="Faculty workspace"
+        title="Dashboard"
+        description="Publish announcements and keep track of the events you host."
+        actions={
+          <>
+            <Link href="/faculty/announcements/create" className="btn btn-accent">
+              <Megaphone className="h-4 w-4" /> New announcement
+            </Link>
+            <button
+              type="button"
+              onClick={() => {
+                toast('Event creation coming soon')
               }}
+              className="btn btn-outline"
             >
-              <h2
-                style={{
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  color: '#ffe066',
-                  marginBottom: 16,
-                  textTransform: 'uppercase',
-                }}
-              >
-                Quick Actions
+              <Calendar className="h-4 w-4" /> New event
+            </button>
+          </>
+        }
+      />
+
+      {loading ? (
+        <LoadingSkeleton rows={3} />
+      ) : (
+        <div className="grid items-start gap-5 lg:grid-cols-2">
+          {/* Announcements */}
+          <section className="card flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+              <h2 className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+                <Megaphone className="h-4 w-4 text-accent" />
+                Announcements
               </h2>
-              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                <Link
-                  href="/faculty/announcements/create"
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '10px 16px',
-                    background: '#ffe066',
-                    color: '#060a14',
-                    border: '2px solid #ccb300',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    textDecoration: 'none',
-                    boxShadow: '3px 3px 0px #665500',
-                  }}
-                >
-                  <Megaphone style={{ width: 16, height: 16 }} />
-                  NEW ANNOUNCEMENT
-                </Link>
-                <button
-                  onClick={() => {
-                    // Trigger create event modal from context
-                    toast('Event creation coming soon')
-                  }}
-                  style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 8,
-                    padding: '10px 16px',
-                    background: '#00aaff',
-                    color: '#060a14',
-                    border: '2px solid #0088cc',
-                    fontSize: '0.875rem',
-                    fontWeight: 700,
-                    cursor: 'pointer',
-                    boxShadow: '3px 3px 0px #003366',
-                  }}
-                >
-                  <Calendar style={{ width: 16, height: 16 }} />
-                  NEW EVENT
-                </button>
-              </div>
+              <span className="chip text-[10.5px]">{myAnnouncements.length}</span>
             </div>
 
-            {/* Recent Announcements */}
-            <div
-              style={{
-                background: '#0d1426',
-                border: '2px solid #1e3560',
-                padding: 20,
-                boxShadow: '4px 4px 0px #000',
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  color: '#ffe066',
-                  marginBottom: 16,
-                  textTransform: 'uppercase',
-                }}
-              >
-                My Announcements ({myAnnouncements.length})
-              </h2>
-              {myAnnouncements.length === 0 ? (
+            {myAnnouncements.length === 0 ? (
+              <div className="p-4">
                 <EmptyState
-                  icon={<Megaphone style={{ width: 36, height: 36, color: '#ffe066' }} />}
+                  icon={<Megaphone className="h-5 w-5" />}
                   title="No announcements yet"
-                  body="Create your first announcement to reach students"
+                  body="Publish your first announcement to reach students in the community feed."
+                  action={
+                    <Link href="/faculty/announcements/create" className="btn btn-outline btn-sm">
+                      <Plus className="h-3.5 w-3.5" /> Create announcement
+                    </Link>
+                  }
                 />
-              ) : (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {myAnnouncements.map(announcement => (
-                    <div
-                      key={announcement.id}
-                      style={{
-                        background: '#060a14',
-                        border: '2px solid #1e3560',
-                        padding: 16,
-                      }}
-                    >
-                      <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#e8f4fd', marginBottom: 8 }}>
-                        {announcement.title}
-                      </h3>
-                      <p
-                        style={{
-                          fontSize: '0.875rem',
-                          color: '#a8d4f0',
-                          marginBottom: 12,
-                          overflow: 'hidden',
-                          textOverflow: 'ellipsis',
-                          display: '-webkit-box',
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: 'vertical',
-                        }}
+              </div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {myAnnouncements.map(announcement => (
+                  <li key={announcement.id} className="p-5">
+                    <h3 className="text-[14px] font-semibold text-ink">
+                      {announcement.title}
+                    </h3>
+                    <p className="clamp-2 mt-1 text-[13px] leading-relaxed text-muted">
+                      {announcement.body}
+                    </p>
+                    <div className="mt-2.5 flex items-center justify-between gap-3">
+                      <span className="text-[10.5px] text-dim">
+                        Posted {formatDate(announcement.created_at)}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteAnnouncement(announcement.id)}
+                        className="btn btn-danger btn-sm"
                       >
-                        {announcement.body}
-                      </p>
-                      <div
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          fontSize: '0.75rem',
-                          color: '#6bafd4',
-                        }}
-                      >
-                        <span>Posted {formatDate(announcement.created_at)}</span>
-                        <button
-                          onClick={() => handleDeleteAnnouncement(announcement.id)}
-                          style={{
-                            padding: '6px 12px',
-                            background: 'transparent',
-                            color: '#ff6688',
-                            border: '1px solid #ff6688',
-                            fontSize: '0.75rem',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                          }}
-                        >
-                          DELETE
-                        </button>
-                      </div>
+                        Delete
+                      </button>
                     </div>
-                  ))}
-                </div>
-              )}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+
+          {/* Events */}
+          <section className="card flex flex-col overflow-hidden">
+            <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
+              <h2 className="flex items-center gap-2 text-[14px] font-semibold text-ink">
+                <Calendar className="h-4 w-4 text-info" />
+                Events
+              </h2>
+              <span className="chip text-[10.5px]">{myEvents.length}</span>
             </div>
 
-            {/* Recent Events */}
-            <div
-              style={{
-                background: '#0d1426',
-                border: '2px solid #1e3560',
-                padding: 20,
-                boxShadow: '4px 4px 0px #000',
-              }}
-            >
-              <h2
-                style={{
-                  fontSize: '1rem',
-                  fontWeight: 700,
-                  color: '#ffe066',
-                  marginBottom: 16,
-                  textTransform: 'uppercase',
-                }}
-              >
-                My Events ({myEvents.length})
-              </h2>
-              {myEvents.length === 0 ? (
+            {myEvents.length === 0 ? (
+              <div className="p-4">
                 <EmptyState
-                  icon={<Calendar style={{ width: 36, height: 36, color: '#00aaff' }} />}
+                  icon={<Calendar className="h-5 w-5" />}
                   title="No events yet"
-                  body="Create events to organize workshops and sessions"
+                  body="Events you create will appear here with their RSVP counts."
                 />
-              ) : (
-                <div style={{ display: 'grid', gap: 12 }}>
-                  {myEvents.map(event => (
-                    <div
-                      key={event.id}
-                      style={{
-                        background: '#060a14',
-                        border: '2px solid #1e3560',
-                        padding: 16,
-                      }}
-                    >
-                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                        <div style={{ flex: 1 }}>
-                          <h3 style={{ fontSize: '1rem', fontWeight: 700, color: '#e8f4fd', marginBottom: 4 }}>
-                            {event.title}
-                          </h3>
-                          <div style={{ fontSize: '0.8rem', color: '#00aaff', marginBottom: 8 }}>
-                            {formatEventDateTime(event.event_date, event.event_time)}
-                          </div>
-                          <div style={{ fontSize: '0.75rem', color: '#6bafd4' }}>
-                            {event.type} • {event.duration} minutes
-                          </div>
-                        </div>
-                        <span
-                          style={{
-                            fontSize: '0.7rem',
-                            background: 'rgba(255,224,102,0.15)',
-                            color: '#ffe066',
-                            padding: '4px 8px',
-                            border: '1px solid rgba(255,224,102,0.3)',
-                            fontWeight: 700,
-                          }}
-                        >
-                          {event.rsvp_count || 0} RSVPs
-                        </span>
+              </div>
+            ) : (
+              <ul className="divide-y divide-line">
+                {myEvents.map(event => (
+                  <li key={event.id} className="p-5">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h3 className="text-[14px] font-semibold text-ink">
+                          {event.title}
+                        </h3>
+                        <p className="mt-1 text-[10.5px] text-info">
+                          {formatEventDateTime(event.event_date, event.event_time)}
+                        </p>
+                        <p className="mt-1 text-[11.5px] capitalize text-dim">
+                          {event.type} · {event.duration} minutes
+                        </p>
                       </div>
+                      <span className="chip shrink-0 text-[10.5px]">
+                        {event.rsvp_count || 0} RSVPs
+                      </span>
                     </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-      </div>
-    </AppShell>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+      )}
+
+      <p className="mt-6 flex items-center gap-1.5 text-[10.5px] text-dim">
+        <LayoutDashboard className="h-3 w-3" />
+        Only approved faculty and admins can publish content.
+      </p>
+    </div>
   )
 }
 
 export default function FacultyDashboardPage() {
   return (
-    <Suspense
-      fallback={
-        <AppShell>
-          <div style={{ display: 'flex', justifyContent: 'center', padding: 60 }}>
-            <Loader2 style={{ width: 48, height: 48, color: '#ffe066' }} className="animate-spin" />
+    <AppShell>
+      <Suspense
+        fallback={
+          <div className="mx-auto flex w-full max-w-5xl justify-center py-24">
+            <Loader2 className="h-6 w-6 animate-spin text-dim" />
           </div>
-        </AppShell>
-      }
-    >
-      <FacultyDashboard />
-    </Suspense>
+        }
+      >
+        <FacultyDashboard />
+      </Suspense>
+    </AppShell>
   )
 }

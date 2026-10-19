@@ -1,10 +1,11 @@
 'use client'
 
 import React, { useState } from 'react'
-import { X, GraduationCap, ArrowRight, AlertCircle, Loader2, Eye, EyeOff, Mail } from 'lucide-react'
+import { AlertCircle, ArrowRight, Eye, EyeOff, Loader2, Mail } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { validateUSN, getYearFromUSN } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
+import Modal, { ModalCloseButton } from '@/components/Modal'
 
 export default function AuthModal() {
   const { isAuthModalOpen, setIsAuthModalOpen } = useCommunity()
@@ -22,16 +23,6 @@ export default function AuthModal() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
 
-  if (!isAuthModalOpen) return null
-
-  const handleUsnChange = (val: string) => {
-    const uppercaseVal = val.toUpperCase().trim()
-    setUsn(uppercaseVal)
-    setError('')
-    const detected = getYearFromUSN(uppercaseVal)
-    if (detected) setYear(detected)
-  }
-
   const resetForm = () => {
     setUsn('')
     setName('')
@@ -42,8 +33,21 @@ export default function AuthModal() {
     setError('')
   }
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  const close = () => {
+    resetForm()
+    setIsAuthModalOpen(false)
+  }
+
+  const handleUsnChange = (value: string) => {
+    const uppercaseValue = value.toUpperCase().trim()
+    setUsn(uppercaseValue)
+    setError('')
+    const detected = getYearFromUSN(uppercaseValue)
+    if (detected) setYear(detected)
+  }
+
+  const handleSubmit = async (event: React.FormEvent) => {
+    event.preventDefault()
     setError('')
 
     const formattedUsn = usn.toUpperCase().trim()
@@ -51,27 +55,22 @@ export default function AuthModal() {
       setError('Invalid USN. Expected format: 4UB24CS045')
       return
     }
-
     if (isSignUp && !name.trim()) {
       setError('Please enter your full name')
       return
     }
-
     if (isSignUp && !email.trim()) {
       setError('Please enter your email address')
       return
     }
-
     if (!password || password.length < 6) {
       setError('Password must be at least 6 characters')
       return
     }
-
     if (isSignUp && password !== confirmPassword) {
       setError('Passwords do not match')
       return
     }
-
     if (!email.trim()) {
       setError('Please enter your email address')
       return
@@ -91,7 +90,10 @@ export default function AuthModal() {
         })
 
         if (signUpError) {
-          if (signUpError.message.includes('already registered') || signUpError.message.includes('User already registered')) {
+          if (
+            signUpError.message.includes('already registered') ||
+            signUpError.message.includes('User already registered')
+          ) {
             setError('This email is already registered. Please sign in instead.')
             setLoading(false)
             return
@@ -99,16 +101,13 @@ export default function AuthModal() {
           throw signUpError
         }
 
-        // If email confirmation is disabled, data.user is available immediately.
-        // Auto sign-in so the user doesn't need to verify email first.
-        const { data: _signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        const { error: signInErr } = await supabase.auth.signInWithPassword({
           email: authEmail,
           password,
         })
 
         if (signInErr) {
-          // Email confirmation may be required — tell user to check email
-          setError('Account created! Please check your email to verify, then sign in.')
+          setError('Account created. Check your email to verify, then sign in.')
           setLoading(false)
           resetForm()
           setIsSignUp(false)
@@ -119,14 +118,20 @@ export default function AuthModal() {
           email: authEmail,
           password,
         })
+
         if (signInError || !data.user) {
-          const msg = signInError?.message || ''
-          if (msg.toLowerCase().includes('email not confirmed')) {
-            setError('Your email is not confirmed. Please check your inbox or ask the admin to confirm your account in Supabase.')
-          } else if (msg.toLowerCase().includes('invalid login credentials') || msg.toLowerCase().includes('invalid credentials')) {
+          const message = signInError?.message || ''
+          if (message.toLowerCase().includes('email not confirmed')) {
+            setError(
+              'Your email is not confirmed. Check your inbox or ask the admin to confirm your account.'
+            )
+          } else if (
+            message.toLowerCase().includes('invalid login credentials') ||
+            message.toLowerCase().includes('invalid credentials')
+          ) {
             setError('Wrong email or password. Double-check and try again.')
           } else {
-            setError(msg || 'Sign in failed. Please try again.')
+            setError(message || 'Sign in failed. Please try again.')
           }
           setLoading(false)
           return
@@ -135,222 +140,258 @@ export default function AuthModal() {
 
       resetForm()
       setIsAuthModalOpen(false)
-    } catch (err: any) {
-      setError(err?.message || 'Authentication error. Please try again.')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Authentication error. Please try again.'
+      setError(message)
     } finally {
       setLoading(false)
     }
   }
 
+  if (!isAuthModalOpen) return null
+
   return (
-    <div className="modal-overlay">
-      <div className="modal-content" style={{ background: '#0b1220', border: '2px solid #00aaff', boxShadow: '6px 6px 0px #000, 0 0 24px rgba(0,170,255,0.18)', borderRadius: 0, overflow: 'hidden', outline: 'none' }}>
-        {/* Header */}
-        <div style={{ background: '#090e1c', borderBottom: '2px solid #1e3560', padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 36, height: 36, background: '#00aaff', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '2px 2px 0px #000' }}>
-              <GraduationCap style={{ width: 20, height: 20, color: '#060a14' }} />
-            </div>
-            <div>
-              <h2 style={{ fontSize: '0.95rem', color: '#e8f4fd', fontWeight: 700, lineHeight: 1.3, textTransform: 'uppercase', letterSpacing: '0.03em', margin: 0 }}>
-                {isSignUp ? 'JOIN UCC COMMUNITY' : 'WELCOME BACK'}
-              </h2>
-              <p style={{ fontSize: '0.72rem', color: '#00ffcc', margin: '2px 0 0 0', fontWeight: 500 }}>
-                {isSignUp ? 'Create your UCC student profile' : 'Sign in with your USN'}
-              </p>
-            </div>
+    <Modal open={isAuthModalOpen} onClose={close} labelledBy="auth-modal-title">
+      <div className="modal-head">
+        <div className="flex items-start gap-3">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold text-accent-hover">
+            CSE
+          </span>
+          <div>
+            <h2 id="auth-modal-title" className="text-[16px] font-semibold text-ink">
+              {isSignUp ? 'Join the community' : 'Welcome back'}
+            </h2>
+            <p className="mt-0.5 text-[12px] text-muted">
+              {isSignUp ? 'Create your student profile with your USN.' : 'Sign in to your UBDT CSE account.'}
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => { resetForm(); setIsAuthModalOpen(false) }}
-            style={{ background: 'transparent', border: '2px solid #1e3560', padding: '5px', cursor: 'pointer', color: '#6bafd4', display: 'flex', alignItems: 'center' }}
-            onMouseEnter={e => { (e.currentTarget as HTMLElement).style.borderColor = '#00aaff'; (e.currentTarget as HTMLElement).style.color = '#e8f4fd' }}
-            onMouseLeave={e => { (e.currentTarget as HTMLElement).style.borderColor = '#1e3560'; (e.currentTarget as HTMLElement).style.color = '#6bafd4' }}
-          >
-            <X style={{ width: 16, height: 16 }} />
-          </button>
         </div>
+        <ModalCloseButton onClick={close} />
+      </div>
 
-        {/* Toggle Tabs */}
-        <div style={{ display: 'flex', borderBottom: '2px solid #1e3560', background: '#080d18' }}>
-          {['SIGN UP', 'SIGN IN'].map((tab, i) => (
+      <div className="flex border-b border-line bg-surface px-2" role="tablist" aria-label="Authentication mode">
+        {[
+          { id: true, label: 'Create account' },
+          { id: false, label: 'Sign in' },
+        ].map(tab => {
+          const active = isSignUp === tab.id
+          return (
             <button
-              key={tab}
+              key={String(tab.id)}
               type="button"
-              onClick={() => { setIsSignUp(i === 0); setError('') }}
-              style={{ flex: 1, padding: '10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer', border: 'none', borderBottom: isSignUp === (i === 0) ? '2px solid #00aaff' : '2px solid transparent', background: isSignUp === (i === 0) ? 'rgba(0,170,255,0.08)' : 'transparent', color: isSignUp === (i === 0) ? '#00aaff' : '#6bafd4', transition: 'all 0.05s steps(1)', letterSpacing: '0.04em' }}
+              role="tab"
+              aria-selected={active}
+              onClick={() => {
+                setIsSignUp(tab.id)
+                setError('')
+              }}
+              className={`relative px-3 py-2.5 text-[12.5px] font-medium transition-colors ${
+                active ? 'text-ink' : 'text-muted hover:text-ink'
+              }`}
             >
-              {tab}
+              {tab.label}
+              {active && <span className="absolute inset-x-2 bottom-0 h-0.5 rounded-full bg-accent" />}
             </button>
-          ))}
-        </div>
+          )
+        })}
+      </div>
 
-        {/* Form */}
-        <form onSubmit={handleSubmit} style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <form onSubmit={handleSubmit} className="flex min-h-0 flex-1 flex-col">
+        <div className="modal-body space-y-3.5">
           {error && (
-            <div style={{ padding: '8px 12px', background: 'rgba(255,68,102,0.1)', border: '2px solid rgba(255,68,102,0.4)', color: '#ff6688', display: 'flex', alignItems: 'center', gap: 8, boxShadow: '2px 2px 0px #661133' }}>
-              <AlertCircle style={{ width: 14, height: 14, flexShrink: 0 }} />
-              <span style={{ fontSize: '0.75rem', fontWeight: 600 }}>{error}</span>
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-lg border border-danger/30 bg-danger/10 px-3 py-2.5 text-[12px] text-danger"
+            >
+              <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{error}</span>
             </div>
           )}
 
-          {/* Full Name — sign up only */}
           {isSignUp && (
             <div>
-              <label className="label">Full Name</label>
+              <label className="label" htmlFor="auth-name">Full name</label>
               <input
+                id="auth-name"
                 type="text"
                 required
+                autoComplete="name"
                 placeholder="e.g. Varun Kumar"
                 value={name}
                 onChange={e => setName(e.target.value)}
-                className="input"
+                className="field"
               />
             </div>
           )}
 
           {isSignUp && (
-          <div>
-            <label className="label">USN (University Seat Number)</label>
-            <input
-              type="text"
-              required
-              placeholder="e.g. 4UB24CS045"
-              value={usn}
-              onChange={e => handleUsnChange(e.target.value)}
-              className="input uppercase"
-              maxLength={12}
-            />
-            <p style={{ fontSize: '0.7rem', color: '#6bafd4', marginTop: 4 }}>
-              Format: 4UB[YY]CS[Roll] — academic year is auto-detected
-            </p>
-          </div>
+            <div>
+              <label className="label" htmlFor="auth-usn">USN</label>
+              <input
+                id="auth-usn"
+                type="text"
+                required
+                placeholder="4UB24CS045"
+                value={usn}
+                onChange={e => handleUsnChange(e.target.value)}
+                className="field font-mono uppercase"
+                maxLength={12}
+              />
+              <p className="mt-1.5 text-[11px] text-dim">
+                Format 4UB[YY]CS[Roll]. Your academic year is detected automatically.
+              </p>
+            </div>
           )}
 
-          {/* Email — always shown */}
           <div>
-            <label className="label" style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <Mail style={{ width: 13, height: 13, color: '#00aaff' }} /> Email Address
+            <label className="label flex items-center gap-1.5" htmlFor="auth-email">
+              <Mail className="h-3 w-3" /> Email address
             </label>
             <input
+              id="auth-email"
               type="email"
               required
-              placeholder="e.g. varun@gmail.com"
+              autoComplete="email"
+              placeholder="you@example.com"
               value={email}
-              onChange={e => { setEmail(e.target.value); setError('') }}
-              className="input"
+              onChange={e => {
+                setEmail(e.target.value)
+                setError('')
+              }}
+              className="field"
             />
           </div>
 
-          {/* Academic Year — sign up only */}
           {isSignUp && (
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="label">Academic Year</label>
-                <select value={year} onChange={e => setYear(Number(e.target.value))} className="select">
-                  <option value={1}>1st Year</option>
-                  <option value={2}>2nd Year</option>
-                  <option value={3}>3rd Year</option>
-                  <option value={4}>4th Year</option>
+                <label className="label" htmlFor="auth-year">Academic year</label>
+                <select
+                  id="auth-year"
+                  value={year}
+                  onChange={e => setYear(Number(e.target.value))}
+                  className="field-select"
+                >
+                  <option value={1}>1st year</option>
+                  <option value={2}>2nd year</option>
+                  <option value={3}>3rd year</option>
+                  <option value={4}>4th year</option>
                 </select>
               </div>
               <div>
-                <label className="label">Department</label>
+                <label className="label" htmlFor="auth-dept">Department</label>
                 <input
+                  id="auth-dept"
                   type="text"
                   disabled
-                  value="CSE (Fixed)"
-                  className="input"
-                  style={{ background: '#090d16', color: '#00aaff', opacity: 0.8, cursor: 'not-allowed', fontWeight: 600 }}
+                  value="CSE"
+                  className="field cursor-not-allowed opacity-70"
                 />
               </div>
             </div>
           )}
 
-          {/* Password */}
           <div>
-            <label className="label">Password</label>
+            <label className="label" htmlFor="auth-password">Password</label>
             <div className="relative">
               <input
+                id="auth-password"
                 type={showPassword ? 'text' : 'password'}
                 required
-                placeholder="Min. 6 characters"
+                autoComplete={isSignUp ? 'new-password' : 'current-password'}
+                placeholder="At least 6 characters"
                 value={password}
                 onChange={e => setPassword(e.target.value)}
-                className="input pr-10"
+                className="field pr-10"
               />
               <button
                 type="button"
-                onClick={() => setShowPassword(!showPassword)}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                onClick={() => setShowPassword(v => !v)}
+                aria-label={showPassword ? 'Hide password' : 'Show password'}
+                className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-dim transition-colors hover:bg-elevated hover:text-ink"
               >
-                {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                {showPassword ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
             </div>
           </div>
 
-          {/* Confirm Password — sign up only */}
           {isSignUp && (
             <div>
-              <label className="label">Confirm Password</label>
+              <label className="label" htmlFor="auth-confirm">Confirm password</label>
               <div className="relative">
                 <input
+                  id="auth-confirm"
                   type={showConfirm ? 'text' : 'password'}
                   required
+                  autoComplete="new-password"
                   placeholder="Re-enter your password"
                   value={confirmPassword}
                   onChange={e => setConfirmPassword(e.target.value)}
-                  className="input pr-10"
+                  className="field pr-10"
                 />
                 <button
                   type="button"
-                  onClick={() => setShowConfirm(!showConfirm)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white"
+                  onClick={() => setShowConfirm(v => !v)}
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                  className="absolute right-1.5 top-1/2 flex h-8 w-8 -translate-y-1/2 items-center justify-center rounded-md text-dim transition-colors hover:bg-elevated hover:text-ink"
                 >
-                  {showConfirm ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  {showConfirm ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
                 </button>
               </div>
               {confirmPassword && confirmPassword !== password && (
-                <p style={{ fontSize: '0.7rem', color: '#ff6688', marginTop: 4 }}>Passwords do not match</p>
+                <p className="mt-1.5 text-[11px] text-danger">Passwords do not match.</p>
               )}
             </div>
           )}
 
-          {/* Submit */}
-          <div style={{ paddingTop: 8 }}>
-            <button
-              type="submit"
-              disabled={loading || (isSignUp && !!confirmPassword && confirmPassword !== password)}
-              style={{ width: '100%', padding: '10px', background: '#00aaff', color: '#060a14', border: '2px solid #0088cc', fontSize: '0.8125rem', fontWeight: 700, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, boxShadow: '4px 4px 0px #003366', textTransform: 'uppercase', opacity: loading ? 0.7 : 1, letterSpacing: '0.03em' }}
-            >
-              {loading ? (
-                <><Loader2 style={{ width: 14, height: 14 }} className="animate-spin" /><span>PLEASE WAIT...</span></>
-              ) : (
-                <><span>{isSignUp ? 'CREATE PROFILE & JOIN' : 'SIGN IN'}</span><ArrowRight style={{ width: 14, height: 14 }} /></>
-              )}
-            </button>
-          </div>
-
           {!isSignUp && (
-            <p style={{ textAlign: 'center', fontSize: '0.75rem' }}>
-              <a href="/forgot-password" style={{ color: '#00aaff', fontWeight: 600 }}>Forgot password?</a>
+            <p className="text-right">
+              <a href="/forgot-password" className="text-[11.5px] font-medium text-accent hover:underline">
+                Forgot password?
+              </a>
             </p>
           )}
-          <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4' }}>
-            Faculty? <a href="/signup/faculty" style={{ color: '#ffe066' }}>Request faculty access</a>
-          </p>
-          <p style={{ textAlign: 'center', fontSize: '0.75rem', color: '#6bafd4', paddingTop: 4 }}>
-            {isSignUp ? 'Already have an account? ' : "Don't have an account? "}
-            <button
-              type="button"
-              onClick={() => { setIsSignUp(!isSignUp); setError('') }}
-              style={{ fontSize: '0.75rem', color: '#00ffcc', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline', fontWeight: 600 }}
-            >
-              {isSignUp ? 'SIGN IN' : 'SIGN UP'}
-            </button>
-          </p>
-        </form>
-      </div>
-    </div>
+        </div>
+
+        <div className="flex flex-col gap-3 border-t border-line bg-surface px-5 py-4">
+          <button
+            type="submit"
+            disabled={loading || (isSignUp && !!confirmPassword && confirmPassword !== password)}
+            className="btn btn-accent btn-lg btn-block"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Please wait…
+              </>
+            ) : (
+              <>
+                {isSignUp ? 'Create profile' : 'Sign in'}
+                <ArrowRight className="h-4 w-4" />
+              </>
+            )}
+          </button>
+
+          <div className="flex flex-wrap items-center justify-between gap-2 text-[11.5px] text-dim">
+            <span>
+              {isSignUp ? 'Already registered?' : 'New here?'}{' '}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsSignUp(!isSignUp)
+                  setError('')
+                }}
+                className="font-medium text-ink hover:underline"
+              >
+                {isSignUp ? 'Sign in' : 'Create an account'}
+              </button>
+            </span>
+            <a href="/signup/faculty" className="font-medium text-muted hover:text-ink">
+              Faculty access
+            </a>
+          </div>
+        </div>
+      </form>
+    </Modal>
   )
 }
