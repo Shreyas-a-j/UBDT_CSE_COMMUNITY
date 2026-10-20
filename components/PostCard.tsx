@@ -9,7 +9,7 @@ import {
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatDate, formatRelativeTime, getYearLabel } from '@/lib/utils'
-import { firstName } from '@/lib/profile'
+import { isAdmin, firstName } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 
 interface PostCardProps {
@@ -34,12 +34,18 @@ export default function PostCard({ post }: PostCardProps) {
   const [eDemoUrl, setEDemoUrl] = useState(post.demo_url || '')
   const [eTechStack, setETechStack] = useState((post.tech_stack || []).join(', '))
   const [isSaving, setIsSaving] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
   const [relativeTime, setRelativeTime] = useState('')
 
   const isLiked = likedPostIds.has(post.id)
   const isUpvoted = upvotedPostIds.has(post.id)
+  // Ownership follows the database author (and admins, matching the RLS
+  // delete policy). Comparing USNs is not safe here: profiles without a USN
+  // (faculty/admin or accounts created before USN migration) produce null vs
+  // '' mismatches, so a real author could lose (or falsely gain) delete
+  // access. Authorization stays server-side via RLS; this only controls UI.
   const isAuthor = Boolean(
-    currentUser && (currentUser.id === post.author_id || currentUser.usn === post.author_usn)
+    currentUser && (currentUser.id === post.author_id || isAdmin(currentUser))
   )
   const isShowcase = post.type === 'showcase'
   const postComments = comments.filter(c => c.post_id === post.id)
@@ -104,8 +110,17 @@ export default function PostCard({ post }: PostCardProps) {
   }
 
   const handleDelete = async () => {
-    if (window.confirm(`Delete this ${isShowcase ? 'project showcase' : 'discussion'}?`)) {
+    if (isDeleting) return
+    if (!window.confirm(`Delete this ${isShowcase ? 'project showcase' : 'discussion'}? This cannot be undone.`)) {
+      return
+    }
+    setIsDeleting(true)
+    try {
       await deletePost(post.id)
+    } finally {
+      // On success the card unmounts; on failure the buttons re-enable so the
+      // user can retry after reading the toast.
+      setIsDeleting(false)
     }
   }
 
@@ -210,8 +225,8 @@ export default function PostCard({ post }: PostCardProps) {
           </div>
 
           <div className="flex items-center justify-between gap-2 border-t border-line pt-4">
-            <button type="button" onClick={handleDelete} className="btn btn-danger btn-sm">
-              <Trash2 className="h-3.5 w-3.5" /> Delete
+            <button type="button" onClick={handleDelete} disabled={isDeleting} className="btn btn-danger btn-sm">
+              <Trash2 className="h-3.5 w-3.5" /> {isDeleting ? 'Deleting…' : 'Delete'}
             </button>
             <div className="flex gap-2">
               <button type="button" onClick={handleCancelEdit} className="btn btn-ghost btn-sm">
@@ -289,7 +304,9 @@ export default function PostCard({ post }: PostCardProps) {
                 type="button"
                 className="btn-icon h-8 w-8 border-transparent hover:text-error"
                 onClick={handleDelete}
+                disabled={isDeleting}
                 aria-label="Delete post"
+                aria-disabled={isDeleting}
               >
                 <Trash2 className="h-3.5 w-3.5" />
               </button>

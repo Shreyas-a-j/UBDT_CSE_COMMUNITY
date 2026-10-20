@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { User, Session } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase/client'
+import { logSupabaseError } from '@/lib/supabase/errors'
 import { Profile } from '@/lib/types'
 import { fallbackProfileFromAuth, normalizeProfile } from '@/lib/profile'
 
@@ -26,27 +27,7 @@ const AuthContext = createContext<AuthContextType>({
   refreshProfile: async () => {},
 })
 
-/**
- * Log a Supabase error object with all available detail fields.
- * Supabase errors carry message, code, details, and hint — log
- * each one so operators can distinguish constraint violations
- * from transient failures.
- */
-function logSupabaseError(label: string, err: unknown): void {
-  if (!err || typeof err !== 'object') {
-    // Log unexpected non-object errors with message if available
-    const message = typeof err === 'object' ? JSON.stringify(err) : String(err)
-    console.error(`${label}: ${message}`)
-    return
-  }
-  const e = err as Record<string, unknown>
-  console.error(`${label}:`, {
-    message: e.message,
-    code: e.code,
-    details: e.details,
-    hint: e.hint,
-  })
-}
+// `logSupabaseError` (shared safe error logger) lives in `lib/supabase/errors`.
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = useMemo(() => createClient(), [])

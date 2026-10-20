@@ -70,13 +70,13 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
   const [eTargetYears, setETargetYears] = useState<number[]>(event.target_years)
 
   useEffect(() => {
-    queueMicrotask(() => setCountdown(getCountdown(event.event_date, event.event_time)))
+    queueMicrotask(() => setCountdown(getCountdown(event.event_date, event.event_time, event.duration)))
     const timer = setInterval(
-      () => setCountdown(getCountdown(event.event_date, event.event_time)),
+      () => setCountdown(getCountdown(event.event_date, event.event_time, event.duration)),
       30000
     )
     return () => clearInterval(timer)
-  }, [event.event_date, event.event_time])
+  }, [event.event_date, event.event_time, event.duration])
 
   const handleSave = () => {
     updateEvent(event.id, {
@@ -262,7 +262,7 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
                 }`}
               >
                 <Clock className="h-2.5 w-2.5" />
-                {countdown === 'Event ended' ? 'Ended' : `in ${countdown}`}
+                {countdown === 'Event ended' ? 'Ended' : countdown}
               </span>
             )}
           </div>

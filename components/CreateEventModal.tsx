@@ -17,7 +17,23 @@ export default function CreateEventModal() {
   const [link, setLink] = useState('')
   const [targetYears, setTargetYears] = useState<number[]>([1, 2, 3, 4])
 
-  const close = () => setIsCreateEventOpen(false)
+  // Every close path funnels through `close`, so the draft resets and
+  // reopening the modal starts a fresh event.
+  const resetForm = () => {
+    setType('Workshop')
+    setTitle('')
+    setDescription('')
+    setEventDate('')
+    setEventTime('17:00')
+    setDuration(60)
+    setLink('')
+    setTargetYears([1, 2, 3, 4])
+  }
+
+  const close = () => {
+    resetForm()
+    setIsCreateEventOpen(false)
+  }
 
   const handleYearToggle = (year: number) => {
     if (targetYears.includes(year)) {

@@ -1,6 +1,7 @@
 import { clsx, type ClassValue } from 'clsx'
 import { twMerge } from 'tailwind-merge'
 import { formatDistanceToNow, format, parseISO } from 'date-fns'
+import { EventPhase, getEventPhase } from '@/lib/logic/events'
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -77,19 +78,31 @@ export function formatEventDateTime(date: string, time: string): string {
   }
 }
 
-export function getCountdown(date: string, time: string): string {
+export function getCountdown(date: string, time: string, duration = 60): string {
   if (typeof window === 'undefined') return ''
+  const phase = getEventPhase(
+    { event_date: date, event_time: time, duration },
+    new Date()
+  )
+  return countdownText(phase, date, time, duration)
+}
+
+function countdownText(phase: EventPhase, date: string, time: string, duration: number): string {
+  if (phase === 'ended') return 'Event ended'
   try {
-    const eventDt = parseISO(`${date}T${time}`)
     const now = new Date()
-    const diff = eventDt.getTime() - now.getTime()
-    if (diff < 0) return 'Event ended'
-    const days = Math.floor(diff / (1000 * 60 * 60 * 24))
-    const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
-    const mins = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60))
-    if (days > 0) return `${days}d ${hours}h`
-    if (hours > 0) return `${hours}h ${mins}m`
-    return `${mins}m`
+    const eventDt = parseISO(`${date}T${time}`)
+    const diffMs =
+      phase === 'live'
+        ? eventDt.getTime() + duration * 60_000 - now.getTime()
+        : eventDt.getTime() - now.getTime()
+    if (diffMs <= 0) return phase === 'live' ? 'Live now' : 'Event ended'
+    const days = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    const hours = Math.floor((diffMs % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60))
+    const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60))
+    if (days > 0) return `Ends in ${days}d ${hours}h`
+    if (hours > 0) return `Ends in ${hours}h ${mins}m`
+    return `Ends in ${mins}m`
   } catch {
     return ''
   }

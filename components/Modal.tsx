@@ -22,6 +22,16 @@ export default function Modal({
   className?: string
 }) {
   const panelRef = useRef<HTMLDivElement>(null)
+  // Keep the latest onClose without making it an effect dependency: consumers
+  // pass inline closures that are recreated on every render, and re-running
+  // the focus/Escape effect on every keystroke would steal focus from form
+  // inputs back to the panel. The write lives in an effect (not render) so
+  // ref updates never race with rendering.
+  const onCloseRef = useRef(onClose)
+
+  useEffect(() => {
+    onCloseRef.current = onClose
+  })
 
   useEffect(() => {
     if (!open) return
@@ -29,7 +39,7 @@ export default function Modal({
     document.body.style.overflow = 'hidden'
 
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose()
+      if (event.key === 'Escape') onCloseRef.current()
     }
     document.addEventListener('keydown', onKeyDown)
 
@@ -40,7 +50,9 @@ export default function Modal({
       document.removeEventListener('keydown', onKeyDown)
       window.cancelAnimationFrame(frame)
     }
-  }, [open, onClose])
+    // Depend only on `open` so the initial focus runs once per opening,
+    // not on every parent re-render (see onCloseRef above).
+  }, [open])
 
   if (!open) return null
 

@@ -5,7 +5,9 @@ import toast from 'react-hot-toast'
 import {
   Profile, Event, Post, Comment, Notification, FeedFilter, YearFilter, Announcement, EventType,
 } from '@/lib/types'
+import { isEventUpcoming } from '@/lib/logic/events'
 import { createClient } from '@/lib/supabase/client'
+import { logSupabaseError } from '@/lib/supabase/errors'
 import { useAuth } from '@/contexts/AuthContext'
 import { normalizeProfile, profileWritableFields } from '@/lib/profile'
 import { sanitizeText } from '@/lib/validation'
@@ -38,9 +40,18 @@ interface CommunityContextType {
   addComment: (postId: string, body: string) => Promise<void>
   updateProfile: (updated: Partial<Profile>) => Promise<void>
   updatePost: (postId: string, updated: Partial<Post>) => Promise<void>
-  deletePost: (postId: string) => Promise<void>
+  /**
+   * Deletes a post. Resolves `true` only when the database actually removed
+   * the row — an RLS denial or other filter (and any network error) resolves
+   * `false` with an error toast so the UI never optimistically removes a
+   * record that still exists.
+   */
+  deletePost: (postId: string) => Promise<boolean>
   updateEvent: (eventId: string, updated: Partial<Event>) => Promise<void>
-  deleteEvent: (eventId: string) => Promise<void>
+  /**
+   * See deletePost — resolves `true` only when the event row was deleted.
+   */
+  deleteEvent: (eventId: string) => Promise<boolean>
   signOut: () => Promise<void>
   markNotificationAsRead: (id: string) => void
   markAllNotificationsAsRead: () => void
@@ -129,7 +140,16 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
   const currentUser = profile
   const [posts, setPosts] = useState<Post[]>([])
-  const [events, setEvents] = useState<Event[]>([])
+  // Every event fetched from the database. "Upcoming" views render a
+  // phase-filtered derivation of this state (see `events` below) so the
+  // completed/live/upcoming rule is applied from a single shared definition.
+  const [rawEvents, setRawEvents] = useState<Event[]>([])
+  // A shared "now" clock, ticked every 30 s on the client, so events drop out
+  // of upcoming lists at their own end instants — including events that were
+  // still upcoming when the page loaded. It starts as null so the prerender
+  // snapshot contains no unstable timestamp; it is set on mount before any
+  // event data arrives (fetching is client-side only).
+  const [now, setNow] = useState<Date | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
   const [notifications, setNotifications] = useState<Notification[]>([])
@@ -158,6 +178,24 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     return true
   }, [currentUser])
 
+  useEffect(() => {
+    // Async initial set (the lint-safe pattern used across this codebase),
+    // then a 30 s tick so phase transitions re-evaluate without refetching.
+    queueMicrotask(() => setNow(new Date()))
+    const timer = setInterval(() => setNow(new Date()), 30_000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Single shared rule for upcoming-event visibility: every view feeding
+  // off `events` (feed Events tab, SidebarRight widget, event cards) sees
+  // only events whose end time is still ahead, while completed events stay
+  // in the database and in management surfaces (e.g. the faculty dashboard).
+  // Before the clock starts (prerender/first paint) nothing is hidden.
+  const events = useMemo(
+    () => (now === null ? rawEvents : rawEvents.filter(event => isEventUpcoming(event, now))),
+    [rawEvents, now]
+  )
+
   const fetchData = useCallback(async () => {
     setFeedLoading(true)
     const errors: string[] = []
@@ -174,6 +212,14 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       .order('created_at', { ascending: false })
       .limit(40)
 
+    // Coarse, DB-side prune: restrict the fetch to events from the last two
+    // days onward. The exact rules live in `lib/logic/events.ts`; this filter
+    // only trims year-old completed events from the 40-row window so old rows
+    // do not crowd out genuinely upcoming ones (results are ordered by date).
+    const minEventDate = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000)
+      .toISOString()
+      .slice(0, 10)
+
     const eventsQuery = supabase
       .from('events')
       .select(`
@@ -181,6 +227,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         host:profiles!host_id (name, usn, avatar_url, role),
         event_rsvps (count)
       `)
+      .gte('event_date', minEventDate)
       .order('event_date', { ascending: true })
       .limit(40)
 
@@ -211,10 +258,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
 
     let eventsRes = await eventsQuery
     if (eventsRes.error) {
-      eventsRes = await supabase.from('events').select('*').order('event_date', { ascending: true }).limit(40)
+      eventsRes = await supabase
+        .from('events')
+        .select('*')
+        .gte('event_date', minEventDate)
+        .order('event_date', { ascending: true })
+        .limit(40)
       if (eventsRes.error) errors.push(`events: ${eventsRes.error.message}`)
     }
-    if (eventsRes.data) setEvents((eventsRes.data as Record<string, unknown>[]).map(mapEvent))
+    if (eventsRes.data) setRawEvents((eventsRes.data as Record<string, unknown>[]).map(mapEvent))
 
     let commentsRes = await commentsQuery
     if (commentsRes.error) {
@@ -368,7 +420,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     if (isRsvped) next.delete(eventId)
     else next.add(eventId)
     setRsvpedEventIds(next)
-    setEvents(prev => prev.map(e => e.id === eventId
+    setRawEvents(prev => prev.map(e => e.id === eventId
       ? { ...e, rsvp_count: Math.max(0, (e.rsvp_count ?? 0) + (isRsvped ? -1 : 1)) }
       : e))
     const { error } = isRsvped
@@ -427,7 +479,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     toast.success('Event created')
     if (data) {
       const mapped = mapEvent(data as Record<string, unknown>)
-      setEvents(prev => [mapped, ...prev])
+      setRawEvents(prev => [mapped, ...prev])
       setRsvpedEventIds(prev => new Set(prev).add(mapped.id))
       await supabase.from('event_rsvps').insert({ event_id: mapped.id, user_id: currentUser.id })
     } else {
@@ -501,13 +553,63 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     setPosts(prev => prev.map(p => (p.id === postId ? { ...p, ...updated } : p)))
   }
 
-  const deletePost = async (postId: string) => {
-    const { error } = await supabase.from('posts').delete().eq('id', postId)
-    if (error) {
-      toast.error(error.message)
-      return
+  const deletePost = async (postId: string): Promise<boolean> => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true)
+      return false
     }
+    if (!postId) {
+      console.error('[deletePost] aborted: no discussion id was supplied')
+      return false
+    }
+    // `select()` asks PostgREST to return the deleted rows. A delete that is
+    // filtered out — by RLS or anything else — resolves with no error and an
+    // empty array, so "zero rows removed" must be treated as a failure and
+    // trigger a feed resync instead of an optimistic (stale) UI update.
+    const { data, error } = await supabase
+      .from('posts')
+      .delete()
+      .eq('id', postId)
+      .select('id')
+    if (error) {
+      logSupabaseError('[deletePost] delete error', error)
+      toast.error(error.message)
+      return false
+    }
+    if (!data || data.length === 0) {
+      // Zero rows changed but the request "succeeded" — this happens when RLS
+      // filters the delete (no policy match / no permission) or when the row
+      // is already gone. Re-read the row as the current user to tell the two
+      // states apart; neither must be reported to the user as a success.
+      const { data: existing, error: checkError } = await supabase
+        .from('posts')
+        .select('id')
+        .eq('id', postId)
+        .maybeSingle()
+      if (checkError) {
+        logSupabaseError('[deletePost] existence check error', checkError)
+      }
+      // Supabase single() yields object|null; the test stub yields [row]|[].
+      const rowExists = Array.isArray(existing) ? existing.length > 0 : Boolean(existing)
+      if (!rowExists) {
+        console.warn('[deletePost] zero rows deleted; row no longer exists — already gone', postId)
+        toast('The discussion is already gone. The feed has been refreshed.')
+        setPosts(prev => prev.filter(p => p.id !== postId))
+        return true
+      }
+      console.warn(
+        '[deletePost] zero rows deleted while the row is still readable — delete was denied by the database (RLS)',
+        postId
+      )
+      toast.error(
+        'The discussion could not be deleted. It may already be gone, or you may not have permission to delete it.'
+      )
+      await fetchData()
+      return false
+    }
+    console.debug('[deletePost] deleted', postId)
     setPosts(prev => prev.filter(p => p.id !== postId))
+    return true
   }
 
   const updateEvent = async (eventId: string, updated: Partial<Event>) => {
@@ -525,16 +627,60 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       toast.error(error.message)
       return
     }
-    setEvents(prev => prev.map(e => e.id === eventId ? { ...e, ...updated } : e))
+    setRawEvents(prev => prev.map(e => e.id === eventId ? { ...e, ...updated } : e))
   }
 
-  const deleteEvent = async (eventId: string) => {
-    const { error } = await supabase.from('events').delete().eq('id', eventId)
-    if (error) {
-      toast.error(error.message)
-      return
+  const deleteEvent = async (eventId: string): Promise<boolean> => {
+    if (!currentUser) {
+      setIsAuthModalOpen(true)
+      return false
     }
-    setEvents(prev => prev.filter(e => e.id !== eventId))
+    if (!eventId) {
+      console.error('[deleteEvent] aborted: no event id was supplied')
+      return false
+    }
+    // Same zero-row detection as deletePost: RLS ("Hosts can delete their
+    // events") filters non-owned events out silently, so confirm the mutation
+    // via the returned rows before touching local state.
+    const { data, error } = await supabase
+      .from('events')
+      .delete()
+      .eq('id', eventId)
+      .select('id')
+    if (error) {
+      logSupabaseError('[deleteEvent] delete error', error)
+      toast.error(error.message)
+      return false
+    }
+    if (!data || data.length === 0) {
+      const { data: existing, error: checkError } = await supabase
+        .from('events')
+        .select('id')
+        .eq('id', eventId)
+        .maybeSingle()
+      if (checkError) {
+        logSupabaseError('[deleteEvent] existence check error', checkError)
+      }
+      const rowExists = Array.isArray(existing) ? existing.length > 0 : Boolean(existing)
+      if (!rowExists) {
+        console.warn('[deleteEvent] zero rows deleted; row no longer exists — already gone', eventId)
+        toast('The event is already gone. The feed has been refreshed.')
+        setRawEvents(prev => prev.filter(e => e.id !== eventId))
+        return true
+      }
+      console.warn(
+        '[deleteEvent] zero rows deleted while the row is still readable — delete was denied by the database (RLS)',
+        eventId
+      )
+      toast.error(
+        'The event could not be deleted. It may already be gone, or you may not have permission to delete it.'
+      )
+      await fetchData()
+      return false
+    }
+    console.debug('[deleteEvent] deleted', eventId)
+    setRawEvents(prev => prev.filter(e => e.id !== eventId))
+    return true
   }
 
   const markNotificationAsRead = (id: string) => {

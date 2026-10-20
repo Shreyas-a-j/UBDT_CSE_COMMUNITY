@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, vi } from 'vitest'
+import '@testing-library/jest-dom/vitest'
 
 // Mock console.error to suppress expected warnings and test our error handling
 const originalError = console.error

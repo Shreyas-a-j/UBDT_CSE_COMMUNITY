@@ -16,7 +16,23 @@ export default function CreatePostModal() {
   const [demoUrl, setDemoUrl] = useState('')
   const [techStackStr, setTechStackStr] = useState('')
 
-  const close = () => setIsCreatePostOpen(false)
+  // Every close path (Cancel, close button, Escape, overlay click, submit)
+  // funnels through `close`, so the draft returns to its initial state and
+  // reopening the modal starts a clean composition.
+  const resetForm = () => {
+    setType('discussion')
+    setTitle('')
+    setBody('')
+    setTagsStr('')
+    setGithubUrl('')
+    setDemoUrl('')
+    setTechStackStr('')
+  }
+
+  const close = () => {
+    resetForm()
+    setIsCreatePostOpen(false)
+  }
 
   const handleSubmit = (event: React.FormEvent) => {
     event.preventDefault()

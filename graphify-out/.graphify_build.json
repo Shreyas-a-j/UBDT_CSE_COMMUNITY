@@ -1,0 +1,1 @@
+{"excludes": ["worker-configuration.d.ts", "*.d.ts", "package.json", "package-lock.json", "tsconfig.json", "tsconfig.tsbuildinfo"], "gitignore": true}
