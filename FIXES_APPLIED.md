@@ -65,7 +65,7 @@ git push origin main
 In Supabase SQL Editor, run:
 ```sql
 -- Copy and paste contents from:
--- supabase/migrations/20261013_network_and_faculty.sql
+-- supabase/migrations/2026101301_network_and_faculty.sql
 
 -- Then reload schema:
 NOTIFY pgrst, 'reload schema';

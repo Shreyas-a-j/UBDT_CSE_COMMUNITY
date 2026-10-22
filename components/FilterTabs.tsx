@@ -32,7 +32,7 @@ export default function FilterTabs<T extends string>({
             onClick={() => onChange(tab.id)}
             className={`inline-flex h-9 shrink-0 items-center gap-1.5 rounded-md border px-3 text-[12.5px] font-medium transition-colors ${
               active
-                ? 'border-accent/35 bg-accent-soft text-accent-hover'
+                ? 'border-peach/40 bg-peach-soft text-peach-text'
                 : 'border-transparent text-muted hover:bg-elevated hover:text-ink'
             }`}
           >
@@ -40,7 +40,7 @@ export default function FilterTabs<T extends string>({
             {typeof tab.count === 'number' && (
               <span
                 className={`text-[10.5px] tabular-nums ${
-                  active ? 'text-accent-hover/80' : 'text-dim'
+                  active ? 'text-peach-text' : 'text-dim'
                 }`}
               >
                 {tab.count}

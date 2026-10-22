@@ -1,21 +1,23 @@
 'use client'
 
 import Link from 'next/link'
-import { BadgeCheck, Shield } from 'lucide-react'
+import { BadgeCheck, GraduationCap, Shield } from 'lucide-react'
 import UserAvatar from '@/components/UserAvatar'
-import ConnectButton from '@/components/ConnectButton'
+import EmailVerificationBadge from '@/components/EmailVerificationBadge'
 import { Profile } from '@/lib/types'
-import { displayName, isVerifiedFaculty } from '@/lib/profile'
+import { alumniTag, displayName, isVerifiedFaculty } from '@/lib/profile'
 import { getYearLabel } from '@/lib/utils'
 
 export default function ProfileCard({
   profile,
-  showConnect = true,
+  emailVerified,
 }: {
   profile: Profile
-  showConnect?: boolean
+  /** Trusted Supabase Auth state; undefined means unknown, not unverified. */
+  emailVerified?: boolean | null
 }) {
   const faculty = isVerifiedFaculty(profile)
+  const isAlumni = profile.member_type === 'alumni'
   const skills = Array.isArray(profile.skills) ? profile.skills : []
 
   return (
@@ -40,17 +42,29 @@ export default function ProfileCard({
                 <BadgeCheck className="h-3 w-3" /> Faculty
               </span>
             )}
+            {faculty && <EmailVerificationBadge verified={emailVerified} />}
             {profile.role === 'admin' && (
               <span className="chip chip-accent py-0 text-[10px]">
                 <Shield className="h-3 w-3" /> Admin
               </span>
             )}
+            {isAlumni && (
+              <span className="chip chip-peach py-0 text-[10px]">
+                <GraduationCap className="h-3 w-3" /> {alumniTag(profile.graduation_year)}
+              </span>
+            )}
           </div>
 
           <p className="mt-1 truncate text-[11px] text-dim">
-            {profile.usn || profile.designation || profile.role}
+            {profile.usn || profile.designation || (isAlumni ? 'Alumni' : profile.role)}
             {profile.branch ? ` · ${profile.branch}` : ''}
-            {profile.year ? ` · ${getYearLabel(profile.year)}` : ''}
+            {isAlumni
+              ? profile.graduation_year
+                ? ` · Class of ${profile.graduation_year}`
+                : ''
+              : profile.year
+                ? ` · ${getYearLabel(profile.year)}`
+                : ''}
           </p>
         </div>
       </Link>
@@ -71,19 +85,12 @@ export default function ProfileCard({
       )}
 
       <div className="mt-auto flex items-center justify-between gap-2 border-t border-line pt-3">
-        {typeof profile.connection_count === 'number' ? (
-          <span className="text-[10.5px] text-dim">
-            {profile.connection_count} connection{profile.connection_count === 1 ? '' : 's'}
-          </span>
-        ) : (
-          <Link
-            href={`/people/${profile.id}`}
-            className="text-[11px] font-medium text-muted transition-colors hover:text-ink"
-          >
-            View profile
-          </Link>
-        )}
-        {showConnect && <ConnectButton otherUserId={profile.id} />}
+        <Link
+          href={`/people/${profile.id}`}
+          className="text-[11px] font-medium text-muted transition-colors hover:text-ink"
+        >
+          View profile
+        </Link>
       </div>
     </article>
   )

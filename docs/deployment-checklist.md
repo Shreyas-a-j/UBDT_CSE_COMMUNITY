@@ -11,9 +11,9 @@
 ### Pre-Deployment
 
 - [ ] All three baseline migrations have been applied to the live Supabase database:
-  - [ ] `20261013_network_and_faculty.sql`
-  - [ ] `20261013_network_fixes.sql`
-  - [ ] `20261013_usn_unique_and_columns.sql`
+  - [ ] `2026101301_network_and_faculty.sql`
+  - [ ] `2026101302_network_fixes.sql`
+  - [ ] `2026101303_usn_unique_and_columns.sql`
 - [ ] `NOTIFY pgrst, 'reload schema';` has been executed after each migration
 - [ ] TypeScript build is clean: `npm run build` exits 0
 - [ ] `docs/database-audit.md` and `docs/conflict-report.md` are in place

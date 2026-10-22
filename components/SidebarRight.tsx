@@ -1,9 +1,12 @@
 'use client'
 
 import React from 'react'
+import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { ArrowUpRight, CalendarDays, Heart, Megaphone, MessageSquare, Sparkles } from 'lucide-react'
+import { ArrowBigUp, ArrowUpRight, CalendarDays, Megaphone, MessageSquare, Sparkles } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
+import { selectTrendingShowcases } from '@/lib/logic/feed'
+import { filterEventsByBatch } from '@/lib/logic/batch'
 import UserAvatar from '@/components/UserAvatar'
 import { displayName } from '@/lib/profile'
 
@@ -40,16 +43,15 @@ function ViewAll({ onClick, label }: { onClick: () => void; label: string }) {
 }
 
 export default function SidebarRight() {
-  const { events, posts, announcements, setFeedFilter, setSearchQuery } = useCommunity()
+  const { events, posts, announcements, yearFilter, setFeedFilter, setSearchQuery } = useCommunity()
 
-  const upcomingEvents = events.slice(0, 3)
-  const trending = [...posts]
-    .sort((a, b) => {
-      const scoreA = (a.like_count ?? 0) + (a.comment_count ?? 0) + (a.upvote_count ?? 0)
-      const scoreB = (b.like_count ?? 0) + (b.comment_count ?? 0) + (b.upvote_count ?? 0)
-      return scoreB - scoreA
-    })
-    .slice(0, 4)
+  // Batch-aware: the sidebar used to ignore the batch selector entirely, so
+  // choosing a batch changed the feed but not Trending or Upcoming events.
+  const upcomingEvents = filterEventsByBatch(events, yearFilter).slice(0, 3)
+  // Shared rule with the feed's Popular section (lib/logic/ranking.ts): up
+  // to two Project Showcase posts ranked by actual upvote count — newest
+  // first on ties, then id — never a fabricated engagement sum.
+  const trending = selectTrendingShowcases(posts, yearFilter)
   const latestAnnouncements = announcements.slice(0, 2)
 
   const goTo = (filter: Parameters<typeof setFeedFilter>[0]) => {
@@ -102,7 +104,7 @@ export default function SidebarRight() {
 
         {trending.length === 0 ? (
           <p className="rounded-md bg-elevated px-3 py-4 text-center text-[12px] text-dim">
-            Discussions will appear here.
+            Popular projects will appear here.
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
@@ -120,7 +122,7 @@ export default function SidebarRight() {
                   <p className="mt-0.5 truncate text-[10.5px] text-dim">{displayName({ name: post.author_name || 'CSE Student' })}</p>
                   <p className="mt-1 flex items-center gap-2 text-[10px] text-dim">
                     <span className="inline-flex items-center gap-1">
-                      <Heart className="h-3 w-3" /> {post.like_count ?? 0}
+                      <ArrowBigUp className="h-3 w-3" /> {post.upvote_count ?? 0}
                     </span>
                     <span className="inline-flex items-center gap-1">
                       <MessageSquare className="h-3 w-3" /> {post.comment_count ?? 0}
@@ -139,7 +141,12 @@ export default function SidebarRight() {
             <Megaphone className="h-4 w-4 text-dim" />
             Announcements
           </h2>
-          <ViewAll label="All" onClick={() => goTo('announcements')} />
+          <Link
+            href="/announcements"
+            className="inline-flex items-center gap-0.5 text-[11.5px] font-medium text-muted transition-colors hover:text-ink"
+          >
+            All <ArrowUpRight className="h-3 w-3" />
+          </Link>
         </div>
 
         {latestAnnouncements.length === 0 ? (

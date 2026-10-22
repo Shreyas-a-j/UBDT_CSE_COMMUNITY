@@ -24,7 +24,7 @@ export default function AuthFormShell({
         </div>
 
         <Link href="/" className="relative flex items-center gap-2.5">
-          <span className="flex h-9 w-9 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold text-accent-hover">
+          <span className="flex h-9 w-9 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold text-accent-chrome">
             &lt;/&gt;
           </span>
           <span className="flex flex-col leading-none">
@@ -35,7 +35,7 @@ export default function AuthFormShell({
 
         <div className="relative max-w-md">
           <p className="inline-flex items-center gap-2 rounded-md border border-[var(--color-sidebar-line)] bg-white/[0.04] px-2.5 py-1 text-[11.5px] font-medium text-sidebar-muted">
-            <GraduationCap className="h-3.5 w-3.5 text-accent-hover" />
+            <GraduationCap className="h-3.5 w-3.5 text-accent-chrome" />
             Department of Computer Science &amp; Engineering
           </p>
           <h1 className="mt-5 font-display text-[34px] font-semibold leading-[1.12] tracking-tight text-header-ink xl:text-[40px]">
@@ -54,7 +54,7 @@ export default function AuthFormShell({
             ].map(item => (
               <li key={item} className="flex items-start gap-2.5 text-[13px] text-sidebar-muted">
                 <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-md border border-[var(--color-sidebar-line)] bg-white/[0.04]">
-                  <Code2 className="h-3 w-3 text-accent-hover" />
+                  <Code2 className="h-3 w-3 text-accent-chrome" />
                 </span>
                 {item}
               </li>
@@ -78,7 +78,7 @@ export default function AuthFormShell({
               Back to the feed
             </Link>
             <Link href="/" className="flex items-center gap-2 lg:hidden">
-              <span className="flex h-8 w-8 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[9px] font-bold text-accent-hover">
+              <span className="flex h-8 w-8 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[9px] font-bold text-accent-text">
                 &lt;/&gt;
               </span>
               <span className="text-[12.5px] font-semibold text-ink">UBDT CSE</span>

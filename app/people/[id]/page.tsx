@@ -1,18 +1,22 @@
 'use client'
 
-import { Suspense, use, useCallback, useEffect, useState } from 'react'
+import { Suspense, use, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowLeft, Briefcase, Calendar, GraduationCap, Loader2, Mail, MessageCircle,
+  ArrowLeft, BadgeCheck, Briefcase, Calendar, GraduationCap, Loader2,
 } from 'lucide-react'
-import { Profile, ConnectionStatus } from '@/lib/types'
+import { Post, Profile } from '@/lib/types'
 import { createClient } from '@/lib/supabase/client'
 import AppShell from '@/components/AppShell'
 import UserAvatar from '@/components/UserAvatar'
-import ConnectButton from '@/components/ConnectButton'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
+import PostCard from '@/components/PostCard'
+import ProfileLinks from '@/components/ProfileLinks'
+import EmailVerificationBadge from '@/components/EmailVerificationBadge'
+import { useEmailVerification } from '@/hooks/useEmailVerification'
 import { useAuth } from '@/contexts/AuthContext'
-import { displayName } from '@/lib/profile'
+import { mapPost, useCommunity } from '@/contexts/CommunityContext'
+import { alumniTag, displayName, normalizeProfile } from '@/lib/profile'
 import { getYearLabel, formatDate } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
@@ -21,57 +25,93 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const supabase = createClient()
   const { profile: currentUser } = useAuth()
+  const { posts: feedPosts, postsRevision } = useCommunity()
   const [profile, setProfile] = useState<Profile | null>(null)
+  const [projects, setProjects] = useState<Post[]>([])
+  const [projectsLoading, setProjectsLoading] = useState(true)
+  const [projectsError, setProjectsError] = useState<string | null>(null)
+  // Distinguishes the current profile's in-flight fetch from a response for
+  // a previous id: Next.js re-runs our effects on param navigation without
+  // remounting the component, so a slow response must not clobber the list.
+  const projectsRequestRef = useRef(0)
   const [loading, setLoading] = useState(true)
-  const [isConnected, setIsConnected] = useState(false)
+
+  // Self and approved faculty are authorised targets. For anyone else the RPC
+  // omits the id, so `emailVerified` stays undefined and no badge renders.
+  const { status: emailVerification } = useEmailVerification(profile ? [profile.id] : [])
+  const emailVerified = profile ? emailVerification[profile.id] : undefined
 
   const fetchProfile = useCallback(async () => {
     setLoading(true)
     const { data, error } = await supabase.from('profiles').select('*').eq('id', id).maybeSingle()
-    if (error || !data) {
+    const normalized = normalizeProfile(data as Record<string, unknown> | null)
+    if (error || !normalized) {
       toast.error('Profile not found')
       router.push('/people')
       return
     }
-    setProfile(data as Profile)
+    setProfile(normalized)
     setLoading(false)
   }, [id, router, supabase])
 
-  const fetchConnectionStatus = useCallback(async () => {
-    if (!currentUser) return
-    const { data } = await supabase
-      .from('connection_requests')
-      .select('*')
-      .or(`requester_id.eq.${currentUser.id},addressee_id.eq.${currentUser.id}`)
-      .or(`requester_id.eq.${id},addressee_id.eq.${id}`)
-      .maybeSingle()
-
-    if (data) {
-      setIsConnected((data.status as ConnectionStatus) === 'accepted')
+  // The same join shape as the feed (author embed + reaction counts) so the
+  // existing PostCard renders profile showcases unchanged. `silent` keeps the
+  // section's skeleton off-screen for revision refetches (delete/edit/like)
+  // so interactive counts do not flash the whole list.
+  const fetchProjects = useCallback(async (options?: { silent?: boolean }) => {
+    const requestId = ++projectsRequestRef.current
+    if (!options?.silent) {
+      setProjectsLoading(true)
+      setProjectsError(null)
     }
-  }, [id, currentUser, supabase])
+    let result = await supabase
+      .from('posts')
+      .select(`
+        *,
+        author:profiles!author_id (name, usn, avatar_url, year, role),
+        likes (count),
+        comments (count),
+        upvotes (count)
+      `)
+      .eq('author_id', id)
+      .eq('type', 'showcase')
+      .order('created_at', { ascending: false })
+      .limit(40)
+    if (result.error) {
+      result = await supabase
+        .from('posts')
+        .select('*')
+        .eq('author_id', id)
+        .eq('type', 'showcase')
+        .order('created_at', { ascending: false })
+        .limit(40)
+    }
+    if (requestId !== projectsRequestRef.current) return
+    if (result.error) {
+      setProjectsError(result.error.message)
+      setProjects([])
+    } else if (result.data) {
+      setProjects((result.data as Record<string, unknown>[]).map(mapPost))
+    }
+    setProjectsLoading(false)
+  }, [id, supabase])
 
   useEffect(() => {
     queueMicrotask(() => fetchProfile())
-    if (currentUser) queueMicrotask(() => fetchConnectionStatus())
-  }, [fetchProfile, fetchConnectionStatus, currentUser])
+  }, [fetchProfile])
 
-  const handleMessage = async () => {
-    if (!currentUser || !isConnected) {
-      toast.error('You can only message your connections')
-      return
-    }
-    try {
-      const { data: convId, error } = await supabase.rpc('get_or_create_direct_conversation', {
-        other_user: id,
-      })
-      if (error) throw error
-      router.push(`/messages/${convId}`)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Failed to start conversation'
-      toast.error(message)
-    }
-  }
+  // Initial load and profile-to-profile navigation (id changed).
+  useEffect(() => {
+    queueMicrotask(() => fetchProjects())
+  }, [fetchProjects])
+
+  // Keep the section in sync after post mutations (create, edit, delete,
+  // like, upvote). postsRevision starts at 0 and only grows, so the mount
+  // pass skips this and avoids a duplicate fetch next to the one above.
+  useEffect(() => {
+    if (postsRevision === 0) return
+    queueMicrotask(() => fetchProjects({ silent: true }))
+  }, [fetchProjects, postsRevision])
 
   if (loading) {
     return (
@@ -120,17 +160,6 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
                 size={76}
                 className="ring-4 ring-surface"
               />
-              {!isSelf && currentUser && (
-                <div className="flex flex-wrap items-center gap-2 pb-1">
-                  <ConnectButton otherUserId={profile.id} />
-                  {isConnected && (
-                    <button type="button" className="btn btn-soft btn-sm" onClick={handleMessage}>
-                      <MessageCircle className="h-3.5 w-3.5" />
-                      Message
-                    </button>
-                  )}
-                </div>
-              )}
               {isSelf && (
                 <span className="chip mb-1">This is you</span>
               )}
@@ -142,10 +171,24 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
               </h1>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {profile.usn && <span className="chip chip-mono">{profile.usn}</span>}
-                <span className="chip">{getYearLabel(profile.year)}</span>
+                {profile.member_type === 'alumni' ? (
+                  profile.graduation_year ? (
+                    <span className="chip chip-peach">
+                      <GraduationCap className="h-3.5 w-3.5" /> Class of {profile.graduation_year}
+                    </span>
+                  ) : null
+                ) : (
+                  <span className="chip">{getYearLabel(profile.year)}</span>
+                )}
                 {profile.section && <span className="chip">Section {profile.section}</span>}
                 {profile.role === 'faculty' && <span className="chip chip-warn">Faculty</span>}
-                {profile.role === 'admin' && <span className="chip chip-accent">Admin</span>}
+                {profile.role === 'admin' && <span className="chip chip-peach">Admin</span>}
+                <EmailVerificationBadge verified={emailVerified} />
+                {profile.member_type === 'alumni' && (
+                  <span className="chip chip-peach">
+                    <BadgeCheck className="h-3 w-3" /> {alumniTag(profile.graduation_year)}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -164,6 +207,7 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
                   {displayName(profile)} hasn&apos;t added a bio yet.
                 </p>
               )}
+              <ProfileLinks profile={profile} className="mt-3" />
             </section>
 
             <section className="card p-5">
@@ -191,6 +235,32 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
                 <p className="mt-2.5 text-[13px] text-dim">No interests listed.</p>
               )}
             </section>
+
+            <div>
+              <h2 className="text-[14px] font-semibold text-ink">Projects</h2>
+              {projectsLoading ? (
+                <div className="mt-3">
+                  <LoadingSkeleton rows={2} />
+                </div>
+              ) : projectsError ? (
+                <p className="mt-2.5 text-[13px] text-danger">
+                  Projects could not be loaded. Check your connection and refresh.
+                </p>
+              ) : projects.length > 0 ? (
+                <div className="mt-3 space-y-4">
+                  {projects.map(project => {
+                    // Prefer the feed's live copy when present so upvote and
+                    // reply counts stay in sync with optimistic updates.
+                    const live = feedPosts.find(post => post.id === project.id)
+                    return <PostCard key={project.id} post={live ?? project} />
+                  })}
+                </div>
+              ) : (
+                <p className="mt-2.5 text-[13px] text-dim">
+                  No project showcases yet. Students can share projects from the feed.
+                </p>
+              )}
+            </div>
           </div>
 
           <aside className="card p-5">
@@ -219,15 +289,6 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
                   </div>
                 </div>
               )}
-              <div className="flex items-start gap-2.5">
-                <Mail className="mt-0.5 h-4 w-4 shrink-0 text-dim" />
-                <div>
-                  <dt className="text-[11px] text-dim">Contact</dt>
-                  <dd className="mt-0.5 text-muted">
-                    {isConnected || isSelf ? 'Message via the inbox' : 'Connect to message'}
-                  </dd>
-                </div>
-              </div>
             </dl>
           </aside>
         </div>
@@ -241,7 +302,7 @@ export default function ProfilePage({ params }: { params: Promise<{ id: string }
     <Suspense
       fallback={
         <div className="flex min-h-dvh items-center justify-center bg-canvas">
-          <Loader2 className="h-8 w-8 animate-spin text-accent" />
+          <Loader2 className="h-8 w-8 animate-spin text-accent-text" />
         </div>
       }
     >

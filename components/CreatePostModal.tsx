@@ -109,7 +109,7 @@ export default function CreatePostModal() {
                   aria-selected={active}
                   onClick={() => setType(option.id)}
                   className={`flex h-8 flex-1 items-center justify-center gap-1.5 rounded text-[12.5px] font-medium transition-colors ${
-                    active ? 'bg-accent-soft text-accent-hover' : 'text-muted hover:bg-surface hover:text-ink'
+                    active ? 'bg-peach-soft text-peach-text' : 'text-muted hover:bg-surface hover:text-ink'
                   }`}
                 >
                   <Icon className="h-3.5 w-3.5" />

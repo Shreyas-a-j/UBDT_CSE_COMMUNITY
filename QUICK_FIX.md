@@ -52,7 +52,7 @@ Vercel will automatically deploy the changes.
 
 In Supabase SQL Editor, run:
 ```sql
--- Copy contents from: supabase/migrations/20261013_network_and_faculty.sql
+-- Copy contents from: supabase/migrations/2026101301_network_and_faculty.sql
 -- Then reload schema:
 NOTIFY pgrst, 'reload schema';
 ```

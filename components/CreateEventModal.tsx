@@ -69,7 +69,7 @@ export default function CreateEventModal() {
     <Modal open={isCreateEventOpen} onClose={close} labelledBy="create-event-title">
       <div className="modal-head">
         <div className="flex items-start gap-3">
-          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent-soft text-accent-hover">
+          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/30 bg-accent-soft text-accent-text">
             <Calendar className="h-4 w-4" />
           </span>
           <div>
@@ -201,7 +201,7 @@ export default function CreateEventModal() {
                 <button
                   type="button"
                   onClick={() => setTargetYears([1, 2, 3, 4])}
-                  className="btn btn-ghost h-8 text-accent"
+                  className="btn btn-ghost h-8 text-accent-text"
                 >
                   Select all
                 </button>

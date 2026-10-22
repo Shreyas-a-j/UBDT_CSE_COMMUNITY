@@ -5,7 +5,7 @@
 -- applying the migration. Each CHECK block reports PASS/FAIL.
 --
 -- Prerequisites:
---   1. Migration 20261014_faculty_applications.sql has been applied.
+--   1. Migration 2026101402_faculty_applications.sql has been applied.
 --   2. An admin profile exists (see SETUP section below).
 -- =========================================================
 
@@ -34,9 +34,12 @@ begin
       now()
     ) returning id into admin_id;
 
-    insert into public.profiles (id, name, email, role, faculty_status)
-    values (admin_id, 'Smoke Admin', 'smoke-test-admin@example.com', 'admin', 'none')
-    on conflict (id) do update set role = 'admin';
+    insert into public.profiles (id, name, email, role, faculty_status, member_type)
+    values (admin_id, 'Smoke Admin', 'smoke-test-admin@example.com', 'admin', 'approved', 'faculty')
+    on conflict (id) do update set
+      role = 'admin',
+      faculty_status = 'approved',
+      member_type = 'faculty';
   else
     select id into admin_id from public.profiles where role = 'admin' limit 1;
   end if;

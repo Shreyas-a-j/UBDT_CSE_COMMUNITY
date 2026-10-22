@@ -40,7 +40,7 @@ Expected output:
 
 1. Go to your Supabase project: https://supabase.com/dashboard
 2. Navigate to **SQL Editor**
-3. Open `supabase/migrations/20261013_network_and_faculty.sql`
+3. Open `supabase/migrations/2026101301_network_and_faculty.sql`
 4. Copy the entire contents
 5. Paste into Supabase SQL Editor
 6. Click **Run**
@@ -229,7 +229,7 @@ npm run build
 ```
 
 ### "Table does not exist" Errors
-- Migration not applied. Run the SQL from `supabase/migrations/20261013_network_and_faculty.sql`
+- Migration not applied. Run the SQL from `supabase/migrations/2026101301_network_and_faculty.sql`
 - Then run: `NOTIFY pgrst, 'reload schema';`
 
 ### "Permission denied" on Tables
@@ -317,7 +317,7 @@ See troubleshooting section above.
 ### Documentation
 - Implementation Summary: `IMPLEMENTATION_SUMMARY.md`
 - Database Schema: `supabase/schema.sql`
-- Migration File: `supabase/migrations/20261013_network_and_faculty.sql`
+- Migration File: `supabase/migrations/2026101301_network_and_faculty.sql`
 - Quick Fix Guide: `QUICK_FIX.md`
 
 ### Contact

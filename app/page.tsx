@@ -1,8 +1,10 @@
 'use client'
 
 import React, { useMemo } from 'react'
+import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 import {
-  CalendarDays, Code2, Megaphone, MessageSquare, Plus, Search, Sparkles, X,
+  CalendarDays, Code2, Megaphone, MessageSquare, Plus, Search, Sparkles, TrendingUp, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import SidebarRight from '@/components/SidebarRight'
@@ -15,6 +17,9 @@ import EmptyState from '@/components/EmptyState'
 import UserAvatar from '@/components/UserAvatar'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { displayName } from '@/lib/profile'
+import { rankPopularShowcases } from '@/lib/logic/ranking'
+import { filterFeedAnnouncements, filterFeedEvents, filterFeedPosts } from '@/lib/logic/feed'
+import { normalizeBatch } from '@/lib/logic/batch'
 import { FeedFilter, YearFilter } from '@/lib/types'
 
 const YEAR_OPTIONS: { id: YearFilter; label: string }[] = [
@@ -29,75 +34,44 @@ export default function Home() {
   const {
     currentUser, posts, events, announcements, feedLoading, feedError,
     feedFilter, setFeedFilter, yearFilter, setYearFilter,
-    searchQuery, setSearchQuery, setIsCreatePostOpen, setIsCreateEventOpen,
+    searchQuery, setSearchQuery, setIsCreatePostOpen, openCreateEvent,
     setIsAuthModalOpen,
   } = useCommunity()
 
-  const filteredPosts = useMemo(() => {
-    return posts
-      .filter(post => {
-        if (feedFilter === 'events' || feedFilter === 'announcements') return false
-        if (feedFilter === 'discussions' && post.type !== 'discussion') return false
-        if (feedFilter === 'showcases' && post.type !== 'showcase') return false
-        if (yearFilter !== 0) {
-          if (post.author_year && post.author_year !== yearFilter) {
-            if (!post.target_years.includes(yearFilter)) return false
-          }
-        }
-        if (searchQuery.trim()) {
-          const query = searchQuery.toLowerCase()
-          const matches =
-            post.title.toLowerCase().includes(query) ||
-            post.body.toLowerCase().includes(query) ||
-            (post.author_name || '').toLowerCase().includes(query) ||
-            (post.author_usn || '').toLowerCase().includes(query) ||
-            post.tags.some(tag => tag.toLowerCase().includes(query)) ||
-            (post.tech_stack || []).some(tech => tech.toLowerCase().includes(query))
-          if (!matches) return false
-        }
-        return true
-      })
-      .sort((a, b) => {
-        const scoreA = (a.like_count ?? 0) + (a.upvote_count ?? 0)
-        const scoreB = (b.like_count ?? 0) + (b.upvote_count ?? 0)
-        if (scoreB !== scoreA) return scoreB - scoreA
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      })
-  }, [posts, feedFilter, yearFilter, searchQuery])
+  // One selection object feeds the shared, pure selectors in lib/logic/feed.ts
+  // so the tab, the batch and the search are applied by exactly one rule. The
+  // batch rule itself lives in lib/logic/batch.ts: a post belongs to the batch
+  // of its author, and the default all-years `target_years` list can no longer
+  // make every batch match every post.
+  const selection = useMemo(
+    () => ({ feedFilter, batch: yearFilter, searchQuery }),
+    [feedFilter, yearFilter, searchQuery]
+  )
 
-  const filteredEvents = useMemo(() => {
-    if (feedFilter === 'discussions' || feedFilter === 'showcases' || feedFilter === 'announcements') {
-      return []
-    }
-    return events.filter(event => {
-      if (yearFilter !== 0 && !event.target_years.includes(yearFilter)) return false
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase()
-        return (
-          event.title.toLowerCase().includes(query) ||
-          event.description.toLowerCase().includes(query) ||
-          (event.host_name || '').toLowerCase().includes(query) ||
-          event.type.toLowerCase().includes(query)
-        )
-      }
-      return true
-    })
-  }, [events, feedFilter, yearFilter, searchQuery])
+  const filteredPosts = useMemo(() => filterFeedPosts(posts, selection), [posts, selection])
 
-  const filteredAnnouncements = useMemo(() => {
-    if (feedFilter === 'events' || feedFilter === 'discussions' || feedFilter === 'showcases') {
-      return []
-    }
-    return announcements.filter(announcement => {
-      if (!searchQuery.trim()) return true
-      const query = searchQuery.toLowerCase()
-      return (
-        announcement.title.toLowerCase().includes(query) ||
-        announcement.body.toLowerCase().includes(query) ||
-        (announcement.author_name || '').toLowerCase().includes(query)
-      )
-    })
-  }, [announcements, feedFilter, searchQuery])
+  // Top of the feed: the labeled "Popular" section — up to two Project
+  // Showcase posts ranked by actual upvote count (newest first on ties, then
+  // id) via the shared rule in lib/logic/ranking.ts, the same rule the
+  // sidebar's Trending section uses. Candidates come from filteredPosts, so
+  // the section honors the active type, batch and search filters; ordinary
+  // discussion posts are never eligible and never fill leftover slots.
+  const popularShowcases = useMemo(() => rankPopularShowcases(filteredPosts), [filteredPosts])
+
+  // The same ranking as an id set drives the achievement indicator on the
+  // matching project cards wherever they render, so the badge on a card and
+  // the Popular section can never disagree — one derivation, one truth.
+  const popularIds = useMemo(
+    () => new Set(popularShowcases.map(post => post.id)),
+    [popularShowcases]
+  )
+
+  const filteredEvents = useMemo(() => filterFeedEvents(events, selection), [events, selection])
+
+  const filteredAnnouncements = useMemo(
+    () => filterFeedAnnouncements(announcements, selection),
+    [announcements, selection]
+  )
 
   const discussionCount = posts.filter(post => post.type === 'discussion').length
   const showcaseCount = posts.filter(post => post.type === 'showcase').length
@@ -127,14 +101,6 @@ export default function Home() {
     setIsCreatePostOpen(true)
   }
 
-  const openEventComposer = () => {
-    if (!currentUser) {
-      setIsAuthModalOpen(true)
-      return
-    }
-    setIsCreateEventOpen(true)
-  }
-
   const postsHeading =
     feedFilter === 'showcases'
       ? 'Project showcase'
@@ -157,7 +123,7 @@ export default function Home() {
                 &lt;/&gt;
               </div>
               <div className="absolute inset-y-0 left-5 flex items-center gap-3 sm:left-6">
-                <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] text-accent-hover">
+                <span className="flex h-10 w-10 items-center justify-center rounded-md border border-white/10 bg-white/[0.06] text-accent-chrome">
                   <Code2 className="h-5 w-5" />
                 </span>
                 <div>
@@ -181,7 +147,7 @@ export default function Home() {
                   <Plus className="h-4 w-4" />
                   New post
                 </button>
-                <button type="button" onClick={openEventComposer} className="btn btn-outline">
+                <button type="button" onClick={openCreateEvent} className="btn btn-outline">
                   <CalendarDays className="h-4 w-4" />
                   Host event
                 </button>
@@ -230,7 +196,7 @@ export default function Home() {
               <select
                 id="batch-filter"
                 value={yearFilter}
-                onChange={event => setYearFilter(Number(event.target.value) as YearFilter)}
+                onChange={event => setYearFilter(normalizeBatch(event.target.value))}
                 className="field-select h-9 w-[132px]"
               >
                 {YEAR_OPTIONS.map(option => (
@@ -245,7 +211,7 @@ export default function Home() {
           {searchQuery && (
             <div className="flex items-center justify-between gap-3 rounded-md border border-accent/25 bg-accent-soft px-3.5 py-2.5">
               <p className="flex min-w-0 items-center gap-2 text-[12.5px] text-muted">
-                <Search className="h-3.5 w-3.5 shrink-0 text-accent-hover" />
+                <Search className="h-3.5 w-3.5 shrink-0 text-accent-text" />
                 <span className="truncate">
                   {totalItemCount} result{totalItemCount === 1 ? '' : 's'} for{' '}
                   <span className="font-medium text-ink">&ldquo;{searchQuery}&rdquo;</span>
@@ -318,7 +284,7 @@ export default function Home() {
                     Clear search
                   </button>
                 ) : feedFilter === 'events' ? (
-                  <button type="button" className="btn btn-accent" onClick={openEventComposer}>
+                  <button type="button" className="btn btn-accent" onClick={openCreateEvent}>
                     <CalendarDays className="h-4 w-4" /> Host an event
                   </button>
                 ) : feedFilter === 'announcements' ? undefined : (
@@ -330,6 +296,22 @@ export default function Home() {
             />
           ) : (
             <div className="space-y-7">
+              {showPosts && popularShowcases.length > 0 && (
+                <section className="space-y-3" aria-labelledby="popular-heading">
+                  <SectionHeader
+                    id="popular-heading"
+                    title="Popular"
+                    count={popularShowcases.length}
+                    icon={<TrendingUp className="h-4 w-4" />}
+                  />
+                  <div className="space-y-4">
+                    {popularShowcases.map(post => (
+                      <PostCard key={post.id} post={post} isPopular />
+                    ))}
+                  </div>
+                </section>
+              )}
+
               {showAnnouncements && filteredAnnouncements.length > 0 && (
                 <section className="space-y-3" aria-labelledby="announcements-heading">
                   <SectionHeader
@@ -337,6 +319,14 @@ export default function Home() {
                     title="Announcements"
                     count={filteredAnnouncements.length}
                     icon={<Megaphone className="h-4 w-4" />}
+                    action={
+                      <Link
+                        href="/announcements"
+                        className="inline-flex items-center gap-1 text-[11.5px] font-medium text-accent-text transition-colors hover:text-accent-text/80"
+                      >
+                        Open channel <ArrowRight className="h-3 w-3" />
+                      </Link>
+                    }
                   />
                   <div className="space-y-4">
                     {filteredAnnouncements.map(announcement => (
@@ -362,7 +352,7 @@ export default function Home() {
                   />
                   <div className="space-y-4">
                     {filteredPosts.map(post => (
-                      <PostCard key={post.id} post={post} />
+                      <PostCard key={post.id} post={post} isPopular={popularIds.has(post.id)} />
                     ))}
                   </div>
                 </section>

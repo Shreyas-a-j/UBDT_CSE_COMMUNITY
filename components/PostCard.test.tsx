@@ -153,3 +153,85 @@ describe('PostCard delete controls', () => {
     expect(screen.queryByRole('button', { name: 'Delete post' })).not.toBeInTheDocument()
   })
 })
+
+describe('PostCard achievement indicator', () => {
+  it('shows the achievement indicator for a popular showcase', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost({ type: 'showcase' })} isPopular />)
+
+    expect(
+      screen.getByRole('img', { name: 'Popular project achievement' })
+    ).toBeInTheDocument()
+  })
+
+  it('never awards the indicator to ordinary discussion posts', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost()} isPopular />)
+
+    expect(
+      screen.queryByRole('img', { name: 'Popular project achievement' })
+    ).not.toBeInTheDocument()
+  })
+
+  it('omits the indicator when the project is not in the popular ranking', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost({ type: 'showcase' })} />)
+
+    expect(
+      screen.queryByRole('img', { name: 'Popular project achievement' })
+    ).not.toBeInTheDocument()
+  })
+})
+
+describe('PostCard edit buffer', () => {
+  it('keeps in-progress edit fields when the post object is replaced', async () => {
+    const deletePost = vi.fn().mockResolvedValue(true)
+    useCommunityMock.mockReturnValue(makeContext(
+      { id: 'user-3', usn: '4UB24CS003', role: 'student' } as unknown as Profile,
+      deletePost
+    ))
+
+    const { rerender } = render(<PostCard post={makePost()} />)
+    // Let the mount-time resync settle first, as it would in a browser
+    // (microtasks drain between tasks, long before the user can click).
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit post' }))
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Draft in progress' },
+    })
+
+    // The same post can be rendered twice (Popular + Latest sections), so an
+    // interaction with the other copy replaces this post object with a new
+    // identity for the same id. The open editor must not lose the draft.
+    rerender(<PostCard post={makePost({ title: 'Refreshed server title' })} />)
+
+    // Drain any queued field-reset work before asserting — the resync effect
+    // defers via queueMicrotask, so an immediate check would pass vacuously.
+    await new Promise(resolve => setTimeout(resolve, 0))
+
+    expect(screen.getByLabelText('Title')).toHaveValue('Draft in progress')
+  })
+
+  it('resyncs edit fields from the post after the editor is cancelled', () => {
+    const deletePost = vi.fn().mockResolvedValue(true)
+    useCommunityMock.mockReturnValue(makeContext(
+      { id: 'user-3', usn: '4UB24CS003', role: 'student' } as unknown as Profile,
+      deletePost
+    ))
+
+    render(<PostCard post={makePost()} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit post' }))
+    fireEvent.change(screen.getByLabelText('Title'), {
+      target: { value: 'Abandoned draft' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    // Reopen: the fields must reflect the post again, not the abandoned draft.
+    fireEvent.click(screen.getByRole('button', { name: 'Edit post' }))
+    expect(screen.getByLabelText('Title')).toHaveValue('How to get started with Rust?')
+  })
+})

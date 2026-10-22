@@ -1,14 +1,14 @@
 # UBDT CSE Community — Supabase Schema Audit Report
 
 **Date:** 2026-10-13  
-**Scope:** `supabase/schema.sql`, `supabase/migrations/20261013_network_and_faculty.sql`  
+**Scope:** `supabase/schema.sql`, `supabase/migrations/2026101301_network_and_faculty.sql`  
 **Method:** Static code review of SQL + TypeScript application code. No live database was accessible.  
 
 ---
 
 ## Executive Summary
 
-The initial migration (`20261013_network_and_faculty.sql`) introduces networking, messaging, faculty workflow, and admin features. During static review, **13 issues** were identified across data integrity, race conditions, privilege escalation, and migration safety. All fixes are **additive and idempotent** — no tables are dropped, no user data is deleted.
+The initial migration (`2026101301_network_and_faculty.sql`) introduces networking, messaging, faculty workflow, and admin features. During static review, **13 issues** were identified across data integrity, race conditions, privilege escalation, and migration safety. All fixes are **additive and idempotent** — no tables are dropped, no user data is deleted.
 
 ---
 
@@ -17,11 +17,11 @@ The initial migration (`20261013_network_and_faculty.sql`) introduces networking
 ### Issue 1: Legacy `user_profiles` Sync References Non-Existent Columns
 
 **Severity:** High (migration failure on real DBs)  
-**Files:** `20261013_network_and_faculty.sql`, `schema.sql`
+**Files:** `2026101301_network_and_faculty.sql`, `schema.sql`
 
 The sync block in the original migration references `up.username`, `up.display_name`, and `up.thumbhash` unconditionally. The actual `user_profiles` table (from `b09be1a`) never had these columns — it had `id, usn, name, year, branch, bio, avatar_url, skills, created_at`. The task explicitly warns: "Never assume an optional column exists."
 
-**Fix:** The new migration `20261013_network_fixes.sql` replaces the hardcoded sync with a dynamic `DO $$` block that introspects `information_schema.columns` before referencing each legacy column. If `username` exists, it's used for `name`; if `thumbhash` exists, it's migrated; if `email` exists, it's copied — all conditionally.
+**Fix:** The new migration `2026101302_network_fixes.sql` replaces the hardcoded sync with a dynamic `DO $$` block that introspects `information_schema.columns` before referencing each legacy column. If `username` exists, it's used for `name`; if `thumbhash` exists, it's migrated; if `email` exists, it's copied — all conditionally.
 
 ### Issue 2: `protect_profile_privileges` Doesn't Protect `employee_id` and `designation`
 
@@ -35,7 +35,7 @@ The trigger function only reset `role` and `faculty_status` for non-admin update
 ### Issue 3: `connection_requests` — Participant IDs Are Mutable
 
 **Severity:** Critical (request forgery)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The RLS policy `"Participants update connections"` allows update by either party with `WITH CHECK (auth.uid() = requester_id or auth.uid() = addressee_id)`. This means a requester could change `addressee_id` to point to a different user, or a recipient could change `requester_id`. The `enforce_connection_transition` trigger only validated status changes, not participant ID changes.
 
@@ -49,7 +49,7 @@ end if;
 ### Issue 4: `connection_pair` Unique Constraint Prevents Re-Requests
 
 **Severity:** Medium (feature breakage)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The constraint `unique (requester_id, addressee_id)` creates an unconditional uniqueness constraint. If user A sends a request to user B, B rejects it, A cannot send a new request because the pair already exists in the table (with `status='rejected'`).
 
@@ -64,7 +64,7 @@ The existing `connection_active_pair` index (which covers both `pending` and `ac
 ### Issue 5: Faculty Application Status Not Enforced at DB Level
 
 **Severity:** High (privilege escalation / workflow bypass)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The `on_faculty_application_status` trigger is `AFTER UPDATE` — it reacts to status changes but does not prevent them. A non-admin could directly update a faculty application's `status` to `'approved'` via the REST API (the RLS policy `"Admins manage faculty applications"` requires `is_admin`, but only for the `WITH CHECK` clause — the `WITH USING` clause also requires admin, so this is partially protected). However, the insert policy allows any authenticated user to insert with any columns, including `reviewed_by`.
 
@@ -88,7 +88,7 @@ The `on_faculty_application_status` trigger is `AFTER UPDATE` — it reacts to s
 ### Issue 6: `get_or_create_direct_conversation` Has a TOCTOU Race Condition
 
 **Severity:** Medium (duplicate conversations)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The function performs a `SELECT` to find an existing conversation, then an `INSERT` to create one if not found. Under concurrent access, two calls can both fail to find a conversation and both create new ones, resulting in duplicate conversations for the same pair of users.
 
@@ -123,7 +123,7 @@ The `profiles`, `announcements`, `conversations`, and `faculty_applications` tab
 ### Issue 9: Missing `Faculty view own application` RLS Policy
 
 **Severity:** Low (feature gap)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The faculty application RLS only had policies for:
 - Admin can select all
@@ -144,7 +144,7 @@ New table added without RLS enablement.
 ### Issue 11: `emit_notification` Function Not Explicitly Revoked
 
 **Severity:** Low (security hardening)  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The function was revoked from `public` in the base migration but the GRANT statement was missing (only other functions had explicit grants). If a `SECURITY DEFINER` chain were miswired, this could allow unauthorized notification creation.
 
@@ -162,7 +162,7 @@ Internal trigger functions (`enforce_connection_transition`, `enforce_faculty_ap
 ### Issue 13: No `connection_active_pair` Direction-Normalized Race
 
 **Severity:** Verified Safe  
-**Files:** `20261013_network_and_faculty.sql`
+**Files:** `2026101301_network_and_faculty.sql`
 
 The `connection_active_pair` unique index uses `least()` / `greatest()` to normalize the pair direction. PostgreSQL's unique index handles concurrent inserts correctly — one transaction will acquire the row lock, the other will wait and then fail on conflict. **No fix needed.**
 
@@ -173,10 +173,10 @@ The `connection_active_pair` unique index uses `least()` / `greatest()` to norma
 ### For Existing Databases (with original `profiles` table and data):
 
 ```
-1. Apply supabase/migrations/20261013_network_and_faculty.sql
+1. Apply supabase/migrations/2026101301_network_and_faculty.sql
    (the original migration, already in the repo)
 
-2. Apply supabase/migrations/20261013_network_fixes.sql
+2. Apply supabase/migrations/2026101302_network_fixes.sql
    (the new fix migration — this patch)
 
 3. Run: NOTIFY pgrst, 'reload schema';
@@ -204,7 +204,7 @@ The `connection_active_pair` unique index uses `least()` / `greatest()` to norma
 
 | Fix | Rollback Steps |
 |-----|---------------|
-| Legacy sync fix | Revert `20261013_network_and_faculty.sql` sync block (data already migrated; not reversible without data loss) |
+| Legacy sync fix | Revert `2026101301_network_and_faculty.sql` sync block (data already migrated; not reversible without data loss) |
 | `employee_id`/`designation` protection | Drop trigger `trg_protect_profile_privileges` and recreate the original function |
 | Connection participant immutability | Drop trigger `trg_connection_transition` |
 | `connection_pair` → `connection_pending_pair` | Drop `connection_pending_pair`, recreate `constraint connection_pair unique (requester_id, addressee_id)` (will fail if duplicate pending pairs exist) |
@@ -336,7 +336,7 @@ WHERE table_schema = 'public';
 
 | File | Action |
 |------|--------|
-| `supabase/migrations/20261013_network_fixes.sql` | **NEW** — Additive fix migration |
+| `supabase/migrations/2026101302_network_fixes.sql` | **NEW** — Additive fix migration |
 | `supabase/schema.sql` | **UPDATED** — Complete schema for new installs (includes all fixes) |
 | `supabase/verify_schema.sql` | **NEW** — Verification SQL script |
 | `SCHEMA_AUDIT_REPORT.md` | **NEW** — This document |

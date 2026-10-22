@@ -17,12 +17,13 @@
  * check the UI optimistically removes a record that still exists. The live
  * DB was later shown to be missing the posts/events/comments DELETE policies
  * entirely (author deletes were denied for everyone), fixed by
- * supabase/migrations/20261020_delete_policies.sql.
+ * supabase/migrations/2026102001_delete_policies.sql.
  */
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 import React from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { CommunityProvider, useCommunity } from './CommunityContext'
+import { summarizeReactions } from '@/lib/logic/announcements'
 import { Profile } from '@/lib/types'
 
 const toastMock = vi.hoisted(() => {
@@ -64,6 +65,8 @@ function makeSupabaseStub() {
   /** Per-table resolution for delete operations, set by tests. */
   const deleteResults: Record<string, unknown> = {}
   const ops: Operation[] = []
+  /** Payloads passed to .insert(), in call order. */
+  const insertPayloads: Record<string, unknown>[] = []
 
   function resolveResult(rec: { table: string; op: string }) {
     if (rec.op === 'delete') {
@@ -98,6 +101,7 @@ function makeSupabaseStub() {
                 rec.filters.push({ column: String(args[0]), value: args[1] })
               }
               if (name === 'delete' || name === 'insert' || name === 'update') rec.op = name
+              if (name === 'insert') insertPayloads.push(args[0] as Record<string, unknown>)
               return proxy
             }
           },
@@ -115,6 +119,7 @@ function makeSupabaseStub() {
   return {
     stub: stub as unknown as Record<string, unknown>,
     ops,
+    insertPayloads,
     baseResults,
     setDeleteResult(table: string, result: unknown) {
       deleteResults[table] = result
@@ -439,5 +444,365 @@ describe('deleteEvent', () => {
     expect(deleted).toBe(true)
     expect(toastMock.error).not.toHaveBeenCalled()
     expect(toastMock.mock.calls[0][0]).toMatch(/already gone/i)
+  })
+})
+
+describe('announcement reactions', () => {
+  const facultyAnnouncement = {
+    id: 'a1',
+    author_id: 'faculty-1',
+    title: 'Deadline extended',
+    body: 'Submit by Friday.',
+    image_urls: ['https://cdn.test/one.png'],
+    created_at: '2026-10-22T09:00:00.000Z',
+    updated_at: '2026-10-22T09:00:00.000Z',
+    author: { name: 'Dr Rao', avatar_url: null, designation: 'Professor' },
+    reactions: [
+      { user_id: 'someone-else', reaction: 'thumbs_up' },
+      { user_id: 'author-1', reaction: 'heart' },
+    ],
+  }
+
+  it('maps image urls and raw reaction rows from the join', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+    const [announcement] = result.current.announcements
+    expect(announcement.author_name).toBe('Dr Rao')
+    expect(announcement.image_urls).toEqual(['https://cdn.test/one.png'])
+    expect(announcement.reactions).toHaveLength(2)
+  })
+
+  it('adds exactly one row for a first reaction', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'clap')
+    })
+
+    expect(supabase.insertPayloads).toEqual([
+      { announcement_id: 'a1', user_id: 'author-1', reaction: 'clap' },
+    ])
+    expect(
+      result.current.announcements[0].reactions.filter(
+        (row: { user_id: string }) => row.user_id === 'author-1'
+      )
+    ).toEqual([{ user_id: 'author-1', reaction: 'clap' }])
+  })
+
+  it('removes the caller\'s own row when the same reaction is selected again', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'heart')
+    })
+
+    expect(supabase.insertPayloads).toHaveLength(0)
+    const deleteOp = supabase.ops.find(o => o.table === 'announcement_reactions' && o.op === 'delete')
+    expect(deleteOp?.filters).toEqual(
+      expect.arrayContaining([
+        { column: 'announcement_id', value: 'a1' },
+        { column: 'user_id', value: 'author-1' },
+      ])
+    )
+    // Deletes every row for this member on this announcement (and nothing else).
+    expect(deleteOp?.filters).toHaveLength(2)
+    expect(
+      result.current.announcements[0].reactions.some(
+        (row: { user_id: string }) => row.user_id === 'author-1'
+      )
+    ).toBe(false)
+  })
+
+  it('replaces a different reaction instead of adding a second one', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'party')
+    })
+
+    expect(supabase.insertPayloads).toEqual([
+      { announcement_id: 'a1', user_id: 'author-1', reaction: 'party' },
+    ])
+    const deleteOp = supabase.ops.find(o => o.table === 'announcement_reactions' && o.op === 'delete')
+    expect(deleteOp?.filters).toEqual(
+      expect.arrayContaining([
+        { column: 'announcement_id', value: 'a1' },
+        { column: 'user_id', value: 'author-1' },
+      ])
+    )
+
+    const mine = result.current.announcements[0].reactions.filter(
+      (row: { user_id: string }) => row.user_id === 'author-1'
+    )
+    expect(mine).toEqual([{ user_id: 'author-1', reaction: 'party' }])
+  })
+
+  it('updates counts and preserves other members\' reactions when replacing', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'party')
+    })
+
+    const reactions = result.current.announcements[0].reactions
+    const { counts, mine } = summarizeReactions(reactions, 'author-1')
+    expect(counts).toEqual({ thumbs_up: 1, heart: 0, party: 1, clap: 0 })
+    expect(mine).toEqual(['party'])
+    // The other member's reaction is never touched.
+    expect(reactions).toContainEqual({ user_id: 'someone-else', reaction: 'thumbs_up' })
+  })
+
+  it('restores the previous reaction when the replacement delete fails', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+    supabase.setDeleteResult('announcement_reactions', {
+      data: null,
+      error: { message: 'permission denied' },
+    })
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'party')
+    })
+
+    expect(toastMock.error).toHaveBeenCalled()
+    expect(supabase.insertPayloads).toHaveLength(0)
+    // The resync puts the old row back instead of leaving the optimistic one.
+    expect(
+      result.current.announcements[0].reactions.filter(
+        (row: { user_id: string }) => row.user_id === 'author-1'
+      )
+    ).toEqual([{ user_id: 'author-1', reaction: 'heart' }])
+  })
+
+  it('re-inserts the old reaction when the new insert fails', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+    supabase.baseResults.announcement_reactions = {
+      data: null,
+      error: { message: 'insert failed' },
+    }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'party')
+    })
+
+    expect(toastMock.error).toHaveBeenCalled()
+    // The new reaction was attempted, then the previous one was restored.
+    expect(supabase.insertPayloads.map(payload => payload.reaction)).toEqual(['party', 'heart'])
+    expect(
+      result.current.announcements[0].reactions.filter(
+        (row: { user_id: string }) => row.user_id === 'author-1'
+      )
+    ).toEqual([{ user_id: 'author-1', reaction: 'heart' }])
+  })
+
+  it('ignores a second toggle for the same announcement while one is in flight', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      const first = result.current.toggleAnnouncementReaction('a1', 'clap')
+      const second = result.current.toggleAnnouncementReaction('a1', 'party')
+      await Promise.all([first, second])
+    })
+
+    expect(supabase.insertPayloads).toHaveLength(1)
+    expect(supabase.insertPayloads[0].reaction).toBe('clap')
+  })
+
+  it('routes a signed-out visitor to the auth modal without touching the database', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [facultyAnnouncement], error: null }
+
+    const result = await seedAndRender(supabase, null)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+
+    await act(async () => {
+      await result.current.toggleAnnouncementReaction('a1', 'party')
+    })
+
+    expect(result.current.isAuthModalOpen).toBe(true)
+    expect(supabase.insertPayloads).toHaveLength(0)
+    expect(supabase.ops.some(o => o.table === 'announcement_reactions')).toBe(false)
+  })
+})
+
+describe('openCreateEvent', () => {
+  it('opens the shared event composer for a signed-in member', async () => {
+    const supabase = makeSupabaseStub()
+
+    const result = await seedAndRender(supabase, authorProfile)
+
+    act(() => {
+      result.current.openCreateEvent()
+    })
+
+    expect(result.current.isCreateEventOpen).toBe(true)
+    expect(result.current.isAuthModalOpen).toBe(false)
+  })
+
+  it('sends a signed-out visitor to auth instead of the event composer', async () => {
+    const supabase = makeSupabaseStub()
+
+    const result = await seedAndRender(supabase, null)
+
+    act(() => {
+      result.current.openCreateEvent()
+    })
+
+    expect(result.current.isCreateEventOpen).toBe(false)
+    expect(result.current.isAuthModalOpen).toBe(true)
+  })
+})
+
+describe('createEvent', () => {
+  it('submits through the one existing event path exactly once', async () => {
+    const supabase = makeSupabaseStub()
+
+    const result = await seedAndRender(supabase, authorProfile)
+
+    // The initial feed fetch expects a list; the insert resolves a single row.
+    supabase.baseResults.events = {
+      data: {
+        id: 'event-new',
+        host_id: 'author-1',
+        title: 'Placement prep',
+        description: 'Bring your resume.',
+        type: 'Workshop',
+        event_date: '2027-02-01',
+        event_time: '10:00:00',
+        duration: 60,
+        link: null,
+        target_years: [1, 2, 3, 4],
+        created_at: '2026-10-22T10:00:00.000Z',
+      },
+      error: null,
+    }
+
+    await act(async () => {
+      await result.current.createEvent({
+        host_id: '',
+        title: 'Placement prep',
+        description: 'Bring your resume.',
+        type: 'Workshop',
+        event_date: '2027-02-01',
+        event_time: '10:00:00',
+        duration: 60,
+        link: null,
+        target_years: [1, 2, 3, 4],
+      })
+    })
+
+    const eventInserts = supabase.insertPayloads.filter(payload => 'event_date' in payload)
+    expect(eventInserts).toHaveLength(1)
+    expect(result.current.events.filter((event: { id: string }) => event.id === 'event-new')).toHaveLength(1)
+    expect(toastMock.success).toHaveBeenCalledWith('Event created')
+  })
+})
+
+describe('createAnnouncement', () => {
+  const verifiedFaculty = {
+    id: 'faculty-1',
+    name: 'Dr Rao',
+    role: 'faculty',
+    faculty_status: 'verified',
+  } as unknown as Profile
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  it('posts through the trusted route and prepends the created announcement', async () => {
+    const supabase = makeSupabaseStub()
+    const createdRow = {
+      id: 'new-a',
+      author_id: 'faculty-1',
+      title: 'Deadline extended',
+      body: 'Submit by Friday.',
+      image_urls: [],
+      created_at: '2026-10-22T10:00:00.000Z',
+      updated_at: '2026-10-22T10:00:00.000Z',
+      author: { name: 'Dr Rao', avatar_url: null, designation: 'Professor' },
+      reactions: [],
+    }
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 201,
+      json: async () => ({ announcement: createdRow }),
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await seedAndRender(supabase, verifiedFaculty)
+
+    let created: unknown = null
+    await act(async () => {
+      created = await result.current.createAnnouncement({
+        title: '  Deadline extended  ',
+        body: 'Submit by Friday.',
+        image_urls: [],
+      })
+    })
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api/announcements',
+      expect.objectContaining({ method: 'POST' })
+    )
+    const body = JSON.parse(
+      (fetchMock.mock.calls[0][1] as { body: string }).body
+    ) as Record<string, unknown>
+    expect(body.title).toBe('Deadline extended')
+    expect(created).not.toBeNull()
+    expect(result.current.announcements[0].id).toBe('new-a')
+    expect(toastMock.success).toHaveBeenCalled()
+  })
+
+  it('never calls the API for a student', async () => {
+    const supabase = makeSupabaseStub()
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await seedAndRender(supabase, authorProfile)
+
+    let created: unknown = 'unset'
+    await act(async () => {
+      created = await result.current.createAnnouncement({
+        title: 'Hi',
+        body: 'There',
+        image_urls: [],
+      })
+    })
+
+    expect(created).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(toastMock.error).toHaveBeenCalledWith('Only verified faculty can publish announcements')
   })
 })

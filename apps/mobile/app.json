@@ -1,0 +1,52 @@
+{
+  "expo": {
+    "name": "UCC",
+    "slug": "ucc",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "ucc",
+    "userInterfaceStyle": "dark",
+    "android": {
+      "package": "com.ucc.community",
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "backgroundColor": "#11111F",
+        "foregroundImage": "./assets/images/android-icon-foreground.png",
+        "backgroundImage": "./assets/images/android-icon-background.png",
+        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#11111F",
+          "image": "./assets/images/splash-icon.png",
+          "imageWidth": 120
+        }
+      ],
+      [
+        "expo-secure-store",
+        {
+          "configureAndroidBackup": true
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    },
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "298e402a-7b44-4899-b5eb-710c93554bcc"
+      }
+    }
+  }
+}

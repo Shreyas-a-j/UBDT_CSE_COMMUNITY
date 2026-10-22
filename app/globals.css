@@ -3,7 +3,8 @@
 /* ==========================================================================
    UBDT CSE COMMUNITY
    A calm, three-region community workspace: navy chrome, charcoal canvas,
-   hairline surfaces, and a single violet accent reserved for interaction.
+   hairline surfaces, and a two-tone accent — Blueberry for interaction,
+   Peach for highlights.
    ========================================================================== */
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -25,7 +26,8 @@
   --color-elevated: #2c2f35;
   --color-hover: #343743;
   --color-raised: #2c2f35;
-  --color-nav-active: #252943;
+  --color-nav-active: color-mix(in oklab, var(--color-accent) 16%, #252943);
+  --color-nav-active-line: color-mix(in oklab, var(--color-accent) 45%, #34385a);
 
   /* Hairlines */
   --color-line: #3a3d45;
@@ -36,11 +38,22 @@
   --color-muted: #b4b6c2;
   --color-dim: #858998;
 
-  /* One accent, plus semantic status colours */
-  --color-accent: #8b7cf6;
-  --color-accent-hover: #a99bff;
-  --color-accent-soft: rgba(139, 124, 246, 0.12);
-  --color-accent-ink: #14151f;
+  /* Blueberry leads interaction; Peach marks highlights. */
+  --color-accent: #6a00f4;
+  --color-accent-hover: #7c12f7;
+  --color-accent-text: #b185ff;
+  --color-accent-chrome: #b185ff;
+  --color-accent-soft: rgba(106, 0, 244, 0.18);
+  --color-accent-ink: #ffffff;
+  --color-accent-ring: color-mix(in oklab, var(--color-accent-text) 24%, transparent);
+
+  --color-peach: #ffd6a5;
+  --color-peach-hover: #ffe1bb;
+  --color-peach-text: #ffd6a5;
+  --color-peach-soft: rgba(255, 214, 165, 0.16);
+  --color-peach-ink: #14151f;
+
+  /* Semantic status colours */
   --color-success: #42c997;
   --color-warning: #f0bc69;
   --color-error: #f07878;
@@ -48,11 +61,11 @@
   /* Aliases kept for existing component references */
   --color-warn: #f0bc69;
   --color-danger: #f07878;
-  --color-info: #8b7cf6;
+  --color-info: #b185ff;
 
-  /* Type families */
-  --font-display: var(--font-space-grotesk), var(--font-inter), ui-sans-serif, system-ui, sans-serif;
-  --font-sans: var(--font-inter), ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  /* Type families — monospace across the whole interface */
+  --font-display: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
+  --font-sans: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
   --font-mono: var(--font-jetbrains-mono), ui-monospace, "SFMono-Regular", monospace;
 
   /* Corners */
@@ -74,7 +87,6 @@
   --color-elevated: #f1f2f5;
   --color-hover: #e9ebf0;
   --color-raised: #f1f2f5;
-  --color-nav-active: #252943;
 
   --color-line: #e0e3e9;
   --color-line-strong: #cbd0d9;
@@ -83,15 +95,23 @@
   --color-muted: #565b69;
   --color-dim: #7d8292;
 
-  --color-accent: #6f5fe6;
-  --color-accent-hover: #5c4cd6;
-  --color-accent-soft: rgba(111, 95, 230, 0.1);
+  /* Blueberry reads directly on light surfaces, so it doubles as the text tone. */
+  --color-accent: #6a00f4;
+  --color-accent-hover: #5700cc;
+  --color-accent-text: #6a00f4;
+  --color-accent-soft: rgba(106, 0, 244, 0.09);
+  --color-accent-ink: #ffffff;
+
+  /* Peach needs a deeper tone for text on light surfaces. */
+  --color-peach-text: #8a4a0f;
+  --color-peach-soft: rgba(255, 214, 165, 0.45);
+
   --color-success: #178a64;
   --color-warning: #96620f;
   --color-error: #c24545;
   --color-warn: #96620f;
   --color-danger: #c24545;
-  --color-info: #6f5fe6;
+  --color-info: #6a00f4;
 
   --shadow-card: 0 1px 2px rgb(16 24 40 / 0.04);
   --shadow-pop: 0 18px 48px -24px rgb(16 24 40 / 0.28);
@@ -162,7 +182,7 @@
   }
 
   :focus-visible {
-    outline: 2px solid var(--color-accent);
+    outline: 2px solid var(--color-accent-text);
     outline-offset: 2px;
     border-radius: 4px;
   }
@@ -283,7 +303,7 @@
 
   .btn-accent {
     background-color: var(--color-accent);
-    color: #14151f;
+    color: var(--color-accent-ink);
     border-color: var(--color-accent);
   }
   .btn-accent:hover:not(:disabled) {
@@ -424,9 +444,9 @@
   }
   .field:focus {
     outline: none;
-    border-color: var(--color-accent);
+    border-color: var(--color-accent-text);
     background-color: var(--color-elevated);
-    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    box-shadow: 0 0 0 3px var(--color-accent-ring);
   }
   .field:disabled {
     opacity: 0.6;
@@ -455,8 +475,8 @@
   }
   .field-area:focus {
     outline: none;
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    border-color: var(--color-accent-text);
+    box-shadow: 0 0 0 3px var(--color-accent-ring);
   }
 
   .field-select {
@@ -484,8 +504,8 @@
   }
   .field-select:focus {
     outline: none;
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px var(--color-accent-soft);
+    border-color: var(--color-accent-text);
+    box-shadow: 0 0 0 3px var(--color-accent-ring);
   }
   .field-select option {
     background-color: var(--color-elevated);
@@ -507,8 +527,8 @@
   }
   .header-field:focus {
     background-color: rgb(255 255 255 / 0.09);
-    border-color: var(--color-accent);
-    box-shadow: 0 0 0 3px rgba(139, 124, 246, 0.18);
+    border-color: var(--color-accent-chrome);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-accent-chrome) 24%, transparent);
   }
 
   /* ---------- Chips and badges ---------- */
@@ -534,7 +554,12 @@
   .chip-accent {
     border-color: color-mix(in oklab, var(--color-accent) 36%, transparent);
     background-color: var(--color-accent-soft);
-    color: var(--color-accent-hover);
+    color: var(--color-accent-text);
+  }
+  .chip-peach {
+    border-color: color-mix(in oklab, var(--color-peach) 42%, transparent);
+    background-color: var(--color-peach-soft);
+    color: var(--color-peach-text);
   }
   .chip-warn {
     border-color: color-mix(in oklab, var(--color-warning) 32%, transparent);
@@ -544,7 +569,7 @@
   .chip-info {
     border-color: color-mix(in oklab, var(--color-accent) 28%, transparent);
     background-color: color-mix(in oklab, var(--color-accent) 9%, transparent);
-    color: var(--color-accent-hover);
+    color: var(--color-accent-text);
   }
   .chip-danger {
     border-color: color-mix(in oklab, var(--color-error) 32%, transparent);
@@ -590,7 +615,7 @@
   .nav-link[aria-current="page"] {
     color: var(--color-header-ink);
     background-color: var(--color-nav-active);
-    border-color: #34385a;
+    border-color: var(--color-nav-active-line);
     font-weight: 600;
   }
 
@@ -631,12 +656,12 @@
   .side-link[aria-pressed="true"] {
     color: var(--color-sidebar-ink);
     background-color: var(--color-nav-active);
-    border-color: #34385a;
+    border-color: var(--color-nav-active-line);
     font-weight: 600;
   }
   .side-link[aria-current="page"] .side-icon,
   .side-link[aria-pressed="true"] .side-icon {
-    color: var(--color-accent-hover);
+    color: var(--color-accent-chrome);
   }
   .side-icon {
     width: 1rem;
@@ -728,7 +753,7 @@
     font-size: 0.75rem;
     font-weight: 600;
     letter-spacing: 0;
-    color: var(--color-accent-hover);
+    color: var(--color-accent-text);
   }
 
   .divider {

@@ -4,11 +4,12 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  CalendarDays, Check, Edit3, GraduationCap, Inbox, LayoutDashboard,
-  LogIn, Megaphone, MessagesSquare, Network, Shield, Sparkles, UserRound, Users,
+  CalendarDays, Check, Edit3, LayoutDashboard,
+  LogIn, Megaphone, MessagesSquare, Shield, Sparkles, UserRound, Users,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { displayName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
+import { filterEventsByBatch, filterPostsByBatch, normalizeBatch } from '@/lib/logic/batch'
 import { getYearLabel } from '@/lib/utils'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -43,7 +44,6 @@ export default function CommunitySidebar({
   const eventsActive = pathname === '/' && feedFilter === 'events'
   const discussionsActive = pathname === '/' && feedFilter === 'discussions'
   const showcasesActive = pathname === '/' && feedFilter === 'showcases'
-  const announcementsActive = pathname === '/' && feedFilter === 'announcements'
 
   const goToFilter = (filter: typeof feedFilter) => {
     setFeedFilter(filter)
@@ -53,17 +53,15 @@ export default function CommunitySidebar({
   }
 
   const batchCount = (year: number) => {
-    if (year === 0) return posts.length + events.length
-    return (
-      posts.filter(post => post.target_years.includes(year) || post.author_year === year).length +
-      events.filter(event => event.target_years.includes(year)).length
-    )
+    const batch = normalizeBatch(year)
+    if (batch === 0) return posts.length + events.length
+    // Same membership rule as every other batch-filtered surface
+    // (lib/logic/batch.ts) — the old counter used a third, inconsistent rule
+    // that counted the all-years default audience as every batch.
+    return filterPostsByBatch(posts, batch).length + filterEventsByBatch(events, batch).length
   }
 
   const isPeople = pathname.startsWith('/people')
-  const isFaculty = pathname.startsWith('/faculty') && !pathname.startsWith('/faculty/dashboard')
-  const isNetwork = pathname.startsWith('/connections')
-  const isMessages = pathname.startsWith('/messages')
   const isFacultyDashboard = pathname === '/faculty/dashboard'
   const isAdminPage = pathname.startsWith('/admin')
 
@@ -119,10 +117,10 @@ export default function CommunitySidebar({
             {showcases > 0 && <span className="text-[11px] tabular-nums text-dim">{showcases}</span>}
           </button>
 
-          <button
-            type="button"
-            onClick={() => goToFilter('announcements')}
-            aria-pressed={announcementsActive}
+          <Link
+            href="/announcements"
+            onClick={onNavigate}
+            aria-current={pathname === '/announcements' ? 'page' : undefined}
             className="side-link"
           >
             <Megaphone className="side-icon" aria-hidden />
@@ -130,7 +128,7 @@ export default function CommunitySidebar({
             {announcements.length > 0 && (
               <span className="text-[11px] tabular-nums text-dim">{announcements.length}</span>
             )}
-          </button>
+          </Link>
         </div>
 
         <div className="space-y-1">
@@ -144,36 +142,6 @@ export default function CommunitySidebar({
           >
             <Users className="side-icon" aria-hidden />
             <span className="min-w-0 flex-1 truncate">People</span>
-          </Link>
-
-          <Link
-            href="/faculty"
-            onClick={onNavigate}
-            aria-current={isFaculty ? 'page' : undefined}
-            className="side-link"
-          >
-            <GraduationCap className="side-icon" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Faculty</span>
-          </Link>
-
-          <Link
-            href="/connections"
-            onClick={onNavigate}
-            aria-current={isNetwork ? 'page' : undefined}
-            className="side-link"
-          >
-            <Network className="side-icon" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Your network</span>
-          </Link>
-
-          <Link
-            href="/messages"
-            onClick={onNavigate}
-            aria-current={isMessages ? 'page' : undefined}
-            className="side-link"
-          >
-            <Inbox className="side-icon" aria-hidden />
-            <span className="min-w-0 flex-1 truncate">Messages</span>
           </Link>
         </div>
 
@@ -239,7 +207,7 @@ export default function CommunitySidebar({
                     aria-hidden
                   />
                   <span className="min-w-0 flex-1 truncate">{batch.label}</span>
-                  <span className={`text-[10.5px] tabular-nums ${active ? 'text-accent-hover' : 'text-dim'}`}>
+                  <span className={`text-[10.5px] tabular-nums ${active ? 'text-accent-chrome' : 'text-dim'}`}>
                     {active ? <Check className="h-3.5 w-3.5" aria-hidden /> : batchCount(batch.value)}
                   </span>
                 </button>

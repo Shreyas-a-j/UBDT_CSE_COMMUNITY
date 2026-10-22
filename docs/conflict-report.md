@@ -146,9 +146,9 @@ const PROTECTED_PREFIXES = ['/connections', '/messages', '/faculty/dashboard', '
 
 | File | Reason |
 |---|---|
-| `supabase/migrations/20261013_network_and_faculty.sql` | Base migration — must not be altered |
-| `supabase/migrations/20261013_network_fixes.sql` | Fix migration — must not be altered |
-| `supabase/migrations/20261013_usn_unique_and_columns.sql` | USN migration — must not be altered |
+| `supabase/migrations/2026101301_network_and_faculty.sql` | Base migration — must not be altered |
+| `supabase/migrations/2026101302_network_fixes.sql` | Fix migration — must not be altered |
+| `supabase/migrations/2026101303_usn_unique_and_columns.sql` | USN migration — must not be altered |
 | `supabase/schema.sql` | Canonical reference — only consolidated by Agent 1 |
 | `supabase/verify_schema.sql` | Verification script — Agent 1 updates when schema changes |
 | `lib/supabase/middleware.ts` | Route protection — Agent 1 approves all changes |

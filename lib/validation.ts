@@ -1,6 +1,5 @@
 import { validateUSN } from '@/lib/utils'
 
-export const MESSAGE_MAX_LENGTH = 4000
 export const BIO_MAX_LENGTH = 600
 export const NAME_MAX_LENGTH = 80
 
@@ -48,10 +47,25 @@ export function validateFacultySignup(input: {
   return null
 }
 
-export function validateMessageBody(body: string): string | null {
-  const text = sanitizeText(body, MESSAGE_MAX_LENGTH)
-  if (!text) return 'Message cannot be empty.'
-  if (text.length > MESSAGE_MAX_LENGTH) return `Messages must be ${MESSAGE_MAX_LENGTH} characters or fewer.`
+export function validateAlumniSignup(input: {
+  name: string
+  email: string
+  password: string
+  confirmPassword: string
+  graduationYear: number
+  section?: string
+}): string | null {
+  if (!input.name.trim()) return 'Please enter your full name.'
+  if (input.name.trim().length < 2) return 'Name must be at least 2 characters.'
+  if (!input.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.email.trim())) {
+    return 'Please enter a valid email address.'
+  }
+  const currentYear = new Date().getFullYear()
+  if (!Number.isInteger(input.graduationYear) || input.graduationYear < 1950 || input.graduationYear > currentYear) {
+    return `Graduation year must be between 1950 and ${currentYear}.`
+  }
+  if (!input.password || input.password.length < 6) return 'Password must be at least 6 characters.'
+  if (input.password !== input.confirmPassword) return 'Passwords do not match.'
   return null
 }
 

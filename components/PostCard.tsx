@@ -14,9 +14,16 @@ import UserAvatar from '@/components/UserAvatar'
 
 interface PostCardProps {
   post: Post
+  /**
+   * True when this card belongs to the current Popular/Trending showcase
+   * ranking (lib/logic/ranking.ts). Renders the achievement indicator on
+   * project cards; the caller derives it from the same ranking that builds
+   * the section, so the badge can never disagree with section membership.
+   */
+  isPopular?: boolean
 }
 
-export default function PostCard({ post }: PostCardProps) {
+export default function PostCard({ post, isPopular = false }: PostCardProps) {
   const router = useRouter()
   const {
     currentUser, likedPostIds, upvotedPostIds, toggleLikePost, toggleUpvotePost,
@@ -55,6 +62,12 @@ export default function PostCard({ post }: PostCardProps) {
   }, [post.created_at])
 
   useEffect(() => {
+    // While the editor is open the local draft is authoritative: the same
+    // post can render in multiple feed sections, so an interaction with
+    // another copy swaps in a new post identity mid-edit, and resyncing
+    // then would silently discard unsaved typing. Cancel and save re-sync
+    // the fields explicitly when the editor closes.
+    if (isEditing) return
     queueMicrotask(() => {
       setETitle(post.title)
       setEBody(post.body)
@@ -63,7 +76,7 @@ export default function PostCard({ post }: PostCardProps) {
       setEDemoUrl(post.demo_url || '')
       setETechStack((post.tech_stack || []).join(', '))
     })
-  }, [post])
+  }, [post, isEditing])
 
   const handleCommentSubmit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -280,6 +293,16 @@ export default function PostCard({ post }: PostCardProps) {
         </button>
 
         <div className="flex shrink-0 items-center gap-1">
+          {isShowcase && isPopular && (
+            <span
+              className="chip border border-warning/25 bg-warning/10 text-[11px] text-warning"
+              role="img"
+              aria-label="Popular project achievement"
+              title="🏆 Popular project"
+            >
+              🏆
+            </span>
+          )}
           <span
             className={`type-badge hidden border sm:inline-flex ${
               isShowcase
@@ -391,7 +414,7 @@ export default function PostCard({ post }: PostCardProps) {
             onClick={() => toggleLikePost(post.id)}
             aria-pressed={isLiked}
             className={`btn btn-ghost btn-sm h-8 px-2.5 ${
-              isLiked ? 'bg-accent-soft text-accent-hover hover:bg-accent-soft hover:text-accent-hover' : ''
+              isLiked ? 'bg-peach-soft text-peach-text hover:bg-peach-soft hover:text-peach-text' : ''
             }`}
           >
             <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} />

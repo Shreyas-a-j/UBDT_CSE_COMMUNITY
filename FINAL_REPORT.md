@@ -92,7 +92,7 @@ Successfully upgraded the UBDT CSE Community platform with enterprise-grade feat
 - Reused: `UserAvatar`, `ProfileCard`, `LoadingSkeleton`, `ConnectButton`
 
 ### Database Migration
-- File: `supabase/migrations/20261013_network_and_faculty.sql`
+- File: `supabase/migrations/2026101301_network_and_faculty.sql`
 - Tables: 6 new (connections, conversations, messages, faculty_applications, announcements, conversation_participants)
 - Functions: 8 security functions
 - Triggers: 6 automated triggers
@@ -141,7 +141,7 @@ Run the commands in QUICK_FIX.md
 
 ### 2. Apply Database Migration (5 minutes)
 - Open Supabase SQL Editor
-- Run `supabase/migrations/20261013_network_and_faculty.sql`
+- Run `supabase/migrations/2026101301_network_and_faculty.sql`
 - Run `NOTIFY pgrst, 'reload schema';`
 
 ### 3. Create Admin User (1 minute)

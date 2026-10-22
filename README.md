@@ -257,7 +257,7 @@ If the current code uses additional server-side or object-storage variables, con
 
 The existing project documentation references:
 
-`supabase/migrations/20261013_network_and_faculty.sql`
+`supabase/migrations/2026101301_network_and_faculty.sql`
 
 Confirm that this migration is present and applicable before running it. Avoid rerunning non-idempotent SQL migrations blindly.
 

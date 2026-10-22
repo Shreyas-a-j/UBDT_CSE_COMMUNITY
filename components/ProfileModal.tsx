@@ -2,13 +2,15 @@
 
 import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
-import { Camera, Check, Edit2, ExternalLink, Loader2, Plus, Save, X } from 'lucide-react'
+import { Camera, Check, Edit2, ExternalLink, GraduationCap, Loader2, Plus, Save, X } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
+import { alumniTag, normalizeProfileLinks, type ProfileLinkErrors } from '@/lib/profile'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { compressAndTokenize } from '@/lib/imageProcessing'
 import { uploadToR2 } from '@/lib/r2Upload'
 import Modal, { ModalCloseButton } from '@/components/Modal'
+import ProfileLinks from '@/components/ProfileLinks'
 
 export default function ProfileModal() {
   const {
@@ -30,6 +32,10 @@ export default function ProfileModal() {
   const [bio, setBio] = useState(profile?.bio || '')
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '')
   const [skills, setSkills] = useState<string[]>(profile?.skills || [])
+  const [portfolioUrl, setPortfolioUrl] = useState(profile?.portfolio_url || '')
+  const [githubUrl, setGithubUrl] = useState(profile?.github_url || '')
+  const [linkedinUrl, setLinkedinUrl] = useState(profile?.linkedin_url || '')
+  const [linkErrors, setLinkErrors] = useState<ProfileLinkErrors>({})
   const [newSkillInput, setNewSkillInput] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
@@ -41,6 +47,10 @@ export default function ProfileModal() {
         setBio(profile.bio || '')
         setAvatarUrl(profile.avatar_url || '')
         setSkills(profile.skills || [])
+        setPortfolioUrl(profile.portfolio_url || '')
+        setGithubUrl(profile.github_url || '')
+        setLinkedinUrl(profile.linkedin_url || '')
+        setLinkErrors({})
         setIsEditMode(false)
       })
     }
@@ -126,7 +136,24 @@ export default function ProfileModal() {
   }
 
   const handleSave = () => {
-    updateProfile({ name: name.trim(), bio: bio.trim(), avatar_url: avatarUrl || null, skills })
+    const links = normalizeProfileLinks({
+      portfolio_url: portfolioUrl,
+      github_url: githubUrl,
+      linkedin_url: linkedinUrl,
+    })
+    if (Object.keys(links.errors).length > 0) {
+      setLinkErrors(links.errors)
+      return
+    }
+
+    setLinkErrors({})
+    updateProfile({
+      name: name.trim(),
+      bio: bio.trim(),
+      avatar_url: avatarUrl || null,
+      skills,
+      ...links.values,
+    })
     setIsEditMode(false)
   }
 
@@ -210,7 +237,7 @@ export default function ProfileModal() {
         </div>
 
         {uploadMessage && (
-          <p className="mb-3 flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11.5px] text-accent">
+          <p className="mb-3 flex items-center gap-1.5 rounded-md border border-accent/30 bg-accent/10 px-2.5 py-1.5 text-[11.5px] text-accent-text">
             <Check className="h-3 w-3" /> {uploadMessage}
           </p>
         )}
@@ -275,6 +302,93 @@ export default function ProfileModal() {
               </form>
             </div>
 
+            <div className="space-y-2.5 border-t border-line pt-4">
+              <div>
+                <h3 className="text-[12px] font-semibold text-ink">Public links</h3>
+                <p className="mt-0.5 text-[11px] text-dim">
+                  Optional. Bare domains like github.com/you are saved as HTTPS links.
+                </p>
+              </div>
+
+              <div>
+                <label className="label" htmlFor="profile-portfolio-url">Portfolio URL</label>
+                <input
+                  id="profile-portfolio-url"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={portfolioUrl}
+                  onChange={e => {
+                    setPortfolioUrl(e.target.value)
+                    if (linkErrors.portfolio_url) {
+                      setLinkErrors(prev => ({ ...prev, portfolio_url: undefined }))
+                    }
+                  }}
+                  className="field"
+                  placeholder="https://your-site.dev"
+                  aria-invalid={Boolean(linkErrors.portfolio_url)}
+                  aria-describedby={linkErrors.portfolio_url ? 'profile-portfolio-error' : undefined}
+                />
+                {linkErrors.portfolio_url && (
+                  <p id="profile-portfolio-error" className="mt-1 text-[11px] text-danger">
+                    {linkErrors.portfolio_url}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="label" htmlFor="profile-github-url">GitHub URL</label>
+                <input
+                  id="profile-github-url"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={githubUrl}
+                  onChange={e => {
+                    setGithubUrl(e.target.value)
+                    if (linkErrors.github_url) {
+                      setLinkErrors(prev => ({ ...prev, github_url: undefined }))
+                    }
+                  }}
+                  className="field"
+                  placeholder="github.com/username"
+                  aria-invalid={Boolean(linkErrors.github_url)}
+                  aria-describedby={linkErrors.github_url ? 'profile-github-error' : undefined}
+                />
+                {linkErrors.github_url && (
+                  <p id="profile-github-error" className="mt-1 text-[11px] text-danger">
+                    {linkErrors.github_url}
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="label" htmlFor="profile-linkedin-url">LinkedIn URL</label>
+                <input
+                  id="profile-linkedin-url"
+                  type="text"
+                  inputMode="url"
+                  autoComplete="url"
+                  value={linkedinUrl}
+                  onChange={e => {
+                    setLinkedinUrl(e.target.value)
+                    if (linkErrors.linkedin_url) {
+                      setLinkErrors(prev => ({ ...prev, linkedin_url: undefined }))
+                    }
+                  }}
+                  className="field"
+                  placeholder="linkedin.com/in/username"
+                  aria-invalid={Boolean(linkErrors.linkedin_url)}
+                  aria-describedby={linkErrors.linkedin_url ? 'profile-linkedin-error' : undefined}
+                />
+                {linkErrors.linkedin_url && (
+                  <p id="profile-linkedin-error" className="mt-1 text-[11px] text-danger">
+                    {linkErrors.linkedin_url}
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div className="flex justify-end gap-2 border-t border-line pt-4">
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => setIsEditMode(false)}>
                 Cancel
@@ -292,9 +406,18 @@ export default function ProfileModal() {
               </h2>
               <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 {profile.usn && <span className="chip chip-mono">{profile.usn}</span>}
-                <span className="chip">{getYearLabel(profile.year)}</span>
+                {profile.member_type === 'alumni' && profile.graduation_year ? (
+                  <span className="chip chip-peach">
+                    <GraduationCap className="h-3 w-3" /> Class of {profile.graduation_year}
+                  </span>
+                ) : (
+                  <span className="chip">{getYearLabel(profile.year)}</span>
+                )}
                 <span className="chip">CSE</span>
                 {profile.role === 'faculty' && <span className="chip chip-warn">Faculty</span>}
+                {profile.member_type === 'alumni' && (
+                  <span className="chip chip-peach">{alumniTag(profile.graduation_year)}</span>
+                )}
               </div>
             </div>
 
@@ -307,6 +430,8 @@ export default function ProfileModal() {
                 {isEditingSelf ? 'Add a short bio so classmates know what you work on.' : 'No bio yet.'}
               </p>
             )}
+
+            <ProfileLinks profile={profile} />
 
             {skills.length > 0 && (
               <div>
@@ -323,7 +448,7 @@ export default function ProfileModal() {
               <Link
                 href={`/people/${profile.id}`}
                 onClick={close}
-                className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent hover:underline"
+                className="inline-flex items-center gap-1.5 text-[12px] font-medium text-accent-text hover:underline"
               >
                 Open full profile <ExternalLink className="h-3 w-3" />
               </Link>

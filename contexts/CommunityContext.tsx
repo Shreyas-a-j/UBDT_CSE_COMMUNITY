@@ -1,15 +1,18 @@
 'use client'
 
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react'
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import toast from 'react-hot-toast'
 import {
   Profile, Event, Post, Comment, Notification, FeedFilter, YearFilter, Announcement, EventType,
+  AnnouncementReaction,
 } from '@/lib/types'
 import { isEventUpcoming } from '@/lib/logic/events'
+import { normalizeBatch, batchOfYear } from '@/lib/logic/batch'
+import { isAnnouncementReaction, mapAnnouncement } from '@/lib/logic/announcements'
 import { createClient } from '@/lib/supabase/client'
 import { logSupabaseError } from '@/lib/supabase/errors'
 import { useAuth } from '@/contexts/AuthContext'
-import { normalizeProfile, profileWritableFields } from '@/lib/profile'
+import { canPublishFacultyContent, normalizeProfile, profileWritableFields } from '@/lib/profile'
 import { sanitizeText } from '@/lib/validation'
 
 interface CommunityContextType {
@@ -34,6 +37,23 @@ interface CommunityContextType {
   setSearchQuery: (query: string) => void
   createPost: (post: Omit<Post, 'id' | 'created_at' | 'like_count' | 'upvote_count' | 'comment_count'>) => Promise<void>
   createEvent: (event: Omit<Event, 'id' | 'created_at' | 'rsvp_count'>) => Promise<void>
+  /**
+   * Publishes an announcement through the trusted server route
+   * (POST /api/announcements), which re-checks the caller's database role.
+   * Resolves the created announcement, or null when it was rejected.
+   */
+  createAnnouncement: (input: {
+    title: string
+    body: string
+    image_urls: string[]
+  }) => Promise<Announcement | null>
+  /**
+   * Toggles the signed-in member's reaction to an announcement. A member has
+   * at most one reaction per announcement: selecting the current one removes
+   * it, selecting a different one replaces it. RLS limits every write to the
+   * caller's own rows.
+   */
+  toggleAnnouncementReaction: (announcementId: string, reaction: AnnouncementReaction) => Promise<void>
   toggleLikePost: (postId: string) => Promise<void>
   toggleUpvotePost: (postId: string) => Promise<void>
   toggleRsvpEvent: (eventId: string) => Promise<void>
@@ -61,11 +81,24 @@ interface CommunityContextType {
   setIsCreatePostOpen: (open: boolean) => void
   isCreateEventOpen: boolean
   setIsCreateEventOpen: (open: boolean) => void
+  /**
+   * The single entry point into the existing event-hosting flow. The form
+   * lives in the globally mounted CreateEventModal, so every "Host event"
+   * action opens that same composer instead of navigating to a duplicate
+   * page. Signed-out visitors are sent to the auth modal first.
+   */
+  openCreateEvent: () => void
   isProfileModalOpen: boolean
   setIsProfileModalOpen: (open: boolean) => void
   selectedProfileForView: Profile | null
   setSelectedProfileForView: (profile: Profile | null) => void
   fetchData: () => Promise<void>
+  /**
+   * Bumped by post mutations (create, update, delete, like, upvote) that can
+   * make a page-level copy of post data stale. The profile Projects section
+   * refetches when it changes; the feed itself is kept in sync by setPosts.
+   */
+  postsRevision: number
 }
 
 const CommunityContext = createContext<CommunityContextType | undefined>(undefined)
@@ -85,7 +118,47 @@ function countFromEmbed(value: unknown): number {
   return 0
 }
 
-function mapPost(row: Record<string, unknown>): Post {
+/**
+ * Fetches announcements with their author and reaction rows. The reaction
+ * embed only exists after the Phase 6 migration, so a database that has not
+ * been migrated yet falls back to the plain author embed: announcements keep
+ * rendering, just without reaction counts.
+ */
+async function fetchAnnouncementRows(client: ReturnType<typeof createClient>) {
+  const rich = await client
+    .from('announcements')
+    .select(`
+      *,
+      author:profiles!author_id (name, avatar_url, designation),
+      reactions:announcement_reactions (user_id, reaction, created_at)
+    `)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  if (!rich.error && rich.data) {
+    return { rows: rich.data as Record<string, unknown>[], error: null as string | null }
+  }
+
+  const plain = await client
+    .from('announcements')
+    .select(`
+      *,
+      author:profiles!author_id (name, avatar_url, designation)
+    `)
+    .order('created_at', { ascending: false })
+    .limit(30)
+
+  if (!plain.error && plain.data) {
+    return { rows: plain.data as Record<string, unknown>[], error: null as string | null }
+  }
+
+  return {
+    rows: [] as Record<string, unknown>[],
+    error: plain.error?.message ?? rich.error?.message ?? null,
+  }
+}
+
+export function mapPost(row: Record<string, unknown>): Post {
   const author = (row.author ?? row.profiles) as EmbeddedProfile | null
   return {
     id: String(row.id),
@@ -102,7 +175,7 @@ function mapPost(row: Record<string, unknown>): Post {
     created_at: String(row.created_at ?? new Date().toISOString()),
     author_name: author?.name || 'CSE Student',
     author_usn: author?.usn || '',
-    author_year: author?.year ?? null,
+    author_year: batchOfYear(author?.year),
     author_avatar: author?.avatar_url || null,
     author_role: author?.role === 'faculty' || author?.role === 'admin' ? author.role : 'student',
     like_count: countFromEmbed(row.likes) || Number(row.like_count) || 0,
@@ -130,8 +203,19 @@ function mapEvent(row: Record<string, unknown>): Event {
     host_name: host?.name || 'CSE Host',
     host_usn: host?.usn || '',
     host_avatar: host?.avatar_url || null,
+    host_year: batchOfYear(host?.year),
     rsvp_count: countFromEmbed(row.event_rsvps) || Number(row.rsvp_count) || 0,
   }
+}
+
+/**
+ * The database can still emit `message` notifications (its trigger fires for
+ * rows written by the mobile client). The website no longer ships a messaging
+ * surface, so those rows would dead-end on the deleted /messages routes —
+ * hide them from the web notification list instead.
+ */
+function filterVisibleNotifications(rows: Notification[]): Notification[] {
+  return rows.filter(notification => notification.type !== 'message')
 }
 
 export function CommunityProvider({ children }: { children: React.ReactNode }) {
@@ -152,16 +236,29 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
   const [now, setNow] = useState<Date | null>(null)
   const [comments, setComments] = useState<Comment[]>([])
   const [announcements, setAnnouncements] = useState<Announcement[]>([])
+  // One in-flight reaction request per announcement. A replacement is a
+  // delete followed by an insert; without this guard a double click could
+  // interleave two such pairs and leave two reaction types behind.
+  const reactionRequests = useRef(new Set<string>())
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [feedLoading, setFeedLoading] = useState(true)
   const [feedError, setFeedError] = useState<string | null>(null)
+  // See CommunityContextType.postsRevision — consumers holding their own
+  // post snapshots refetch when any mutation could have made them stale.
+  const [postsRevision, setPostsRevision] = useState(0)
 
   const [likedPostIds, setLikedPostIds] = useState<Set<string>>(new Set())
   const [upvotedPostIds, setUpvotedPostIds] = useState<Set<string>>(new Set())
   const [rsvpedEventIds, setRsvpedEventIds] = useState<Set<string>>(new Set())
 
   const [feedFilter, setFeedFilter] = useState<FeedFilter>('all')
-  const [yearFilter, setYearFilter] = useState<YearFilter>(0)
+  const [yearFilter, setYearFilterState] = useState<YearFilter>(0)
+  // Any value that is not a real batch (NaN from a tampered <select>, a stale
+  // stored value, junk from a caller) normalizes to All batches, so an invalid
+  // selection can never blank the feed.
+  const setYearFilter = useCallback((year: YearFilter) => {
+    setYearFilterState(normalizeBatch(year))
+  }, [])
   const [searchQuery, setSearchQuery] = useState('')
 
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false)
@@ -177,6 +274,11 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
     return true
   }, [currentUser])
+
+  const openCreateEvent = useCallback(() => {
+    if (!requireAuth()) return
+    setIsCreateEventOpen(true)
+  }, [requireAuth])
 
   useEffect(() => {
     // Async initial set (the lint-safe pattern used across this codebase),
@@ -224,7 +326,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       .from('events')
       .select(`
         *,
-        host:profiles!host_id (name, usn, avatar_url, role),
+        host:profiles!host_id (name, usn, avatar_url, role, year),
         event_rsvps (count)
       `)
       .gte('event_date', minEventDate)
@@ -240,14 +342,15 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       .order('created_at', { ascending: true })
       .limit(200)
 
-    const announcementsQuery = supabase
-      .from('announcements')
-      .select(`
-        *,
-        author:profiles!author_id (name, avatar_url, designation)
-      `)
-      .order('created_at', { ascending: false })
-      .limit(30)
+    const announcementsRes = await fetchAnnouncementRows(supabase)
+    if (announcementsRes.error) {
+      if (!announcementsRes.error.toLowerCase().includes('does not exist')) {
+        errors.push(`announcements: ${announcementsRes.error}`)
+      }
+      setAnnouncements([])
+    } else {
+      setAnnouncements(announcementsRes.rows.map(mapAnnouncement))
+    }
 
     let postsRes = await postsQuery
     if (postsRes.error) {
@@ -292,31 +395,6 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       )
     }
 
-    const announcementsRes = await announcementsQuery
-    if (announcementsRes.error) {
-      if (!announcementsRes.error.message.toLowerCase().includes('does not exist')) {
-        errors.push(`announcements: ${announcementsRes.error.message}`)
-      }
-      setAnnouncements([])
-    } else if (announcementsRes.data) {
-      setAnnouncements(
-        (announcementsRes.data as Record<string, unknown>[]).map(row => {
-          const author = row.author as { name?: string; avatar_url?: string; designation?: string } | null
-          return {
-            id: String(row.id),
-            author_id: String(row.author_id),
-            title: String(row.title ?? ''),
-            body: String(row.body ?? ''),
-            created_at: String(row.created_at ?? ''),
-            updated_at: String(row.updated_at ?? ''),
-            author_name: author?.name,
-            author_avatar: author?.avatar_url ?? null,
-            author_designation: author?.designation ?? null,
-          }
-        })
-      )
-    }
-
     setFeedError(errors.length ? errors.join(' · ') : null)
     setFeedLoading(false)
   }, [supabase])
@@ -331,7 +409,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     if (likes.data) setLikedPostIds(new Set(likes.data.map(row => row.post_id as string)))
     if (upvotes.data) setUpvotedPostIds(new Set(upvotes.data.map(row => row.post_id as string)))
     if (rsvps.data) setRsvpedEventIds(new Set(rsvps.data.map(row => row.event_id as string)))
-    if (notifs.data) setNotifications(notifs.data as Notification[])
+    if (notifs.data) setNotifications(filterVisibleNotifications(notifs.data as Notification[]))
   }, [supabase])
 
   useEffect(() => {
@@ -359,7 +437,9 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         'postgres_changes',
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${currentUser.id}` },
         payload => {
-          setNotifications(prev => [payload.new as Notification, ...prev].slice(0, 40))
+          const incoming = payload.new as Notification
+          if (incoming.type === 'message') return
+          setNotifications(prev => [incoming, ...prev].slice(0, 40))
         }
       )
       .subscribe()
@@ -390,6 +470,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       toast.error(error.message)
       await fetchData()
       await fetchUserState(currentUser.id)
+    } else {
+      setPostsRevision(v => v + 1)
     }
   }
 
@@ -410,6 +492,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       toast.error(error.message)
       await fetchData()
       await fetchUserState(currentUser.id)
+    } else {
+      setPostsRevision(v => v + 1)
     }
   }
 
@@ -430,6 +514,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       toast.error(error.message)
       await fetchData()
       await fetchUserState(currentUser.id)
+    } else {
+      setPostsRevision(v => v + 1)
     }
   }
 
@@ -457,6 +543,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     } else {
       await fetchData()
     }
+    setPostsRevision(v => v + 1)
   }
 
   const createEvent = async (eventData: Omit<Event, 'id' | 'created_at' | 'rsvp_count'>) => {
@@ -484,6 +571,135 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       await supabase.from('event_rsvps').insert({ event_id: mapped.id, user_id: currentUser.id })
     } else {
       await fetchData()
+    }
+  }
+
+  /**
+   * Publishes through the server route so the role check runs on trusted
+   * server code against the database profile — the client guard below is only
+   * an early, friendly rejection. The route and the announcements RLS insert
+   * policy both require verified faculty.
+   */
+  const createAnnouncement = async (input: {
+    title: string
+    body: string
+    image_urls: string[]
+  }): Promise<Announcement | null> => {
+    if (!requireAuth() || !currentUser) return null
+    if (!canPublishFacultyContent(currentUser)) {
+      toast.error('Only verified faculty can publish announcements')
+      return null
+    }
+
+    const title = sanitizeText(input.title, 200)
+    const body = sanitizeText(input.body, 5000)
+    if (!title || !body) {
+      toast.error('A title and a message are required')
+      return null
+    }
+
+    let response: Response
+    try {
+      response = await fetch('/api/announcements', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, body, image_urls: input.image_urls }),
+      })
+    } catch {
+      toast.error('The announcement could not be published. Check your connection and try again.')
+      return null
+    }
+
+    const payload = (await response.json().catch(() => null)) as
+      | { announcement?: Record<string, unknown>; error?: string }
+      | null
+
+    if (!response.ok || !payload?.announcement) {
+      toast.error(payload?.error || 'The announcement could not be published')
+      return null
+    }
+
+    const created = mapAnnouncement(payload.announcement)
+    setAnnouncements(prev => [created, ...prev])
+    toast.success('Announcement published')
+    return created
+  }
+
+  const toggleAnnouncementReaction = async (
+    announcementId: string,
+    reaction: AnnouncementReaction
+  ) => {
+    if (!requireAuth() || !currentUser) return
+    if (!isAnnouncementReaction(reaction)) return
+    if (reactionRequests.current.has(announcementId)) return
+
+    const existing = announcements.find(announcement => announcement.id === announcementId)
+    const viewerId = currentUser.id
+    // A member has at most one reaction per announcement: find whatever they
+    // currently have, not just the button that was clicked.
+    const previousReaction =
+      existing?.reactions.find(row => row.user_id === viewerId)?.reaction ?? null
+    const nextReaction = previousReaction === reaction ? null : reaction
+
+    reactionRequests.current.add(announcementId)
+
+    // Optimistically remove every row this viewer has on the announcement and
+    // add the single desired reaction. Other members' rows are untouched.
+    setAnnouncements(prev =>
+      prev.map(announcement => {
+        if (announcement.id !== announcementId) return announcement
+        return {
+          ...announcement,
+          reactions: [
+            ...announcement.reactions.filter(row => row.user_id !== viewerId),
+            ...(nextReaction ? [{ user_id: viewerId, reaction: nextReaction }] : []),
+          ],
+        }
+      })
+    )
+
+    try {
+      // Delete before insert: the composite primary key includes the reaction
+      // type, so an insert alone would add a second reaction type. Deleting
+      // every row for this member also repairs legacy duplicates.
+      if (previousReaction) {
+        const { error: deleteError } = await supabase
+          .from('announcement_reactions')
+          .delete()
+          .eq('announcement_id', announcementId)
+          .eq('user_id', viewerId)
+
+        if (deleteError) {
+          toast.error(deleteError.message)
+          await fetchData()
+          return
+        }
+      }
+
+      if (!nextReaction) return
+
+      const { error: insertError } = await supabase.from('announcement_reactions').insert({
+        announcement_id: announcementId,
+        user_id: viewerId,
+        reaction: nextReaction,
+      })
+
+      if (insertError) {
+        toast.error(insertError.message)
+        // The old row is already gone. Put it back so a failed replacement
+        // does not silently drop the member's previous reaction; the refetch
+        // below then reflects whatever the database actually holds.
+        if (previousReaction) {
+          await supabase.from('announcement_reactions').insert({
+            announcement_id: announcementId,
+            user_id: viewerId,
+            reaction: previousReaction,
+          })
+        }
+        await fetchData()
+      }
+    } finally {
+      reactionRequests.current.delete(announcementId)
     }
   }
 
@@ -551,6 +767,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       return
     }
     setPosts(prev => prev.map(p => (p.id === postId ? { ...p, ...updated } : p)))
+    setPostsRevision(v => v + 1)
   }
 
   const deletePost = async (postId: string): Promise<boolean> => {
@@ -595,6 +812,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         console.warn('[deletePost] zero rows deleted; row no longer exists — already gone', postId)
         toast('The discussion is already gone. The feed has been refreshed.')
         setPosts(prev => prev.filter(p => p.id !== postId))
+        setPostsRevision(v => v + 1)
         return true
       }
       console.warn(
@@ -609,6 +827,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
     }
     console.debug('[deletePost] deleted', postId)
     setPosts(prev => prev.filter(p => p.id !== postId))
+    setPostsRevision(v => v + 1)
     return true
   }
 
@@ -719,6 +938,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         setSearchQuery,
         createPost,
         createEvent,
+        createAnnouncement,
+        toggleAnnouncementReaction,
         toggleLikePost,
         toggleUpvotePost,
         toggleRsvpEvent,
@@ -737,11 +958,13 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
         setIsCreatePostOpen,
         isCreateEventOpen,
         setIsCreateEventOpen,
+        openCreateEvent,
         isProfileModalOpen,
         setIsProfileModalOpen,
         selectedProfileForView,
         setSelectedProfileForView,
         fetchData,
+        postsRevision,
       }}
     >
       {children}

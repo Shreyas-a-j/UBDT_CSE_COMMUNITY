@@ -18,7 +18,7 @@ Successfully upgraded the UBDT CSE Community platform with LinkedIn-style networ
 5. **Middleware** - Protected routes for connections, messages, faculty, and admin
 
 ### Database Schema
-- ✅ Complete migration file: `supabase/migrations/20261013_network_and_faculty.sql`
+- ✅ Complete migration file: `supabase/migrations/2026101301_network_and_faculty.sql`
 - ✅ All tables, indexes, triggers, and RLS policies defined
 - ✅ Security functions for role-based access control
 - ✅ Realtime configuration for messages and notifications
@@ -170,7 +170,7 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
 ### Database Migration
 **Must be applied to Supabase:**
 1. Go to Supabase SQL Editor
-2. Run the migration: `supabase/migrations/20261013_network_and_faculty.sql`
+2. Run the migration: `supabase/migrations/2026101301_network_and_faculty.sql`
 3. Reload schema: `NOTIFY pgrst, 'reload schema';`
 4. Verify RLS is enabled on all tables
 
@@ -226,7 +226,7 @@ components/
 supabase/
 ├── schema.sql                          # Complete schema reference
 └── migrations/
-    └── 20261013_network_and_faculty.sql  # Migration to apply
+    └── 2026101301_network_and_faculty.sql  # Migration to apply
 ```
 
 ---
@@ -362,7 +362,7 @@ The upgraded platform now supports:
 For issues or questions:
 1. Check the implementation plan: `.agents/tasks/implementation-plan.md`
 2. Review database schema: `supabase/schema.sql`
-3. Check migration file: `supabase/migrations/20261013_network_and_faculty.sql`
+3. Check migration file: `supabase/migrations/2026101301_network_and_faculty.sql`
 4. Review this summary document
 
 **Project completed:** 2026-10-13  

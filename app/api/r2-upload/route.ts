@@ -57,6 +57,8 @@ export async function POST(req: NextRequest) {
       method: 'PUT',
       headers: {
         'Content-Type': file.type || 'image/webp',
+        // R2 rejects chunked PutObject requests with 411 MissingContentLength.
+        'Content-Length': String(arrayBuffer.byteLength),
       },
       body: arrayBuffer,
     });

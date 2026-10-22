@@ -39,10 +39,8 @@ function useDismiss(open: boolean, close: () => void) {
 
 const NAV_ITEMS = [
   { href: '/', label: 'Feed' },
+  { href: '/announcements', label: 'Announcements' },
   { href: '/people', label: 'People' },
-  { href: '/faculty', label: 'Faculty' },
-  { href: '/connections', label: 'Network' },
-  { href: '/messages', label: 'Messages' },
 ] as const
 
 export default function Navbar() {
@@ -135,7 +133,7 @@ export default function Navbar() {
             className="flex min-w-0 shrink-0 items-center gap-2.5"
             aria-label="UBDT CSE Community — home"
           >
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold tracking-tight text-accent-hover">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-accent/40 bg-accent-soft font-mono text-[10px] font-bold tracking-tight text-accent-chrome">
               &lt;/&gt;
             </span>
             <span className="hidden min-[380px]:flex min-w-0 flex-col leading-none">
@@ -216,7 +214,7 @@ export default function Navbar() {
                     className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated"
                     onClick={() => openCreate('post')}
                   >
-                    <MessageSquarePlus className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <MessageSquarePlus className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                     <span className="min-w-0">
                       <span className="block text-[13px] font-medium text-ink">Start a post</span>
                       <span className="block text-[11.5px] text-muted">Ask a question or share a project</span>
@@ -228,7 +226,7 @@ export default function Navbar() {
                     className="flex w-full items-start gap-3 rounded-lg px-3 py-2.5 text-left transition-colors hover:bg-elevated"
                     onClick={() => openCreate('event')}
                   >
-                    <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                    <Calendar className="mt-0.5 h-4 w-4 shrink-0 text-accent-text" />
                     <span className="min-w-0">
                       <span className="block text-[13px] font-medium text-ink">Host an event</span>
                       <span className="block text-[11.5px] text-muted">Schedule a workshop or session</span>
@@ -263,7 +261,7 @@ export default function Navbar() {
                 >
                   <Bell className="h-[18px] w-[18px]" />
                   {unreadNotifs.length > 0 && (
-                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold leading-none text-[#14151f]">
+                    <span className="absolute right-1 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[9px] font-bold leading-none text-accent-ink">
                       {unreadNotifs.length > 9 ? '9+' : unreadNotifs.length}
                     </span>
                   )}
@@ -276,7 +274,7 @@ export default function Navbar() {
                       {unreadNotifs.length > 0 && (
                         <button
                           type="button"
-                          className="text-[11.5px] font-medium text-accent-hover hover:underline"
+                          className="text-[11.5px] font-medium text-accent-text hover:underline"
                           onClick={markAllNotificationsAsRead}
                         >
                           Mark all read

@@ -7,8 +7,12 @@ export type Json =
   | Json[]
 
 export type UserRole = 'student' | 'faculty' | 'admin'
-export type FacultyStatus = 'none' | 'pending' | 'verified' | 'rejected'
-export type ConnectionStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled'
+export type MemberType = 'student' | 'alumni' | 'faculty'
+// 'verified' and 'approved' are the same approval state. The repo's original
+// migration wrote 'verified'; the live UCC database and Phase 6.1 brief use
+// 'approved'. Both are accepted so existing rows keep working either way.
+export type FacultyStatus = 'none' | 'pending' | 'approved' | 'verified' | 'rejected'
+export type ContactVisibility = 'private' | 'members' | 'public'
 export type FacultyApplicationStatus = 'pending' | 'approved' | 'rejected'
 export type EventType = 'Workshop' | 'Meeting' | 'Showcase' | 'Seminar' | 'Project Session'
 
@@ -30,9 +34,30 @@ export interface Profile {
   designation: string | null
   employee_id: string | null
   expertise: string[]
+  // UCC 2.0: community identity is separate from authorisation. Optional on
+  // the client type so older fixtures/queries remain valid; normalizeProfile
+  // always supplies a value.
+  member_type?: MemberType
+  graduation_year?: number | null
+  portfolio_url?: string | null
+  github_url?: string | null
+  linkedin_url?: string | null
   created_at: string
   updated_at?: string | null
-  connection_count?: number
+}
+
+/**
+ * Private contact details live in public.profile_contacts, not on Profile:
+ * profiles has a public SELECT policy, so a "private" column there would
+ * still be readable. RLS on profile_contacts decides who sees each row.
+ */
+export interface ProfileContact {
+  profile_id: string
+  contact_email: string | null
+  phone: string | null
+  contact_visibility: ContactVisibility
+  created_at: string
+  updated_at?: string | null
 }
 
 export interface Event {
@@ -51,6 +76,8 @@ export interface Event {
   host_usn?: string
   host_avatar?: string | null
   host_role?: UserRole
+  /** The host's batch (`profiles.year`), or null when the host has none. */
+  host_year?: number | null
   rsvp_count?: number
 }
 
@@ -102,8 +129,9 @@ export type NotificationType =
   | 'event_reminder'
   | 'like'
   | 'upvote'
-  | 'connection_request'
-  | 'connection_accepted'
+  // The database trigger still emits 'message' rows (written by the mobile
+  // client); the website has no messaging surface, so CommunityContext
+  // filters these out of the rendered notification list.
   | 'message'
   | 'announcement'
   | 'faculty_decision'
@@ -119,51 +147,33 @@ export interface Notification {
   created_at: string
 }
 
-export interface ConnectionRequest {
-  id: string
-  requester_id: string
-  addressee_id: string
-  status: ConnectionStatus
-  created_at: string
-  responded_at: string | null
-  requester?: Profile
-  addressee?: Profile
-}
-
-export type ConnectionAction = 'connect' | 'pending_outgoing' | 'pending_incoming' | 'connected' | 'self' | 'none'
-
-export interface Conversation {
-  id: string
-  is_group: boolean
-  title: string | null
-  created_at: string
-  updated_at: string
-  last_message_at: string | null
-  last_message_preview: string | null
-  other?: Profile | null
-  unread_count?: number
-}
-
-export interface Message {
-  id: string
-  conversation_id: string
-  sender_id: string
-  body: string
-  created_at: string
-  sender_name?: string
-  sender_avatar?: string | null
-}
-
 export interface Announcement {
   id: string
   author_id: string
   title: string
   body: string
+  /** Public R2 URLs for the announcement's optional images (max 4). */
+  image_urls: string[]
   created_at: string
   updated_at: string
   author_name?: string
   author_avatar?: string | null
   author_designation?: string | null
+  /**
+   * Raw reaction rows joined from public.announcement_reactions. Kept raw so
+   * counts and the viewer's own reactions come from one source of truth
+   * (see summarizeReactions in lib/logic/announcements.ts).
+   */
+  reactions: AnnouncementReactionRow[]
+}
+
+/** The small, fixed reaction set supported on announcements. */
+export type AnnouncementReaction = 'thumbs_up' | 'heart' | 'party' | 'clap'
+
+export interface AnnouncementReactionRow {
+  user_id: string
+  reaction: AnnouncementReaction
+  created_at?: string | null
 }
 
 export interface FacultyApplication {

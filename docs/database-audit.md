@@ -14,9 +14,9 @@ The canonical schema for **new installs** is `supabase/schema.sql`. It is a comp
 For **existing databases**, the canonical upgrade path is:
 
 ```
-1. supabase/migrations/20261013_network_and_faculty.sql   (base: tables + functions + RLS)
-2. supabase/migrations/20261013_network_fixes.sql         (fixes: sync, triggers, constraints)
-3. supabase/migrations/20261013_usn_unique_and_columns.sql (fixes: USN uniqueness, protect USN)
+1. supabase/migrations/2026101301_network_and_faculty.sql   (base: tables + functions + RLS)
+2. supabase/migrations/2026101302_network_fixes.sql         (fixes: sync, triggers, constraints)
+3. supabase/migrations/2026101303_usn_unique_and_columns.sql (fixes: USN uniqueness, protect USN)
 4. NOTIFY pgrst, 'reload schema';
 5. Verify with supabase/verify_schema.sql
 ```
@@ -252,9 +252,9 @@ All TypeScript interfaces map 1:1 to their respective tables.
 
 | File | Reason |
 |---|---|
-| `supabase/migrations/20261013_network_and_faculty.sql` | Base migration. Agents 3–7 should build ADDITIVE migrations on top; do not modify this file. |
-| `supabase/migrations/20261013_network_fixes.sql` | Fix migration. Same rule applies. |
-| `supabase/migrations/20261013_usn_unique_and_columns.sql` | USN fix migration. Same rule applies. |
+| `supabase/migrations/2026101301_network_and_faculty.sql` | Base migration. Agents 3–7 should build ADDITIVE migrations on top; do not modify this file. |
+| `supabase/migrations/2026101302_network_fixes.sql` | Fix migration. Same rule applies. |
+| `supabase/migrations/2026101303_usn_unique_and_columns.sql` | USN fix migration. Same rule applies. |
 | `supabase/schema.sql` | Canonical reference. Only edit if consolidating all migrations into a new version. |
 
 ### 6.2 TypeScript Types (coordinate before editing)
@@ -310,9 +310,9 @@ Each migration must:
 
 ```
 [BASE] Already applied:
-  1. 20261013_network_and_faculty.sql
-  2. 20261013_network_fixes.sql
-  3. 20261013_usn_unique_and_columns.sql
+  1. 2026101301_network_and_faculty.sql
+  2. 2026101302_network_fixes.sql
+  3. 2026101303_usn_unique_and_columns.sql
 
 [AGENTS — apply in this order to avoid conflicts]
 

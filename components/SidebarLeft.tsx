@@ -91,7 +91,7 @@ export default function SidebarLeft() {
       ) : (
         <div className="card p-5">
           <span className="flex h-10 w-10 items-center justify-center rounded-lg border border-line bg-elevated">
-            <GraduationCap className="h-5 w-5 text-accent" />
+            <GraduationCap className="h-5 w-5 text-accent-text" />
           </span>
           <h2 className="mt-3 font-display text-[15px] font-semibold text-ink">Join the community</h2>
           <p className="mt-1.5 text-[12.5px] leading-relaxed text-muted">
@@ -140,7 +140,7 @@ export default function SidebarLeft() {
                   />
                   {opt.label}
                 </span>
-                <span className={`font-mono text-[10.5px] ${active ? 'text-accent' : 'text-dim'}`}>
+                <span className={`font-mono text-[10.5px] ${active ? 'text-accent-text' : 'text-dim'}`}>
                   {active ? <Check className="h-3.5 w-3.5" /> : opt.code}
                 </span>
               </button>

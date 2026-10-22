@@ -1,6 +1,81 @@
 {
   "communities": {
     "0": [
+      "app_page",
+      "app_page_home",
+      "app_page_year_options",
+      "components_announcementcard",
+      "components_announcementcard_announcementcard",
+      "components_eventcard",
+      "components_eventcard_dateblock",
+      "components_eventcard_eventcard",
+      "components_eventcard_eventcardprops",
+      "components_eventcard_type_tone",
+      "components_filtertabs",
+      "components_filtertabs_filtertab",
+      "components_filtertabs_filtertabs",
+      "components_postcard",
+      "components_postcard_commentitem",
+      "components_postcard_postcard",
+      "components_postcard_postcardprops",
+      "components_postcard_test",
+      "components_postcard_test_makecontext",
+      "components_postcard_test_makepost",
+      "components_postcard_test_usecommunitymock",
+      "components_postcard_test_useroutermock",
+      "components_postcard_test_viewerprofile",
+      "components_sectionheader",
+      "components_sectionheader_sectionheader",
+      "components_sidebarright",
+      "components_sidebarright_eventdate",
+      "components_sidebarright_sidebarright",
+      "components_sidebarright_viewall",
+      "contexts_communitycontext",
+      "contexts_communitycontext_communitycontext",
+      "contexts_communitycontext_communitycontexttype",
+      "contexts_communitycontext_countfromembed",
+      "contexts_communitycontext_embeddedprofile",
+      "contexts_communitycontext_mapevent",
+      "contexts_communitycontext_mappost",
+      "contexts_communitycontext_peeknormalizeprofile",
+      "lib_logic_connections",
+      "lib_logic_connections_canrequestconnection",
+      "lib_logic_connections_connectionpairkey",
+      "lib_logic_connections_countacceptedconnections",
+      "lib_logic_connections_otherpartyid",
+      "lib_logic_connections_resolveconnectionaction",
+      "lib_mock_data",
+      "lib_mock_data_mock_comments",
+      "lib_mock_data_mock_events",
+      "lib_mock_data_mock_notifications",
+      "lib_mock_data_mock_posts",
+      "lib_mock_data_mock_profiles",
+      "lib_profile_firstname",
+      "lib_profile_isadmin",
+      "lib_types",
+      "lib_types_announcement",
+      "lib_types_comment",
+      "lib_types_connectionaction",
+      "lib_types_connectionstatus",
+      "lib_types_conversation",
+      "lib_types_event",
+      "lib_types_eventrsvp",
+      "lib_types_eventtype",
+      "lib_types_facultyapplication",
+      "lib_types_facultyapplicationstatus",
+      "lib_types_facultystatus",
+      "lib_types_feedfilter",
+      "lib_types_json",
+      "lib_types_message",
+      "lib_types_notification",
+      "lib_types_notificationtype",
+      "lib_types_post",
+      "lib_types_userrole",
+      "lib_types_yearfilter",
+      "lib_utils_formateventdatetime",
+      "ref_date_fns"
+    ],
+    "1": [
       "app_admin_page",
       "app_admin_page_admindashboard",
       "app_admin_page_adminpage",
@@ -26,122 +101,113 @@
       "app_messages_page",
       "app_messages_page_messagesinbox",
       "app_messages_page_messagespage",
+      "app_people_id_page",
+      "app_people_id_page_profiledetail",
+      "app_people_id_page_profilepage",
       "app_people_page",
       "app_people_page_peopledirectory",
       "app_people_page_peoplepage",
-      "app_signin_page",
-      "app_signin_page_signinform",
-      "app_signin_page_signinpage",
-      "app_signup_faculty_page",
-      "app_signup_faculty_page_facultysignupform",
-      "app_signup_faculty_page_facultysignuppage",
-      "app_signup_faculty_page_submitphase",
-      "app_signup_page",
-      "app_signup_page_passwordfield",
-      "app_signup_page_signupform",
-      "app_signup_page_signuppage",
-      "components_authformshell",
-      "components_authformshell_authformshell",
+      "components_appshell_appshell",
+      "components_connectbutton",
+      "components_connectbutton_connectbutton",
       "components_emptystate",
       "components_emptystate_emptystate",
       "components_loadingskeleton",
       "components_loadingskeleton_loadingskeleton",
       "components_pageheader",
       "components_pageheader_pageheader",
-      "contexts_authcontext_useauth",
-      "hooks_usemessages",
-      "hooks_usemessages_sendmessage",
-      "hooks_usemessages_sentmessage",
-      "lib_logic_messages",
-      "lib_logic_messages_canaccessconversation",
-      "lib_logic_messages_conversationunreadcount",
-      "lib_logic_messages_preparemessagebody",
-      "lib_profile_canpublishfacultycontent",
-      "lib_supabase_client",
-      "lib_supabase_client_createclient",
-      "lib_types_conversation",
-      "lib_types_facultyapplication",
-      "lib_types_message",
-      "lib_utils_getyearfromusn",
-      "lib_utils_validateusn",
-      "lib_validation",
-      "lib_validation_bio_max_length",
-      "lib_validation_message_max_length",
-      "lib_validation_name_max_length",
-      "lib_validation_parsetaglist",
-      "lib_validation_sanitizetext",
-      "lib_validation_validatefacultysignup",
-      "lib_validation_validatemessagebody",
-      "lib_validation_validatestudentsignup",
-      "ref_react_hot_toast"
-    ],
-    "1": [
-      "app_page",
-      "app_page_home",
-      "app_page_year_options",
-      "app_people_id_page",
-      "app_people_id_page_profiledetail",
-      "app_people_id_page_profilepage",
-      "components_announcementcard",
-      "components_announcementcard_announcementcard",
-      "components_appshell",
-      "components_appshell_appshell",
-      "components_appshell_footer",
-      "components_authmodal",
-      "components_authmodal_authmodal",
-      "components_communitysidebar",
-      "components_communitysidebar_batches",
-      "components_communitysidebar_communitysidebar",
-      "components_connectbutton",
-      "components_connectbutton_connectbutton",
-      "components_createeventmodal",
-      "components_createeventmodal_createeventmodal",
-      "components_createpostmodal",
-      "components_createpostmodal_createpostmodal",
-      "components_filtertabs",
-      "components_filtertabs_filtertab",
-      "components_filtertabs_filtertabs",
-      "components_mobilenavigation",
-      "components_mobilenavigation_mobilenavigation",
-      "components_modal",
-      "components_modal_modal",
-      "components_modal_modalclosebutton",
-      "components_navbar",
-      "components_navbar_nav_items",
-      "components_navbar_navbar",
-      "components_navbar_usedismiss",
       "components_profilecard",
       "components_profilecard_profilecard",
-      "components_profilemodal",
-      "components_profilemodal_profilemodal",
-      "components_searchinput",
-      "components_searchinput_searchinput",
-      "components_sectionheader",
-      "components_sectionheader_sectionheader",
       "components_sidebarleft",
       "components_sidebarleft_batches",
       "components_sidebarleft_sidebarleft",
-      "components_sidebarright",
-      "components_sidebarright_eventdate",
-      "components_sidebarright_sidebarright",
-      "components_sidebarright_viewall",
       "components_useravatar",
       "components_useravatar_useravatar",
       "components_useravatar_useravatarprops",
-      "contexts_communitycontext_usecommunity",
-      "contexts_themecontext_usetheme",
+      "contexts_authcontext_useauth",
+      "hooks_useconnections",
       "hooks_useconnections_useconnections",
+      "hooks_usemessages",
+      "hooks_usemessages_sendmessage",
+      "hooks_usemessages_sentmessage",
       "hooks_usemessages_startconversation",
+      "lib_profile_canpublishfacultycontent",
       "lib_profile_displayname",
-      "lib_profile_isadmin",
-      "lib_profile_isverifiedfaculty",
-      "lib_types_connectionstatus",
-      "lib_utils_getavatarfallback",
+      "lib_supabase_client",
+      "lib_supabase_client_createclient",
+      "lib_types_connectionrequest",
+      "lib_utils_formatdate",
+      "lib_utils_formatrelativetime",
       "lib_utils_getyearlabel",
-      "ref_lucide_react",
-      "ref_react"
+      "lib_validation_validatemessagebody",
+      "ref_react_hot_toast"
     ],
     "2": [
+      "app_globals",
+      "app_layout",
+      "app_layout_inter",
+      "app_layout_jetbrainsmono",
+      "app_layout_metadata",
+      "app_layout_rootlayout",
+      "app_layout_spacegrotesk",
+      "app_layout_viewport",
+      "contexts_authcontext",
+      "contexts_authcontext_authcontext",
+      "contexts_authcontext_authcontexttype",
+      "contexts_authcontext_authprovider",
+      "contexts_authcontext_test",
+      "contexts_authcontext_test_makeuser",
+      "contexts_authcontext_test_mocksupabase",
+      "contexts_authcontext_test_setupmockchain",
+      "contexts_authcontext_test_waitfornextupdate",
+      "contexts_communitycontext_communityprovider",
+      "contexts_communitycontext_test",
+      "contexts_communitycontext_test_authorprofile",
+      "contexts_communitycontext_test_filter",
+      "contexts_communitycontext_test_futureeventrow",
+      "contexts_communitycontext_test_makesupabasestub",
+      "contexts_communitycontext_test_makesupabasestub_resolveresult",
+      "contexts_communitycontext_test_operation",
+      "contexts_communitycontext_test_pasteventrow",
+      "contexts_communitycontext_test_seedandrender",
+      "contexts_communitycontext_test_seedpost",
+      "contexts_communitycontext_test_stub",
+      "contexts_communitycontext_test_stubstate",
+      "contexts_communitycontext_test_toastmock",
+      "contexts_communitycontext_test_useauthmock",
+      "contexts_themecontext",
+      "contexts_themecontext_theme",
+      "contexts_themecontext_themecontext",
+      "contexts_themecontext_themecontexttype",
+      "contexts_themecontext_themeprovider",
+      "lib_directory_test",
+      "lib_directory_test_isapprovedfaculty",
+      "lib_profile",
+      "lib_profile_asfacultystatus",
+      "lib_profile_asnullablestring",
+      "lib_profile_asnumber",
+      "lib_profile_asrole",
+      "lib_profile_asstring",
+      "lib_profile_asstringarray",
+      "lib_profile_faculty_statuses",
+      "lib_profile_fallbackprofilefromauth",
+      "lib_profile_isverifiedfaculty",
+      "lib_profile_normalizeprofile",
+      "lib_profile_profilewritablefields",
+      "lib_profile_roles",
+      "lib_profile_test",
+      "lib_supabase_errors",
+      "lib_supabase_errors_logsupabaseerror",
+      "lib_types_profile",
+      "ref_child_process",
+      "ref_fs",
+      "ref_node_path",
+      "ref_testing_library_jest_dom",
+      "ref_vitest",
+      "vitest_config",
+      "vitest_setup"
+    ],
+    "3": [
       "supabase_schema",
       "supabase_schema_announcements_created_idx",
       "supabase_schema_connection_active_pair",
@@ -202,7 +268,7 @@
       "supabase_schema_trg_update_faculty_app_updated_at",
       "supabase_schema_trg_update_profiles_updated_at"
     ],
-    "3": [
+    "4": [
       "public",
       "public_notifications",
       "supabase_migrations_20261013_network_and_faculty",
@@ -249,7 +315,53 @@
       "supabase_migrations_20261013_network_and_faculty_trg_message_insert",
       "supabase_migrations_20261013_network_and_faculty_trg_protect_profile_privileges"
     ],
-    "4": [
+    "5": [
+      "components_appshell",
+      "components_appshell_footer",
+      "components_authmodal",
+      "components_authmodal_authmodal",
+      "components_communitysidebar",
+      "components_communitysidebar_batches",
+      "components_communitysidebar_communitysidebar",
+      "components_createeventmodal",
+      "components_createeventmodal_createeventmodal",
+      "components_createpostmodal",
+      "components_createpostmodal_createpostmodal",
+      "components_createpostmodal_test",
+      "components_createpostmodal_test_flushturns",
+      "components_createpostmodal_test_makecontext",
+      "components_createpostmodal_test_typecontinuously",
+      "components_createpostmodal_test_usecommunitymock",
+      "components_mobilenavigation",
+      "components_mobilenavigation_mobilenavigation",
+      "components_modal",
+      "components_modal_modal",
+      "components_modal_modalclosebutton",
+      "components_modal_test",
+      "components_modal_test_controlledfieldmodal",
+      "components_modal_test_flushturns",
+      "components_navbar",
+      "components_navbar_nav_items",
+      "components_navbar_navbar",
+      "components_navbar_usedismiss",
+      "components_profilemodal",
+      "components_profilemodal_profilemodal",
+      "components_searchinput",
+      "components_searchinput_searchinput",
+      "contexts_communitycontext_usecommunity",
+      "contexts_themecontext_usetheme",
+      "lib_r2upload",
+      "lib_r2upload_isr2uploadresponse",
+      "lib_r2upload_issignedurlresponse",
+      "lib_r2upload_r2uploadresponse",
+      "lib_r2upload_signedurlresponse",
+      "lib_r2upload_uploadtor2",
+      "lib_utils_getavatarfallback",
+      "ref_lucide_react",
+      "ref_react",
+      "ref_testing_library_react"
+    ],
+    "6": [
       "app_api_admin_faculty_id_route",
       "app_api_admin_faculty_id_route_post",
       "app_api_admin_faculty_route",
@@ -282,36 +394,36 @@
       "ref_next",
       "ref_supabase_ssr"
     ],
-    "5": [
-      "components_eventcard",
-      "components_eventcard_dateblock",
-      "components_eventcard_eventcard",
-      "components_eventcard_eventcardprops",
-      "components_eventcard_type_tone",
-      "lib_logic_events",
-      "lib_logic_events_event_time_offset",
-      "lib_logic_events_eventphase",
-      "lib_logic_events_eventtiming",
-      "lib_logic_events_geteventphase",
-      "lib_logic_events_geteventtimes",
-      "lib_logic_events_iseventupcoming",
-      "lib_logic_events_startinstant",
-      "lib_logic_events_test",
-      "lib_logic_events_test_event",
-      "lib_logic_events_test_now",
-      "lib_types_event",
-      "lib_utils",
-      "lib_utils_cn",
-      "lib_utils_countdowntext",
-      "lib_utils_formateventdatetime",
-      "lib_utils_getcountdown",
-      "lib_utils_geteventtypecolor",
-      "lib_utils_getsupabaseimageurl",
-      "ref_clsx",
-      "ref_date_fns",
-      "ref_tailwind_merge"
+    "7": [
+      "app_signin_page",
+      "app_signin_page_signinform",
+      "app_signin_page_signinpage",
+      "app_signup_faculty_page",
+      "app_signup_faculty_page_facultysignupform",
+      "app_signup_faculty_page_facultysignuppage",
+      "app_signup_faculty_page_submitphase",
+      "app_signup_page",
+      "app_signup_page_passwordfield",
+      "app_signup_page_signupform",
+      "app_signup_page_signuppage",
+      "components_authformshell",
+      "components_authformshell_authformshell",
+      "lib_logic_messages",
+      "lib_logic_messages_canaccessconversation",
+      "lib_logic_messages_conversationunreadcount",
+      "lib_logic_messages_preparemessagebody",
+      "lib_utils_getyearfromusn",
+      "lib_utils_validateusn",
+      "lib_validation",
+      "lib_validation_bio_max_length",
+      "lib_validation_message_max_length",
+      "lib_validation_name_max_length",
+      "lib_validation_parsetaglist",
+      "lib_validation_sanitizetext",
+      "lib_validation_validatefacultysignup",
+      "lib_validation_validatestudentsignup"
     ],
-    "6": [
+    "8": [
       "public_connection_requests",
       "public_conversation_participants",
       "public_conversations",
@@ -334,7 +446,7 @@
       "supabase_migrations_20261013_network_fixes_trg_update_faculty_app_updated_at",
       "supabase_migrations_20261013_network_fixes_trg_update_profiles_updated_at"
     ],
-    "7": [
+    "9": [
       "docs_conflict_report_document",
       "docs_conflict_report_handle_new_user_ownership",
       "docs_conflict_report_migration_file_ownership",
@@ -356,7 +468,7 @@
       "docs_migration_dependency_order_phase_plan",
       "docs_migration_dependency_order_shared_schema_decisions"
     ],
-    "8": [
+    "10": [
       "insp_screenshot_from_2026_10_19_23_47_12_browser_tab",
       "insp_screenshot_from_2026_10_19_23_47_12_career_clubs",
       "insp_screenshot_from_2026_10_19_23_47_12_community_feed_screenshot",
@@ -378,60 +490,26 @@
       "insp_screenshot_from_2026_10_19_23_47_12_trending_posts",
       "insp_screenshot_from_2026_10_19_23_47_12_weekly_wins"
     ],
-    "9": [
-      "hooks_useconnections",
-      "lib_logic_connections",
-      "lib_logic_connections_canrequestconnection",
-      "lib_logic_connections_connectionpairkey",
-      "lib_logic_connections_countacceptedconnections",
-      "lib_logic_connections_otherpartyid",
-      "lib_logic_connections_resolveconnectionaction",
-      "lib_types",
-      "lib_types_connectionaction",
-      "lib_types_connectionrequest",
-      "lib_types_eventrsvp",
-      "lib_types_eventtype",
-      "lib_types_facultyapplicationstatus",
-      "lib_types_facultystatus",
-      "lib_types_json",
-      "lib_types_notificationtype",
-      "lib_types_userrole"
-    ],
-    "10": [
-      "contexts_communitycontext",
-      "contexts_communitycontext_communitycontext",
-      "contexts_communitycontext_communitycontexttype",
-      "contexts_communitycontext_communityprovider",
-      "contexts_communitycontext_countfromembed",
-      "contexts_communitycontext_embeddedprofile",
-      "contexts_communitycontext_mapevent",
-      "contexts_communitycontext_mappost",
-      "contexts_communitycontext_peeknormalizeprofile",
-      "contexts_communitycontext_test_seedandrender",
-      "lib_profile_profilewritablefields",
-      "lib_types_announcement",
-      "lib_types_comment",
-      "lib_types_feedfilter",
-      "lib_types_notification",
-      "lib_types_yearfilter"
-    ],
     "11": [
-      "lib_directory_test",
-      "lib_directory_test_isapprovedfaculty",
-      "lib_profile",
-      "lib_profile_asfacultystatus",
-      "lib_profile_asnullablestring",
-      "lib_profile_asnumber",
-      "lib_profile_asrole",
-      "lib_profile_asstring",
-      "lib_profile_asstringarray",
-      "lib_profile_faculty_statuses",
-      "lib_profile_fallbackprofilefromauth",
-      "lib_profile_normalizeprofile",
-      "lib_profile_roles",
-      "lib_profile_test",
-      "ref_child_process",
-      "ref_fs"
+      "lib_logic_events",
+      "lib_logic_events_event_time_offset",
+      "lib_logic_events_eventphase",
+      "lib_logic_events_eventtiming",
+      "lib_logic_events_geteventphase",
+      "lib_logic_events_geteventtimes",
+      "lib_logic_events_iseventupcoming",
+      "lib_logic_events_startinstant",
+      "lib_logic_events_test",
+      "lib_logic_events_test_event",
+      "lib_logic_events_test_now",
+      "lib_utils",
+      "lib_utils_cn",
+      "lib_utils_countdowntext",
+      "lib_utils_getcountdown",
+      "lib_utils_geteventtypecolor",
+      "lib_utils_getsupabaseimageurl",
+      "ref_clsx",
+      "ref_tailwind_merge"
     ],
     "12": [
       "agents_agent_file_generation",
@@ -450,38 +528,6 @@
       "readme_testing_checklist"
     ],
     "13": [
-      "components_modal_test",
-      "components_modal_test_controlledfieldmodal",
-      "components_modal_test_flushturns",
-      "contexts_authcontext_test",
-      "contexts_authcontext_test_makeuser",
-      "contexts_authcontext_test_mocksupabase",
-      "contexts_authcontext_test_setupmockchain",
-      "contexts_authcontext_test_waitfornextupdate",
-      "ref_node_path",
-      "ref_testing_library_jest_dom",
-      "ref_testing_library_react",
-      "ref_vitest",
-      "vitest_config",
-      "vitest_setup"
-    ],
-    "14": [
-      "components_postcard",
-      "components_postcard_commentitem",
-      "components_postcard_postcard",
-      "components_postcard_postcardprops",
-      "components_postcard_test",
-      "components_postcard_test_makecontext",
-      "components_postcard_test_makepost",
-      "components_postcard_test_usecommunitymock",
-      "components_postcard_test_useroutermock",
-      "components_postcard_test_viewerprofile",
-      "lib_profile_firstname",
-      "lib_types_post",
-      "lib_utils_formatdate",
-      "lib_utils_formatrelativetime"
-    ],
-    "15": [
       "docs_database_audit_table_inventory",
       "implementation_summary_connection_logic",
       "implementation_summary_document",
@@ -497,7 +543,7 @@
       "schema_audit_report_privilege_escalation_prevention",
       "schema_audit_report_role_hierarchy"
     ],
-    "16": [
+    "14": [
       "ref_supabase_supabase_js",
       "supabase_test_faculty_app_countapplications",
       "supabase_test_faculty_app_countprofiles",
@@ -513,7 +559,7 @@
       "supabase_test_faculty_app_testsuccessfulsubmission",
       "supabase_test_faculty_app_testtableexists"
     ],
-    "17": [
+    "15": [
       "supabase_migrations_20261014_faculty_applications",
       "supabase_migrations_20261014_faculty_applications_faculty_applications_created_at_idx",
       "supabase_migrations_20261014_faculty_applications_faculty_applications_one_pending",
@@ -529,7 +575,7 @@
       "supabase_migrations_20261014_faculty_applications_trg_faculty_application_transition",
       "supabase_migrations_20261014_faculty_applications_trg_update_faculty_app_updated_at"
     ],
-    "18": [
+    "16": [
       "agents_tasks_implementation_plan_admin_panel",
       "agents_tasks_implementation_plan_document",
       "agents_tasks_implementation_plan_faculty_portal",
@@ -544,37 +590,7 @@
       "final_report_rls_security",
       "final_report_student_network"
     ],
-    "19": [
-      "app_globals",
-      "app_layout",
-      "app_layout_inter",
-      "app_layout_jetbrainsmono",
-      "app_layout_metadata",
-      "app_layout_rootlayout",
-      "app_layout_spacegrotesk",
-      "app_layout_viewport",
-      "contexts_themecontext",
-      "contexts_themecontext_theme",
-      "contexts_themecontext_themecontext",
-      "contexts_themecontext_themecontexttype",
-      "contexts_themecontext_themeprovider"
-    ],
-    "20": [
-      "contexts_communitycontext_test",
-      "contexts_communitycontext_test_authorprofile",
-      "contexts_communitycontext_test_filter",
-      "contexts_communitycontext_test_futureeventrow",
-      "contexts_communitycontext_test_makesupabasestub",
-      "contexts_communitycontext_test_makesupabasestub_resolveresult",
-      "contexts_communitycontext_test_operation",
-      "contexts_communitycontext_test_pasteventrow",
-      "contexts_communitycontext_test_seedpost",
-      "contexts_communitycontext_test_stub",
-      "contexts_communitycontext_test_stubstate",
-      "contexts_communitycontext_test_toastmock",
-      "contexts_communitycontext_test_useauthmock"
-    ],
-    "21": [
+    "17": [
       "components_avatar",
       "components_avatar_avatar",
       "components_avatar_avatarprops",
@@ -588,7 +604,7 @@
       "lib_imageprocessing_thumbhashtodataurl",
       "ref_thumbhash"
     ],
-    "22": [
+    "18": [
       "insp_screenshot_from_2026_10_19_23_47_27_brand_logo",
       "insp_screenshot_from_2026_10_19_23_47_27_career_clubs",
       "insp_screenshot_from_2026_10_19_23_47_27_community_section",
@@ -602,7 +618,7 @@
       "insp_screenshot_from_2026_10_19_23_47_27_sidebar",
       "insp_screenshot_from_2026_10_19_23_47_27_top_nav"
     ],
-    "23": [
+    "19": [
       "agents_tasks_plan_admin_provisioning",
       "agents_tasks_plan_document",
       "agents_tasks_plan_faculty_security",
@@ -614,7 +630,7 @@
       "deployment_guide_first_admin_provisioning",
       "deployment_guide_postgrest_schema_reload"
     ],
-    "24": [
+    "20": [
       "supabase_migrations_20261013_usn_unique_and_columns",
       "supabase_migrations_20261013_usn_unique_and_columns_on_auth_user_created",
       "supabase_migrations_20261013_usn_unique_and_columns_profiles_student_usn_unique",
@@ -626,16 +642,7 @@
       "supabase_migrations_20261013_usn_unique_and_columns_trg_protect_profile_privileges",
       "supabase_migrations_20261013_usn_unique_and_columns_trg_update_profiles_updated_at"
     ],
-    "25": [
-      "contexts_authcontext",
-      "contexts_authcontext_authcontext",
-      "contexts_authcontext_authcontexttype",
-      "contexts_authcontext_authprovider",
-      "lib_supabase_errors",
-      "lib_supabase_errors_logsupabaseerror",
-      "lib_types_profile"
-    ],
-    "26": [
+    "21": [
       "supabase_migrations_20261014_auth_profile_provisioning",
       "supabase_migrations_20261014_auth_profile_provisioning_on_auth_user_created",
       "supabase_migrations_20261014_auth_profile_provisioning_public_handle_new_user",
@@ -644,7 +651,7 @@
       "supabase_migrations_20261014_auth_profile_provisioning_sql_public_profiles",
       "supabase_migrations_20261014_auth_profile_provisioning_trg_protect_profile_privileges"
     ],
-    "27": [
+    "22": [
       "deployment_guide_typescript_prop_fixes",
       "fixes_applied_description_body_prop_fix",
       "fixes_applied_document",
@@ -652,132 +659,101 @@
       "quick_fix_document",
       "quick_fix_sed_prop_rename"
     ],
-    "28": [
-      "lib_mock_data",
-      "lib_mock_data_mock_comments",
-      "lib_mock_data_mock_events",
-      "lib_mock_data_mock_notifications",
-      "lib_mock_data_mock_posts",
-      "lib_mock_data_mock_profiles"
-    ],
-    "29": [
-      "lib_r2upload",
-      "lib_r2upload_isr2uploadresponse",
-      "lib_r2upload_issignedurlresponse",
-      "lib_r2upload_r2uploadresponse",
-      "lib_r2upload_signedurlresponse",
-      "lib_r2upload_uploadtor2"
-    ],
-    "30": [
-      "components_createpostmodal_test",
-      "components_createpostmodal_test_flushturns",
-      "components_createpostmodal_test_makecontext",
-      "components_createpostmodal_test_typecontinuously",
-      "components_createpostmodal_test_usecommunitymock"
-    ],
-    "31": [
+    "23": [
       "eslint_config",
       "eslint_config_eslintconfig",
       "ref_eslint",
       "ref_eslint_config_next"
     ],
-    "32": [
-      "public_profiles",
+    "24": [
       "supabase_migrations_20261020_delete_policies",
-      "supabase_migrations_20261020_delete_policies_public_is_admin"
+      "supabase_migrations_20261020_delete_policies_public_is_admin",
+      "supabase_migrations_20261020_delete_policies_sql_public_profiles"
     ],
-    "33": [
+    "25": [
       "open_next_config",
       "ref_opennextjs_cloudflare"
     ],
-    "34": [
+    "26": [
       "public_comments"
     ],
-    "35": [
+    "27": [
       "public_event_rsvps"
     ],
-    "36": [
+    "28": [
       "public_events"
     ],
-    "37": [
+    "29": [
       "public_file_file_icon"
     ],
-    "38": [
+    "30": [
       "public_globe_globe_icon"
     ],
-    "39": [
+    "31": [
       "public_likes"
     ],
-    "40": [
+    "32": [
       "public_next_nextjs_wordmark"
     ],
-    "41": [
+    "33": [
       "public_posts"
     ],
-    "42": [
+    "34": [
       "public_upvotes"
     ],
-    "43": [
+    "35": [
       "public_vercel_vercel_triangle_logo"
     ],
-    "44": [
+    "36": [
       "public_window_browser_window_icon"
     ],
-    "45": [
+    "37": [
       "supabase_test_faculty_app_sql_supabase_test_faculty_app"
     ],
-    "46": [
+    "38": [
       "supabase_verify_schema"
     ]
   },
   "cohesion": {
-    "0": 0.08637747336377473,
-    "1": 0.11706349206349206,
-    "2": 0.07188778492109878,
-    "3": 0.0898989898989899,
-    "4": 0.0989247311827957,
-    "5": 0.12535612535612536,
-    "6": 0.10476190476190476,
-    "7": 0.1368421052631579,
-    "8": 0.15789473684210525,
-    "9": 0.14705882352941177,
-    "10": 0.20833333333333334,
-    "11": 0.24166666666666667,
+    "0": 0.05060882800608828,
+    "1": 0.13509615384615384,
+    "2": 0.051203277009728626,
+    "3": 0.07188778492109878,
+    "4": 0.0898989898989899,
+    "5": 0.12896405919661733,
+    "6": 0.0989247311827957,
+    "7": 0.150997150997151,
+    "8": 0.10476190476190476,
+    "9": 0.1368421052631579,
+    "10": 0.15789473684210525,
+    "11": 0.16374269005847952,
     "12": 0.16483516483516483,
-    "13": 0.15384615384615385,
-    "14": 0.24175824175824176,
-    "15": 0.17582417582417584,
-    "16": 0.27472527472527475,
-    "17": 0.26373626373626374,
-    "18": 0.20512820512820512,
-    "19": 0.1794871794871795,
-    "20": 0.15384615384615385,
-    "21": 0.25757575757575757,
-    "22": 0.24242424242424243,
-    "23": 0.2,
-    "24": 0.3111111111111111,
-    "25": 0.42857142857142855,
-    "26": 0.38095238095238093,
-    "27": 0.4666666666666667,
-    "28": 0.3333333333333333,
-    "29": 0.5333333333333333,
-    "30": 0.5,
-    "31": 0.5,
-    "32": 0.6666666666666666,
+    "13": 0.17582417582417584,
+    "14": 0.27472527472527475,
+    "15": 0.26373626373626374,
+    "16": 0.20512820512820512,
+    "17": 0.25757575757575757,
+    "18": 0.24242424242424243,
+    "19": 0.2,
+    "20": 0.3111111111111111,
+    "21": 0.38095238095238093,
+    "22": 0.4666666666666667,
+    "23": 0.5,
+    "24": 0.6666666666666666,
+    "25": 1.0,
+    "26": 1.0,
+    "27": 1.0,
+    "28": 1.0,
+    "29": 1.0,
+    "30": 1.0,
+    "31": 1.0,
+    "32": 1.0,
     "33": 1.0,
     "34": 1.0,
     "35": 1.0,
     "36": 1.0,
     "37": 1.0,
-    "38": 1.0,
-    "39": 1.0,
-    "40": 1.0,
-    "41": 1.0,
-    "42": 1.0,
-    "43": 1.0,
-    "44": 1.0,
-    "45": 1.0,
-    "46": 1.0
+    "38": 1.0
   },
   "gods": [
     {
@@ -788,7 +764,7 @@
     {
       "id": "components_useravatar_useravatar",
       "label": "UserAvatar()",
-      "degree": 31
+      "degree": 33
     },
     {
       "id": "components_appshell_appshell",
@@ -855,17 +831,6 @@
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; semantically similar concepts with no structural link"
     },
     {
-      "source": "Legacy user_profiles Conditional Sync",
-      "target": "Database Audit Report",
-      "source_files": [
-        "SCHEMA_AUDIT_REPORT.md",
-        "docs/database-audit.md"
-      ],
-      "confidence": "INFERRED",
-      "relation": "conceptually_related_to",
-      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Legacy user_profiles Conditional Sync` unexpectedly reaches hub `Database Audit Report`"
-    },
-    {
       "source": "Agent Migration Phase Plan",
       "target": "UBDT CSE Community Upgrade Implementation Plan",
       "source_files": [
@@ -875,6 +840,17 @@
       "confidence": "INFERRED",
       "relation": "conceptually_related_to",
       "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; bridges separate communities; peripheral node `Agent Migration Phase Plan` unexpectedly reaches hub `UBDT CSE Community Upgrade Implementation Plan`"
+    },
+    {
+      "source": "First Admin User Provisioning",
+      "target": "Manual First Admin Provisioning",
+      "source_files": [
+        "DEPLOYMENT_GUIDE.md",
+        ".agents/tasks/plan.md"
+      ],
+      "confidence": "INFERRED",
+      "relation": "semantically_similar_to",
+      "why": "inferred connection - not explicitly stated in source; connects across different repos/directories; semantically similar concepts with no structural link"
     },
     {
       "source": "PostgREST Schema Reload Step",
@@ -891,38 +867,38 @@
   "questions": [
     {
       "type": "bridge_node",
-      "question": "Why does `createClient()` connect `Admin & Directory Pages` to `Auth Flows & Hooks`, `Deployment & Architecture Docs`, `Event RSVPs Table`, `Community Feed Screenshot`?",
+      "question": "Why does `createClient()` connect `Community 1` to `Community 0`, `Community 2`, `Community 5`, `Community 7`?",
       "why": "High betweenness centrality (0.017) - this node is a cross-community bridge."
     },
     {
       "type": "isolated_nodes",
-      "question": "What connects `Realtime Publication Configuration`, `Layered Application Architecture`, `next dev Agent File Generation` to the rest of the system?",
+      "question": "What connects `Phase 1 Critical Bug Fixes`, `Implementation Plan Security Checklist`, `Faculty Role Approval Security` to the rest of the system?",
       "why": "23 weakly-connected nodes found - possible documentation gaps or missing edges."
     },
     {
       "type": "low_cohesion",
-      "question": "Should `Admin & Directory Pages` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.08637747336377473 - nodes in this community are weakly interconnected."
+      "question": "Should `Community 0` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.05060882800608828 - nodes in this community are weakly interconnected."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `useCommunity()` connect `Auth Flows & Hooks` to `Deployment & Architecture Docs`, `Auth Profile Provisioning`, `Root Layout & Logging`, `Implementation Roadmap`?",
+      "question": "Why does `useCommunity()` connect `Community 5` to `Community 0`, `Community 1`, `Community 2`?",
       "why": "High betweenness centrality (0.008) - this node is a cross-community bridge."
     },
     {
       "type": "low_cohesion",
-      "question": "Should `Auth Flows & Hooks` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.11706349206349206 - nodes in this community are weakly interconnected."
+      "question": "Should `Community 1` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.13509615384615384 - nodes in this community are weakly interconnected."
     },
     {
       "type": "bridge_node",
-      "question": "Why does `Profile` connect `Event RSVPs Table` to `Admin & Directory Pages`, `Auth Flows & Hooks`, `Community Feed Screenshot`, `Deployment & Architecture Docs`, `Schema Audit Concepts`, `Implementation Roadmap`, `Auth Profile Provisioning`, `Globe Icon Asset`?",
+      "question": "Why does `Profile` connect `Community 2` to `Community 0`, `Community 1`?",
       "why": "High betweenness centrality (0.007) - this node is a cross-community bridge."
     },
     {
       "type": "low_cohesion",
-      "question": "Should `Schema Constraints & Indexes` be split into smaller, more focused modules?",
-      "why": "Cohesion score 0.07188778492109878 - nodes in this community are weakly interconnected."
+      "question": "Should `Community 2` be split into smaller, more focused modules?",
+      "why": "Cohesion score 0.051203277009728626 - nodes in this community are weakly interconnected."
     }
   ]
 }

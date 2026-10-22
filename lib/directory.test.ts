@@ -1,28 +1,23 @@
 import { describe, it, expect, vi } from 'vitest'
 
 // --- Helpers imported from lib/profile so we can test them directly ---
-import { normalizeProfile, fallbackProfileFromAuth, isVerifiedFaculty, displayName } from '../lib/profile'
+import { normalizeProfile, fallbackProfileFromAuth, isVerifiedFaculty, isApprovedFaculty, displayName } from '../lib/profile'
+import { matchesDirectoryFilter, parseDirectoryFilter } from '../lib/directory'
 import type { Profile } from '../lib/types'
 
 // ===========================================================================
 // Directory-specific test suite (Agent 6)
 // ===========================================================================
 
-// Approved faculty = admin OR (role=faculty AND faculty_status=verified).
+// Approved faculty = admin OR (role=faculty AND faculty_status is approved).
 // A self-declared signup role is NOT proof of approval — pending and
 // rejected faculty are excluded from the directory.
-const isApprovedFaculty = (p: Record<string, unknown>): boolean => {
-  const role = p.role
-  if (role === 'admin') return true
-  if (role === 'faculty' && p.faculty_status === 'verified') return true
-  return false
-}
-
 describe('Directory profile filtering', () => {
   it('filters out pending-faculty from the approved faculty list', () => {
     const rows: Record<string, unknown>[] = [
       { id: 'a1', name: 'Admin User', role: 'admin', designation: 'Dean' },
       { id: 'a2', name: 'Verified Prof', role: 'faculty', faculty_status: 'verified', designation: 'Professor' },
+      { id: 'a6', name: 'Approved Prof', role: 'faculty', faculty_status: 'approved', designation: 'Professor' },
       { id: 'a3', name: 'Pending Prof', role: 'faculty', faculty_status: 'pending', designation: 'Asst Prof' },
       { id: 'a4', name: 'Rejected Prof', role: 'faculty', faculty_status: 'rejected', designation: 'Lecturer' },
       { id: 'a5', name: 'Student', role: 'student', year: 3 },
@@ -34,7 +29,8 @@ describe('Directory profile filtering', () => {
     // admin action (faculty_applications), not from self-declared role.
     const ids = filtered.map(p => String(p.id))
     expect(ids).toContain('a1') // admin
-    expect(ids).toContain('a2') // verified faculty
+    expect(ids).toContain('a2') // verified faculty (legacy vocabulary)
+    expect(ids).toContain('a6') // approved faculty (live database vocabulary)
     expect(ids).not.toContain('a3') // pending — should NOT appear
     expect(ids).not.toContain('a4') // rejected — should NOT appear
     expect(ids).not.toContain('a5') // student
@@ -160,22 +156,23 @@ describe('Directory UI — null safety for display fields', () => {
   })
 })
 
-describe('Faculty directory query columns must not expose private email', () => {
-  it('FACULTY_COLUMNS must not include email', () => {
-    // This test documents the constraint: directory column strings must
-    // never reference a public email column, even if the DB has one.
-    // Read the source file directly to confirm.
+describe('Faculty directory is the People directory', () => {
+  it('the legacy /faculty route redirects to the People faculty filter', () => {
+    // Faculty profiles must have one rendering path, not two subtly different
+    // directories. /faculty is retained only as a stable link target.
     const fs = require('fs')
     const facultyPage = fs.readFileSync('/home/shreyas/Downloads/antigravity_projects/community/app/faculty/page.tsx', 'utf-8')
+
+    expect(facultyPage).toContain("redirect('/people?filter=faculty')")
+    expect(facultyPage).not.toContain('FACULTY_COLUMNS')
+  })
+
+  it('PEOPLE_COLUMNS must not include email', () => {
+    // Directory column strings must never reference a public email column,
+    // even if the DB has one. Verification comes from a boolean RPC instead.
+    const fs = require('fs')
     const peoplePage = fs.readFileSync('/home/shreyas/Downloads/antigravity_projects/community/app/people/page.tsx', 'utf-8')
 
-    // Extract the FACULTY_COLUMNS constant value (single-quoted string)
-    const facultyColsMatch = facultyPage.match(/FACULTY_COLUMNS\s*=\s*'([^']+)'/)
-    expect(facultyColsMatch).not.toBeNull()
-    const facultyCols = facultyColsMatch![1]
-    expect(facultyCols).not.toContain('email')
-
-    // Extract the PEOPLE_COLUMNS constant value (single-quoted string)
     const peopleColsMatch = peoplePage.match(/PEOPLE_COLUMNS\s*=\s*'([^']+)'/)
     expect(peopleColsMatch).not.toBeNull()
     const peopleCols = peopleColsMatch![1]
@@ -218,6 +215,75 @@ describe('Faculty directory query columns must not expose private email', () => 
       })
 
     expect(suspiciousLines).toEqual([])
+  })
+})
+
+describe('Faculty directory filter is approval-gated', () => {
+  const member = (overrides: Partial<Profile>) => ({
+    role: 'student' as const,
+    faculty_status: 'none' as const,
+    member_type: 'student' as const,
+    year: null,
+    ...overrides,
+  })
+
+  it('includes only approved/verified faculty and admins', () => {
+    expect(
+      matchesDirectoryFilter(
+        member({ role: 'faculty', faculty_status: 'approved', member_type: 'faculty' }),
+        'faculty',
+      ),
+    ).toBe(true)
+    expect(
+      matchesDirectoryFilter(
+        member({ role: 'faculty', faculty_status: 'verified', member_type: 'faculty' }),
+        'faculty',
+      ),
+    ).toBe(true)
+    expect(
+      matchesDirectoryFilter(
+        member({ role: 'admin', faculty_status: 'none', member_type: 'faculty' }),
+        'faculty',
+      ),
+    ).toBe(true)
+  })
+
+  it('excludes pending, rejected and self-declared faculty', () => {
+    expect(
+      matchesDirectoryFilter(
+        member({ role: 'student', faculty_status: 'pending', member_type: 'student' }),
+        'faculty',
+      ),
+    ).toBe(false)
+    expect(
+      matchesDirectoryFilter(
+        member({ role: 'faculty', faculty_status: 'rejected', member_type: 'faculty' }),
+        'faculty',
+      ),
+    ).toBe(false)
+    expect(
+      matchesDirectoryFilter(
+        // A community label without the authorisation role is not approval.
+        member({ role: 'student', faculty_status: 'none', member_type: 'faculty' }),
+        'faculty',
+      ),
+    ).toBe(false)
+  })
+})
+
+describe('parseDirectoryFilter — URL filter safety', () => {
+  it('accepts every known filter', () => {
+    expect(parseDirectoryFilter('faculty')).toBe('faculty')
+    expect(parseDirectoryFilter('alumni')).toBe('alumni')
+    expect(parseDirectoryFilter('3')).toBe('3')
+  })
+
+  it('falls back to all for missing or unknown values', () => {
+    expect(parseDirectoryFilter(null)).toBe('all')
+    expect(parseDirectoryFilter(undefined)).toBe('all')
+    expect(parseDirectoryFilter('')).toBe('all')
+    expect(parseDirectoryFilter('administrators')).toBe('all')
+    expect(parseDirectoryFilter('1; drop table profiles')).toBe('all')
   })
 })
 

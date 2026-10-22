@@ -19,7 +19,7 @@ function Footer() {
       <div className="mx-auto w-full max-w-[1240px] px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start gap-3">
-            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-accent">
+            <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md border border-line bg-elevated text-accent-text">
               <GraduationCap className="h-4 w-4" />
             </span>
             <div>
@@ -42,9 +42,6 @@ function Footer() {
             </a>
             <Link href="/people" className="text-muted transition-colors hover:text-ink">
               Directory
-            </Link>
-            <Link href="/faculty" className="text-muted transition-colors hover:text-ink">
-              Faculty
             </Link>
             <button
               type="button"

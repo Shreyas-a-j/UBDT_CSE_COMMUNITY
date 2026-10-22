@@ -97,3 +97,44 @@ export async function uploadToR2(blob: Blob, path: string): Promise<string> {
   }
   return result.publicUrl;
 }
+
+/**
+ * Uploads one announcement image through the faculty-gated server route
+ * (`/api/announcements/upload`).
+ *
+ * The generic avatar endpoints are anonymous and always write `avatars/`
+ * keys, so announcements use their own route: it re-checks the caller's
+ * database role, validates the MIME type and size, and writes only under
+ * `announcements/`.
+ */
+export async function uploadAnnouncementImage(blob: Blob, filename?: string): Promise<string> {
+  const extension =
+    blob.type === 'image/png'
+      ? 'png'
+      : blob.type === 'image/jpeg'
+        ? 'jpg'
+        : blob.type === 'image/gif'
+          ? 'gif'
+          : 'webp'
+  const name = filename || `${Date.now()}.${extension}`
+
+  const formData = new FormData()
+  formData.append('file', blob, name)
+
+  const response = await fetch('/api/announcements/upload', {
+    method: 'POST',
+    body: formData,
+  })
+
+  if (!response.ok) {
+    const payload = (await response.json().catch(() => null)) as { error?: string } | null
+    throw new Error(payload?.error || `Upload failed (${response.status})`)
+  }
+
+  const result: unknown = await response.json()
+  if (!isR2UploadResponse(result) || typeof result.publicUrl !== 'string') {
+    throw new Error('Invalid upload response from server')
+  }
+
+  return result.publicUrl
+}

@@ -10,7 +10,9 @@ import AppShell from '@/components/AppShell'
 import PageHeader from '@/components/PageHeader'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
+import CommunityActivityExport from '@/components/CommunityActivityExport'
 import { useAuth } from '@/contexts/AuthContext'
+import { useCommunity } from '@/contexts/CommunityContext'
 import { canPublishFacultyContent } from '@/lib/profile'
 import { formatDate, formatEventDateTime } from '@/lib/utils'
 import toast from 'react-hot-toast'
@@ -19,6 +21,7 @@ function FacultyDashboard() {
   const router = useRouter()
   const supabase = createClient()
   const { profile: currentUser } = useAuth()
+  const { openCreateEvent } = useCommunity()
   const [myEvents, setMyEvents] = useState<Event[]>([])
   const [myAnnouncements, setMyAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
@@ -87,9 +90,7 @@ function FacultyDashboard() {
             </Link>
             <button
               type="button"
-              onClick={() => {
-                toast('Event creation coming soon')
-              }}
+              onClick={openCreateEvent}
               className="btn btn-outline"
             >
               <Calendar className="h-4 w-4" /> New event
@@ -97,6 +98,10 @@ function FacultyDashboard() {
           </>
         }
       />
+
+      <div className="mb-5">
+        <CommunityActivityExport />
+      </div>
 
       {loading ? (
         <LoadingSkeleton rows={3} />
@@ -106,10 +111,18 @@ function FacultyDashboard() {
           <section className="card flex flex-col overflow-hidden">
             <div className="flex items-center justify-between gap-3 border-b border-line px-5 py-3.5">
               <h2 className="flex items-center gap-2 text-[14px] font-semibold text-ink">
-                <Megaphone className="h-4 w-4 text-accent" />
+                <Megaphone className="h-4 w-4 text-accent-text" />
                 Announcements
               </h2>
-              <span className="chip text-[10.5px]">{myAnnouncements.length}</span>
+              <div className="flex items-center gap-2">
+                <Link
+                  href="/announcements"
+                  className="text-[11px] font-medium text-muted transition-colors hover:text-ink"
+                >
+                  Open channel
+                </Link>
+                <span className="chip text-[10.5px]">{myAnnouncements.length}</span>
+              </div>
             </div>
 
             {myAnnouncements.length === 0 ? (

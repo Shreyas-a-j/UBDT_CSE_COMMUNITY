@@ -7,6 +7,7 @@ import {
   CheckCircle,
   Clock,
   Loader2,
+  RefreshCw,
   Shield,
   ShieldCheck,
   XCircle,
@@ -18,160 +19,171 @@ import PageHeader from '@/components/PageHeader'
 import UserAvatar from '@/components/UserAvatar'
 import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
+import EmailVerificationBadge from '@/components/EmailVerificationBadge'
+import CommunityActivityExport from '@/components/CommunityActivityExport'
 import { useAuth } from '@/contexts/AuthContext'
-import { isAdmin, displayName } from '@/lib/profile'
+import { isAdmin, displayName, normalizeProfile } from '@/lib/profile'
 import { formatDate } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
+interface AdminFacultyPayload {
+  applications?: FacultyApplication[]
+  profiles?: Record<string, unknown>[]
+  emailVerified?: Record<string, boolean>
+  emailVerificationError?: string | null
+  error?: string
+}
+
 function AdminDashboard() {
   const router = useRouter()
-  const supabase = createClient()
-  const { profile: currentUser } = useAuth()
+  const { profile: currentUser, loading: authLoading } = useAuth()
   const [applications, setApplications] = useState<FacultyApplication[]>([])
   const [profiles, setProfiles] = useState<Record<string, Profile>>({})
+  const [emailVerified, setEmailVerified] = useState<Record<string, boolean>>({})
+  const [emailVerificationError, setEmailVerificationError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
 
-  const fetchApplications = useCallback(async () => {
-    if (!currentUser) return
-    setLoading(true)
+  // The admin route is the server-side authorisation boundary. The dashboard
+  // never updates faculty_applications directly: POST re-reads the caller's
+  // role before the database's RLS + transition triggers run.
+  const fetchApplications = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!currentUser || !isAdmin(currentUser)) return
+      if (!options?.silent) setLoading(true)
+      setError(null)
 
-    const { data, error } = await supabase
-      .from('faculty_applications')
-      .select('*')
-      .order('created_at', { ascending: false })
-
-    if (error) {
-      console.error('Error fetching applications:', error)
-    } else if (data) {
-      setApplications(data as FacultyApplication[])
-
-      // Fetch user profiles
-      const userIds = data.map(app => app.user_id)
-      const { data: profilesData } = await supabase
-        .from('profiles')
-        .select('*')
-        .in('id', userIds)
-
-      if (profilesData) {
-        const profileMap: Record<string, Profile> = {}
-        profilesData.forEach(p => {
-          profileMap[p.id] = p as Profile
+      try {
+        const response = await fetch('/api/admin/faculty', {
+          cache: 'no-store',
+          credentials: 'same-origin',
         })
-        setProfiles(profileMap)
-      }
-    }
+        const payload = (await response.json().catch(() => null)) as AdminFacultyPayload | null
 
-    setLoading(false)
-  }, [currentUser, supabase])
+        if (!response.ok) {
+          throw new Error(payload?.error || `Request failed (${response.status}).`)
+        }
+
+        setApplications(payload?.applications ?? [])
+        setEmailVerified(payload?.emailVerified ?? {})
+        setEmailVerificationError(payload?.emailVerificationError ?? null)
+
+        const profileMap: Record<string, Profile> = {}
+        for (const row of payload?.profiles ?? []) {
+          const normalized = normalizeProfile(row)
+          if (normalized) profileMap[normalized.id] = normalized
+        }
+        setProfiles(profileMap)
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load faculty applications.')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [currentUser],
+  )
 
   useEffect(() => {
-    if (currentUser) {
-      if (!isAdmin(currentUser)) {
-        toast.error('Access denied: Admin privileges required')
-        router.push('/')
+    if (authLoading) return
+    if (!currentUser) return
+    if (!isAdmin(currentUser)) {
+      toast.error('Access denied: Admin privileges required')
+      router.push('/')
+      return
+    }
+    queueMicrotask(() => fetchApplications())
+  }, [authLoading, currentUser, fetchApplications, router])
+
+  // Refresh after another administrator acts, or when the tab regains focus.
+  useEffect(() => {
+    if (authLoading || !currentUser || !isAdmin(currentUser)) return
+
+    const supabase = createClient()
+    const channel = supabase
+      .channel('admin-faculty-applications')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'faculty_applications' },
+        () => {
+          void fetchApplications({ silent: true })
+        },
+      )
+      .subscribe()
+
+    const refreshSilently = () => {
+      void fetchApplications({ silent: true })
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') refreshSilently()
+    }
+
+    window.addEventListener('focus', refreshSilently)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
+    return () => {
+      window.removeEventListener('focus', refreshSilently)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+      void supabase.removeChannel(channel)
+    }
+  }, [authLoading, currentUser, fetchApplications])
+
+  const decide = async (
+    applicationId: string,
+    decision: 'approved' | 'rejected',
+    notes?: string,
+  ) => {
+    setProcessingId(applicationId)
+
+    try {
+      const response = await fetch(`/api/admin/faculty/${applicationId}`, {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ decision, notes }),
+      })
+      const payload = (await response.json().catch(() => null)) as
+        | { error?: string; application?: FacultyApplication }
+        | null
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          toast('This application was already reviewed.')
+        } else {
+          toast.error(payload?.error || `Failed to ${decision === 'approved' ? 'approve' : 'reject'} application.`)
+        }
+        await fetchApplications({ silent: true })
         return
       }
-      queueMicrotask(() => fetchApplications())
-    }
-  }, [currentUser, fetchApplications, router])
 
-  const handleApprove = async (applicationId: string) => {
-    if (!currentUser) return
-    setProcessingId(applicationId)
-
-    // First update the faculty application
-    const { error: appError } = await supabase
-      .from('faculty_applications')
-      .update({
-        status: 'approved',
-        reviewed_by: currentUser.id,
-        reviewed_at: new Date().toISOString(),
-      })
-      .eq('id', applicationId)
-      .eq('status', 'pending') // Prevent double approval
-
-    if (appError) {
-      toast.error(`Failed to approve application: ${appError.message}`)
+      toast.success(
+        decision === 'approved'
+          ? 'Faculty application approved — faculty access granted'
+          : 'Faculty application rejected',
+      )
+      await fetchApplications({ silent: true })
+    } catch (err) {
+      toast.error(
+        err instanceof Error
+          ? err.message
+          : 'The request failed. Check your connection and try again.',
+      )
+    } finally {
       setProcessingId(null)
-      return
     }
-
-    // Get the application to find the user_id for profile update
-    const { data: appData, error: fetchError } = await supabase
-      .from('faculty_applications')
-      .select('user_id, designation, employee_id')
-      .eq('id', applicationId)
-      .single()
-
-    if (fetchError || !appData) {
-      toast.error('Failed to fetch application details')
-      fetchApplications()
-      setProcessingId(null)
-      return
-    }
-
-    // Update the user's profile to grant faculty access
-    const { error: profileError } = await supabase
-      .from('profiles')
-      .update({
-        role: 'faculty',
-        faculty_status: 'verified',
-        designation: appData.designation, // Set designation from application
-        employee_id: appData.employee_id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq('id', appData.user_id)
-      .eq('role', 'student') // Prevent re-approval of already approved users
-
-    if (profileError) {
-      toast.error(`Failed to update faculty profile: ${profileError.message}`)
-    } else {
-      toast.success('Faculty application approved - faculty access granted')
-    }
-
-    fetchApplications()
-    setProcessingId(null)
   }
 
-  const handleReject = async (applicationId: string, notes?: string) => {
-    if (!currentUser) return
-    setProcessingId(applicationId)
+  const handleApprove = (applicationId: string) => decide(applicationId, 'approved')
 
-    const { error } = await supabase
-      .from('faculty_applications')
-      .update({
-        status: 'rejected',
-        reviewed_by: currentUser.id,
-        reviewed_at: new Date().toISOString(),
-        notes: notes || 'Application not approved',
-      })
-      .eq('id', applicationId)
-      .eq('status', 'pending') // Prevent double rejection
+  const handleReject = (applicationId: string, notes?: string) =>
+    decide(applicationId, 'rejected', notes || 'Application not approved')
 
-    if (error) {
-      toast.error(`Failed to reject application: ${error.message}`)
-    } else {
-      toast.success('Faculty application rejected')
-
-      // Also update the user's profile to mark as rejected
-      const { data: appData } = await supabase
-        .from('faculty_applications')
-        .select('user_id')
-        .eq('id', applicationId)
-        .single()
-
-      if (appData) {
-        await supabase
-          .from('profiles')
-          .update({ faculty_status: 'rejected', updated_at: new Date().toISOString() })
-          .eq('id', appData.user_id)
-          .eq('role', 'student') // Only update students who applied
-      }
-    }
-
-    fetchApplications()
-    setProcessingId(null)
+  if (authLoading) {
+    return (
+      <div className="mx-auto w-full max-w-5xl">
+        <LoadingSkeleton rows={3} />
+      </div>
+    )
   }
 
   if (!currentUser || !isAdmin(currentUser)) {
@@ -193,7 +205,7 @@ function AdminDashboard() {
 
   const stats = [
     { label: 'Pending applications', value: pendingApplications.length, tone: 'text-warn' },
-    { label: 'Approved', value: approvedCount, tone: 'text-accent' },
+    { label: 'Approved', value: approvedCount, tone: 'text-accent-text' },
     { label: 'Rejected', value: rejectedCount, tone: 'text-danger' },
   ]
 
@@ -203,12 +215,74 @@ function AdminDashboard() {
         eyebrow={<><Shield className="h-3.5 w-3.5" /> Administration</>}
         title="Faculty applications"
         description="Review requests for faculty access. Approving an application grants verified publishing permissions immediately."
+        actions={
+          <button
+            type="button"
+            onClick={() => fetchApplications()}
+            disabled={loading}
+            className="btn btn-outline btn-sm"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        }
       />
+
+      {error && (
+        <div className="mb-5 flex flex-col gap-3 rounded-lg border border-error/30 bg-error/[0.06] p-4 sm:flex-row sm:items-start">
+          <AlertCircle className="h-5 w-5 shrink-0 text-danger" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-danger">
+              Could not load faculty applications
+            </p>
+            <p className="mt-1 break-words font-mono text-[11px] text-error/80">{error}</p>
+            <p className="mt-2 text-[11.5px] text-muted">
+              This is the database or server error, not an empty queue. Retry, or check the
+              migration and RLS configuration.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchApplications()}
+            className="btn btn-outline btn-sm shrink-0"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
+
+      {emailVerificationError && !loading && (
+        <div className="mb-5 flex flex-col gap-3 rounded-lg border border-warn/30 bg-warn/[0.05] p-4 sm:flex-row sm:items-start">
+          <AlertCircle className="h-5 w-5 shrink-0 text-warn" />
+          <div className="min-w-0 flex-1">
+            <p className="text-[13px] font-semibold text-ink">
+              Email verification status unavailable
+            </p>
+            <p className="mt-1 break-words font-mono text-[11px] text-muted">
+              {emailVerificationError}
+            </p>
+            <p className="mt-2 text-[11.5px] text-muted">
+              Applications remain reviewable. No verified badge is shown until the trusted
+              status can be read.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => fetchApplications({ silent: true })}
+            className="btn btn-outline btn-sm shrink-0"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Retry
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <LoadingSkeleton rows={3} />
       ) : (
         <div className="grid gap-5">
+          {/* Community activity export */}
+          <CommunityActivityExport />
+
           {/* Stats */}
           <div className="grid gap-3 sm:grid-cols-3">
             {stats.map(stat => (
@@ -234,9 +308,13 @@ function AdminDashboard() {
             {pendingApplications.length === 0 ? (
               <div className="p-4">
                 <EmptyState
-                  icon={<CheckCircle className="h-5 w-5 text-accent" />}
-                  title="Nothing to review"
-                  body="All faculty applications have been processed."
+                  icon={<CheckCircle className="h-5 w-5 text-accent-text" />}
+                  title={applications.length === 0 ? 'No applications yet' : 'Nothing to review'}
+                  body={
+                    applications.length === 0
+                      ? 'New faculty signups will appear here automatically. If a member says they applied and nothing appears, check the signup provisioning trigger and RLS.'
+                      : 'All faculty applications have been processed.'
+                  }
                 />
               </div>
             ) : (
@@ -269,6 +347,10 @@ function AdminDashboard() {
                             </p>
                             <div className="mt-1.5 space-y-0.5 break-words text-[10.5px] text-dim">
                               <p>Email: {app.official_email}</p>
+                              <EmailVerificationBadge
+                                verified={emailVerified[app.user_id]}
+                                className="mt-1"
+                              />
                               {app.employee_id && <p>Employee ID: {app.employee_id}</p>}
                               <p>Applied {formatDate(app.created_at)}</p>
                             </div>
@@ -332,13 +414,16 @@ function AdminDashboard() {
                         {app.designation} · Reviewed {formatDate(app.reviewed_at || app.created_at)}
                       </p>
                     </div>
-                    <span
-                      className={`chip self-start capitalize sm:self-auto ${
-                        app.status === 'approved' ? 'chip-accent' : 'chip-danger'
-                      }`}
-                    >
-                      {app.status}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5 self-start sm:self-auto">
+                      <EmailVerificationBadge verified={emailVerified[app.user_id]} />
+                      <span
+                        className={`chip capitalize ${
+                          app.status === 'approved' ? 'chip-accent' : 'chip-danger'
+                        }`}
+                      >
+                        {app.status}
+                      </span>
+                    </div>
                   </li>
                 ))}
               </ul>

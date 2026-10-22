@@ -1,8 +1,9 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { isApprovedFaculty } from '@/lib/profile'
 
 const AUTH_ROUTES = ['/signin', '/signup', '/forgot-password', '/reset-password']
-const PROTECTED_PREFIXES = ['/connections', '/messages', '/faculty/dashboard', '/admin']
+const PROTECTED_PREFIXES = ['/faculty/dashboard', '/admin']
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -61,11 +62,11 @@ export async function updateSession(request: NextRequest) {
       .select('role, faculty_status')
       .eq('id', user.id)
       .maybeSingle()
-    const allowed =
-      profile?.role === 'admin' || (profile?.role === 'faculty' && profile.faculty_status === 'verified')
+    const allowed = isApprovedFaculty(profile)
     if (!allowed) {
       const redirect = request.nextUrl.clone()
-      redirect.pathname = '/faculty'
+      redirect.pathname = '/people'
+      redirect.search = '?filter=faculty'
       return NextResponse.redirect(redirect)
     }
   }
