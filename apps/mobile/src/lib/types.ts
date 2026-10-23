@@ -5,7 +5,7 @@
  */
 
 export type UserRole = 'student' | 'faculty' | 'admin';
-export type FacultyStatus = 'none' | 'pending' | 'verified' | 'rejected';
+export type FacultyStatus = 'none' | 'pending' | 'approved' | 'verified' | 'rejected';
 export type ConnectionStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
 export type EventType = 'Workshop' | 'Meeting' | 'Showcase' | 'Seminar' | 'Project Session';
 export type PostType = 'discussion' | 'showcase';

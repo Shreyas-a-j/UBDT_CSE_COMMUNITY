@@ -8,7 +8,7 @@
 import type { FacultyStatus, Profile, UserRole } from './types';
 
 const ROLES: UserRole[] = ['student', 'faculty', 'admin'];
-const FACULTY_STATUSES: FacultyStatus[] = ['none', 'pending', 'verified', 'rejected'];
+const FACULTY_STATUSES: FacultyStatus[] = ['none', 'pending', 'approved', 'verified', 'rejected'];
 
 function asString(value: unknown, fallback = ''): string {
   return typeof value === 'string' ? value : fallback;
@@ -53,9 +53,14 @@ export function firstName(name?: string | null): string {
   return trimmed.split(/\s+/)[0] ?? 'Member';
 }
 
+/** Administrative faculty approval, not email verification. */
 export function isVerifiedFaculty(profile?: Profile | null): boolean {
   if (!profile) return false;
-  return profile.role === 'admin' || (profile.role === 'faculty' && profile.faculty_status === 'verified');
+  return (
+    profile.role === 'admin' ||
+    (profile.role === 'faculty' &&
+      (profile.faculty_status === 'approved' || profile.faculty_status === 'verified'))
+  );
 }
 
 export function isAdmin(profile?: Profile | null): boolean {

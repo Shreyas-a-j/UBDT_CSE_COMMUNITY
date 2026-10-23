@@ -79,7 +79,7 @@ begin
       'id', 'user_id', 'full_name', 'official_email',
       'department', 'designation', 'employee_id',
       'status', 'reviewed_by', 'reviewed_at',
-      'notes', 'created_at', 'updated_at'
+      'review_notes', 'created_at', 'updated_at'
     );
 
   if array_length(cols, 1) < 10 then
@@ -309,7 +309,7 @@ begin
 
   -- Reject it (as admin)
   update public.faculty_applications
-  set status = 'rejected', reviewed_by = admin_uid, reviewed_at = now(), notes = 'Test rejection'
+  set status = 'rejected', reviewed_by = admin_uid, reviewed_at = now(), review_notes = 'Test rejection'
   where id = app_id;
 
   -- Insert a new pending application (should succeed)

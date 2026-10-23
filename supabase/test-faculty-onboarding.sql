@@ -72,7 +72,7 @@ set status = 'approved', reviewed_at = now()
 where user_id = (select id from public.profiles where email = 'phase8-approved@example.com')
   and status = 'pending';
 update public.faculty_applications
-set status = 'rejected', reviewed_at = now(), notes = 'Fixture rejection'
+set status = 'rejected', reviewed_at = now(), review_notes = 'Fixture rejection'
 where user_id = (select id from public.profiles where email = 'phase8-rejected@example.com')
   and status = 'pending';
 commit;

@@ -53,6 +53,7 @@ CANONICAL=(
   2026102210_admin_role_check_alignment
   2026102211_signup_provisioning_schema_alignment
   2026102212_faculty_visibility_and_email_verification
+  2026102213_faculty_review_atomic
 )
 
 FAIL=0

@@ -219,7 +219,12 @@ export default function ProfileScreen() {
                 {profile.faculty_status !== 'none' ? (
                   <Badge
                     label={`Faculty ${profile.faculty_status}`}
-                    tone={profile.faculty_status === 'verified' ? 'good' : 'warn'}
+                    tone={
+                      profile.faculty_status === 'approved' ||
+                      profile.faculty_status === 'verified'
+                        ? 'good'
+                        : 'warn'
+                    }
                   />
                 ) : null}
                 {canPublishFacultyContent(profile) && profile.designation ? (

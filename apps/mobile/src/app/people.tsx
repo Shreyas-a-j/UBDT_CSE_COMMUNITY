@@ -431,7 +431,11 @@ function PersonCard({
             </Text>
             {person.role !== 'student' ? (
               <Badge
-                label={person.faculty_status === 'verified' ? 'Verified faculty' : person.role}
+                label={
+                  person.faculty_status === 'approved' || person.faculty_status === 'verified'
+                    ? 'Approved faculty'
+                    : person.role
+                }
                 tone="accent"
               />
             ) : null}

@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   AlertCircle,
@@ -44,6 +44,9 @@ function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [processingId, setProcessingId] = useState<string | null>(null)
+  // A ref, not state, is the duplicate-submit guard: two clicks in the same
+  // render can both observe the previous `processingId`.
+  const processingRef = useRef<Set<string>>(new Set())
 
   // The admin route is the server-side authorisation boundary. The dashboard
   // never updates faculty_applications directly: POST re-reads the caller's
@@ -130,9 +133,11 @@ function AdminDashboard() {
 
   const decide = async (
     applicationId: string,
-    decision: 'approved' | 'rejected',
+    decision: 'approve' | 'reject',
     notes?: string,
   ) => {
+    if (processingRef.current.has(applicationId)) return
+    processingRef.current.add(applicationId)
     setProcessingId(applicationId)
 
     try {
@@ -143,21 +148,23 @@ function AdminDashboard() {
         body: JSON.stringify({ decision, notes }),
       })
       const payload = (await response.json().catch(() => null)) as
-        | { error?: string; application?: FacultyApplication }
+        | { error?: string; outcome?: string; application?: FacultyApplication }
         | null
 
       if (!response.ok) {
-        if (response.status === 404) {
-          toast('This application was already reviewed.')
-        } else {
-          toast.error(payload?.error || `Failed to ${decision === 'approved' ? 'approve' : 'reject'} application.`)
-        }
+        // The API reports the real state: not found, already approved, already
+        // rejected, or changed by another administrator. Never replace that
+        // with a generic "already reviewed" message.
+        toast.error(
+          payload?.error ||
+            `Failed to ${decision === 'approve' ? 'approve' : 'reject'} application.`,
+        )
         await fetchApplications({ silent: true })
         return
       }
 
       toast.success(
-        decision === 'approved'
+        decision === 'approve'
           ? 'Faculty application approved — faculty access granted'
           : 'Faculty application rejected',
       )
@@ -169,14 +176,15 @@ function AdminDashboard() {
           : 'The request failed. Check your connection and try again.',
       )
     } finally {
+      processingRef.current.delete(applicationId)
       setProcessingId(null)
     }
   }
 
-  const handleApprove = (applicationId: string) => decide(applicationId, 'approved')
+  const handleApprove = (applicationId: string) => decide(applicationId, 'approve')
 
   const handleReject = (applicationId: string, notes?: string) =>
-    decide(applicationId, 'rejected', notes || 'Application not approved')
+    decide(applicationId, 'reject', notes || 'Application not approved')
 
   if (authLoading) {
     return (

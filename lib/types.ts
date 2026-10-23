@@ -187,7 +187,7 @@ export interface FacultyApplication {
   status: FacultyApplicationStatus
   reviewed_by: string | null
   reviewed_at: string | null
-  notes: string | null
+  review_notes: string | null
   created_at: string
   updated_at: string | null
 }

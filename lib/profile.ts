@@ -255,6 +255,11 @@ export function isApprovedFaculty(
   )
 }
 
+/**
+ * Legacy name for the administrative approval check. This is not an email
+ * verification check; email verification comes only from Supabase Auth
+ * (`auth.users.email_confirmed_at` via get_email_verification_status).
+ */
 export function isVerifiedFaculty(profile?: Profile | null): boolean {
   return isApprovedFaculty(profile)
 }

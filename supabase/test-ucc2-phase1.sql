@@ -385,7 +385,7 @@ begin
 
   -- Self-elevation attempt must be REVERTED (non-admin update).
   update public.profiles
-  set role = 'faculty', faculty_status = 'verified', member_type = 'faculty', graduation_year = 2000
+  set role = 'faculty', faculty_status = 'approved', member_type = 'faculty', graduation_year = 2000
   where id = v_id;
 
   select count(*) into n from public.profiles
