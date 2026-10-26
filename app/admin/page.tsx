@@ -21,6 +21,7 @@ import LoadingSkeleton from '@/components/LoadingSkeleton'
 import EmptyState from '@/components/EmptyState'
 import EmailVerificationBadge from '@/components/EmailVerificationBadge'
 import CommunityActivityExport from '@/components/CommunityActivityExport'
+import AdminHandover from '@/components/AdminHandover'
 import { useAuth } from '@/contexts/AuthContext'
 import { isAdmin, displayName, normalizeProfile } from '@/lib/profile'
 import { formatDate } from '@/lib/utils'
@@ -290,6 +291,9 @@ function AdminDashboard() {
         <div className="grid gap-5">
           {/* Community activity export */}
           <CommunityActivityExport />
+
+          {/* Administrator succession */}
+          <AdminHandover />
 
           {/* Stats */}
           <div className="grid gap-3 sm:grid-cols-3">

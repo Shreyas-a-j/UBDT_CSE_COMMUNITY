@@ -397,6 +397,18 @@ begin
   if inserted is null then
     raise exception 'FAIL: approved faculty could not publish';
   end if;
+
+  -- The publish fan-out trigger now writes one notification (and push outbox
+  -- row) per seeded member. This test only needs to prove publication is
+  -- allowed, so remove its side effects before later suites run. The
+  -- retention FK detaches outbox rows, so clean the push rows and ledger.
+  delete from public.notification_push_outbox
+  where source_type = 'announcement' and source_id = inserted;
+  delete from public.notification_dedupe_ledger
+  where dedupe_key = 'publish:announcement:' || inserted;
+  delete from public.notifications
+  where dedupe_key = 'publish:announcement:' || inserted;
+  delete from public.announcements where id = inserted;
 end $$;
 \echo '  PASS'
 

@@ -1,22 +1,34 @@
 'use client';
 
 /**
- * Notifications tab — RLS already restricts rows to the signed-in user. Rows
- * are real server records; opening one marks it read and routes to the
- * relevant destination using the notification type (and message link).
+ * Notifications tab — RLS already restricts rows to the signed-in user.
+ *
+ * Messaging and connection notifications are hidden server-side because the
+ * community product no longer has those surfaces. Opening a visible row marks
+ * it read and routes to the content the website opens.
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AppState, FlatList, Linking, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { router } from 'expo-router';
+import { router, useFocusEffect } from 'expo-router';
 
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
+import { HIDDEN_NOTIFICATION_FILTER, isNotificationVisible } from '@/lib/notifications';
+import { routeForNotification } from '@/lib/notification-route';
+import {
+  getPushPermissionState,
+  requestPushPermission,
+} from '@/lib/onesignal';
+import {
+  pushPermissionCopy,
+  type PushPermissionState,
+} from '@/lib/push-permission';
 import { useUnreadNotifications } from '@/lib/unread-notifications';
 import { formatRelativeTime } from '@/lib/community';
 import { logSupabaseError } from '@/lib/errors';
-import { Brand, Type } from '@/lib/theme';
+import { Brand, Radius, Type } from '@/lib/theme';
 import type { Notification, NotificationType } from '@/lib/types';
 import { PageHeader, Screen } from '@/components/layout';
 import { RowSkeleton } from '@/components/skeleton';
@@ -29,37 +41,11 @@ const ICONS: Record<NotificationType, React.ComponentProps<typeof Ionicons>['nam
   event_reminder: 'alarm-outline',
   like: 'heart-outline',
   upvote: 'arrow-up-circle-outline',
-  connection_request: 'person-add-outline',
-  connection_accepted: 'people-outline',
-  message: 'mail-outline',
   announcement: 'megaphone-outline',
   faculty_decision: 'ribbon-outline',
+  event_published: 'calendar-outline',
+  showcase_top2: 'trophy-outline',
 };
-
-function routeFor(notification: Notification) {
-  if (notification.type === 'message') {
-    const match = notification.link?.match(/^\/messages\/([0-9a-f-]+)/i);
-    if (match) {
-      router.push({ pathname: '/messages/[id]', params: { id: match[1] } });
-      return;
-    }
-    router.navigate({ pathname: '/network', params: { tab: 'messages' } });
-    return;
-  }
-  if (notification.type === 'connection_request') {
-    router.navigate({ pathname: '/network', params: { tab: 'requests' } });
-    return;
-  }
-  if (notification.type === 'connection_accepted') {
-    router.navigate({ pathname: '/network', params: { tab: 'connections' } });
-    return;
-  }
-  if (notification.type === 'faculty_decision') {
-    router.navigate('/profile');
-    return;
-  }
-  router.navigate('/');
-}
 
 export default function NotificationsScreen() {
   const { session } = useAuth();
@@ -72,6 +58,46 @@ export default function NotificationsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pushState, setPushState] = useState<PushPermissionState | null>(null);
+  const [pushBusy, setPushBusy] = useState(false);
+
+  const refreshPushState = useCallback(async () => {
+    setPushState(await getPushPermissionState());
+  }, []);
+
+  // Re-check when the user returns from Android settings. Reading permission
+  // never prompts; only handlePushAction can open the native prompt.
+  useEffect(() => {
+    void refreshPushState();
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void refreshPushState();
+    });
+    return () => subscription.remove();
+  }, [refreshPushState]);
+
+  const handlePushAction = useCallback(async () => {
+    if (pushBusy || pushState === null) return;
+
+    if (pushState === 'denied') {
+      try {
+        await Linking.openSettings();
+      } catch {
+        setActionError('Android notification settings could not be opened.');
+      }
+      return;
+    }
+
+    if (pushState === 'error') {
+      await refreshPushState();
+      return;
+    }
+
+    if (pushState !== 'not-determined') return;
+
+    setPushBusy(true);
+    setPushState(await requestPushPermission());
+    setPushBusy(false);
+  }, [pushBusy, pushState, refreshPushState]);
 
   const load = useCallback(
     async (refresh = false) => {
@@ -87,6 +113,7 @@ export default function NotificationsScreen() {
         .from('notifications')
         .select('*')
         .eq('user_id', userId)
+        .not('type', 'in', HIDDEN_NOTIFICATION_FILTER)
         .order('created_at', { ascending: false })
         .limit(60);
 
@@ -102,8 +129,22 @@ export default function NotificationsScreen() {
     [userId]
   );
 
+  // Refetch when the tab regains focus and when the app returns to the
+  // foreground. The realtime subscription covers inserts while the socket is
+  // connected and removes rows deleted by the 24-hour retention job.
+  const firstFocus = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      void load(!firstFocus.current);
+      firstFocus.current = false;
+    }, [load])
+  );
+
   useEffect(() => {
-    void load();
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void load(true);
+    });
+    return () => subscription.remove();
   }, [load]);
 
   useEffect(() => {
@@ -115,10 +156,20 @@ export default function NotificationsScreen() {
         { event: 'INSERT', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
         (payload) => {
           const next = payload.new as Notification;
+          if (!isNotificationVisible(next.type)) return;
           setNotifications((previous) => {
             if (previous.some((item) => item.id === next.id)) return previous;
             return [next, ...previous].slice(0, 60);
           });
+        }
+      )
+      .on(
+        'postgres_changes',
+        { event: 'DELETE', schema: 'public', table: 'notifications', filter: `user_id=eq.${userId}` },
+        (payload) => {
+          const removedId = (payload.old as { id?: string } | null)?.id;
+          if (!removedId) return;
+          setNotifications((previous) => previous.filter((item) => item.id !== removedId));
         }
       )
       .subscribe();
@@ -128,6 +179,12 @@ export default function NotificationsScreen() {
   }, [userId]);
 
   const unreadCount = useMemo(() => notifications.filter((item) => !item.read).length, [notifications]);
+  const pushCopy = pushState ? pushPermissionCopy(pushState) : null;
+  const showPushPrompt =
+    pushState !== null &&
+    pushState !== 'granted' &&
+    pushState !== 'unsupported' &&
+    Boolean(pushCopy?.action);
 
   const markAllRead = async () => {
     if (!userId || unreadCount === 0 || busy) return;
@@ -159,7 +216,7 @@ export default function NotificationsScreen() {
       if (updateError) setActionError(updateError.message);
       await unread.refresh();
     }
-    routeFor(notification);
+    router.push(routeForNotification(notification));
   };
 
   const header = (
@@ -180,6 +237,14 @@ export default function NotificationsScreen() {
           ) : undefined
         }
       />
+      {showPushPrompt && pushCopy && pushState ? (
+        <PushPermissionCard
+          state={pushState}
+          copy={pushCopy}
+          busy={pushBusy}
+          onAction={() => void handlePushAction()}
+        />
+      ) : null}
       {actionError ? (
         <View style={styles.bannerWrap}>
           <StatusBanner kind="error">{actionError}</StatusBanner>
@@ -211,7 +276,7 @@ export default function NotificationsScreen() {
             <EmptyState
               icon="notifications-off-outline"
               title="No notifications yet"
-              message="When someone replies, connects or messages you, it will show up here."
+              message="When someone replies, reacts or shares an update with you, it will show up here."
             />
           )
         }
@@ -229,6 +294,45 @@ export default function NotificationsScreen() {
         showsVerticalScrollIndicator={false}
       />
     </Screen>
+  );
+}
+
+function PushPermissionCard({
+  state,
+  copy,
+  busy,
+  onAction,
+}: {
+  state: PushPermissionState;
+  copy: { title: string; message: string; action: string | null };
+  busy: boolean;
+  onAction: () => void;
+}) {
+  if (!copy.action) return null;
+
+  return (
+    <View style={styles.pushCard}>
+      <View style={styles.pushRow}>
+        <View style={styles.pushIcon}>
+          <Ionicons
+            name={state === 'denied' ? 'notifications-off-outline' : 'notifications-outline'}
+            size={18}
+            color={Brand.accent}
+          />
+        </View>
+        <View style={styles.pushBody}>
+          <Text style={styles.pushTitle}>{copy.title}</Text>
+          <Text style={styles.pushMessage}>{copy.message}</Text>
+        </View>
+      </View>
+      <ActionButton
+        label={copy.action}
+        icon={state === 'denied' ? 'settings-outline' : 'notifications-outline'}
+        tone="accent"
+        busy={busy}
+        onPress={onAction}
+      />
+    </View>
   );
 }
 
@@ -281,6 +385,44 @@ const styles = StyleSheet.create({
   bannerWrap: {
     marginTop: 2,
     marginBottom: 10,
+  },
+  pushCard: {
+    marginBottom: 12,
+    gap: 12,
+    backgroundColor: Brand.accentSoft,
+    borderColor: `${Brand.accent}44`,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderRadius: Radius.lg,
+    padding: 14,
+  },
+  pushRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 11,
+  },
+  pushIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Brand.elevated,
+  },
+  pushBody: {
+    flex: 1,
+    minWidth: 0,
+  },
+  pushTitle: {
+    fontFamily: Type.bodySemiBold,
+    fontSize: 13.5,
+    color: Brand.ink,
+  },
+  pushMessage: {
+    fontFamily: Type.body,
+    fontSize: 12,
+    lineHeight: 17,
+    color: Brand.muted,
+    marginTop: 3,
   },
   summary: {
     fontFamily: Type.body,

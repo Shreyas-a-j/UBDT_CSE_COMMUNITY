@@ -18,6 +18,18 @@
 create extension if not exists "uuid-ossp";
 create extension if not exists "pgcrypto";
 
+-- Shared updated_at trigger helper. Defined before the first trigger that
+-- references it so a fresh install can create the push/email triggers.
+create or replace function public.update_updated_at_column()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at := timezone('utc'::text, now());
+  return new;
+end;
+$$;
+
 -- =========================================================
 -- 1. Profiles (canonical table)
 -- =========================================================
@@ -259,7 +271,8 @@ create table if not exists public.notifications (
   type text not null check (type in (
     'comment', 'rsvp', 'event_reminder', 'like', 'upvote',
     'connection_request', 'connection_accepted', 'message',
-    'announcement', 'faculty_decision'
+    'announcement', 'faculty_decision', 'event_published',
+    'showcase_top2'
   )),
   title text not null,
   body text,
@@ -276,7 +289,7 @@ create table if not exists public.notifications (
     or (content_type is not null and content_id is not null)
   ),
   constraint notifications_content_type_check
-    check (content_type is null or content_type in ('discussion', 'event', 'showcase')),
+    check (content_type is null or content_type in ('discussion', 'event', 'showcase', 'announcement')),
   constraint notifications_dedupe_key_check
     check (dedupe_key is null or char_length(dedupe_key) between 1 and 200)
 );
@@ -290,6 +303,474 @@ create index if not exists notifications_content_idx
 create unique index if not exists notifications_user_dedupe_key_unique
   on public.notifications (user_id, dedupe_key)
   where dedupe_key is not null;
+
+-- 24-hour retention scans by creation time.
+create index if not exists notifications_created_at_idx
+  on public.notifications (created_at);
+
+-- ---------------------------------------------------------
+-- Dedupe ledger: survives the in-app notification so deleting the row
+-- cannot authorize a duplicate push. released_at is set when retention
+-- deletes the notification; pruning waits 30 days after release.
+-- Server-only. Mirrors 2026102501_notification_retention.sql.
+-- ---------------------------------------------------------
+create table if not exists public.notification_dedupe_ledger (
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  dedupe_key text not null
+    check (char_length(dedupe_key) between 1 and 200),
+  created_at timestamp with time zone not null default now(),
+  released_at timestamp with time zone,
+  primary key (user_id, dedupe_key)
+);
+
+create index if not exists notification_dedupe_ledger_released_idx
+  on public.notification_dedupe_ledger (released_at)
+  where released_at is not null;
+
+alter table public.notification_dedupe_ledger enable row level security;
+revoke all on public.notification_dedupe_ledger from anon, authenticated;
+
+-- Suppress a duplicate key before the existing unique index sees it.
+-- The trigger owner can write the server-only ledger; clients cannot.
+create or replace function public.guard_notification_dedupe()
+returns trigger
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+begin
+  if new.dedupe_key is null then
+    return new;
+  end if;
+
+  insert into public.notification_dedupe_ledger (user_id, dedupe_key, created_at)
+  values (new.user_id, new.dedupe_key, coalesce(new.created_at, now()))
+  on conflict (user_id, dedupe_key) do nothing;
+
+  if not found then
+    return null;
+  end if;
+
+  return new;
+end;
+$$;
+
+revoke all on function public.guard_notification_dedupe() from public;
+revoke all on function public.guard_notification_dedupe() from anon;
+revoke all on function public.guard_notification_dedupe() from authenticated;
+
+drop trigger if exists trg_guard_notification_dedupe on public.notifications;
+create trigger trg_guard_notification_dedupe
+  before insert on public.notifications
+  for each row execute procedure public.guard_notification_dedupe();
+
+-- ---------------------------------------------------------
+-- Email preference (opt-out), default-on. Missing row = enabled:
+-- every read coalesces a missing row to true. Users manage their own
+-- row only; cross-user changes are service-role territory. Mirrors
+-- 2026102303_notification_publish_schema.sql.
+-- ---------------------------------------------------------
+create table if not exists public.notification_preferences (
+  user_id uuid primary key references public.profiles(id) on delete cascade,
+  email_enabled boolean not null default true,
+  push_enabled boolean not null default true,
+  updated_at timestamp with time zone not null default timezone('utc'::text, now())
+);
+
+drop trigger if exists trg_update_notification_preferences_updated_at on public.notification_preferences;
+create trigger trg_update_notification_preferences_updated_at
+  before update on public.notification_preferences
+  for each row execute procedure public.update_updated_at_column();
+
+-- ---------------------------------------------------------
+-- Durable email delivery queue: one row per (source, recipient),
+-- explicit delivery state, retry bookkeeping, unique idempotency key.
+-- No client policies and privileges revoked from anon/authenticated:
+-- only the service role (the Edge Function worker) reads or writes it.
+-- source_type is restricted to announcement/event so discussions and
+-- comments can never be queued for email at the schema level. Mirrors
+-- 2026102303_notification_publish_schema.sql.
+-- ---------------------------------------------------------
+create table if not exists public.notification_email_outbox (
+  id uuid primary key default gen_random_uuid(),
+  source_type text not null check (source_type in ('announcement', 'event')),
+  source_id uuid not null,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  status text not null default 'pending'
+    check (status in ('pending', 'sending', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0 check (attempts >= 0),
+  last_error text,
+  next_attempt_at timestamp with time zone not null default timezone('utc'::text, now()),
+  locked_at timestamp with time zone,
+  provider text not null default 'resend',
+  provider_message_id text,
+  sent_at timestamp with time zone,
+  created_at timestamp with time zone not null default timezone('utc'::text, now()),
+  updated_at timestamp with time zone not null default timezone('utc'::text, now()),
+  constraint notification_email_outbox_unique unique (source_type, source_id, user_id)
+);
+
+create index if not exists notification_email_outbox_due_idx
+  on public.notification_email_outbox (next_attempt_at)
+  where status in ('pending', 'failed');
+create index if not exists notification_email_outbox_user_idx
+  on public.notification_email_outbox (user_id, created_at desc);
+
+revoke all on public.notification_email_outbox from anon, authenticated;
+
+drop trigger if exists trg_update_notification_email_outbox_updated_at on public.notification_email_outbox;
+create trigger trg_update_notification_email_outbox_updated_at
+  before update on public.notification_email_outbox
+  for each row execute procedure public.update_updated_at_column();
+
+-- ---------------------------------------------------------
+-- Android push queue: one row per in-app notification. The outbox row
+-- UUID is the OneSignal idempotency key; notification_id is UNIQUE so a
+-- notification can never create two pushes. Retention detaches a
+-- terminal log instead of destroying delivery state. No client policies
+-- and no client privileges. Mirrors 2026102401 + 2026102501.
+-- ---------------------------------------------------------
+create table if not exists public.notification_push_outbox (
+  id uuid primary key default gen_random_uuid(),
+  notification_id uuid
+    references public.notifications(id) on delete set null,
+  user_id uuid not null references public.profiles(id) on delete cascade,
+  source_type text not null
+    check (source_type in ('announcement', 'event', 'showcase_top2')),
+  source_id uuid not null,
+  status text not null default 'pending'
+    check (status in ('pending', 'sending', 'sent', 'failed', 'skipped')),
+  attempts integer not null default 0 check (attempts >= 0),
+  last_error text,
+  next_attempt_at timestamp with time zone not null default timezone('utc'::text, now()),
+  locked_at timestamp with time zone,
+  provider text not null default 'onesignal',
+  provider_message_id text,
+  sent_at timestamp with time zone,
+  finished_at timestamp with time zone,
+  created_at timestamp with time zone not null default timezone('utc'::text, now()),
+  updated_at timestamp with time zone not null default timezone('utc'::text, now()),
+  constraint notification_push_outbox_notification_unique unique (notification_id)
+);
+
+create index if not exists notification_push_outbox_due_idx
+  on public.notification_push_outbox (next_attempt_at)
+  where status in ('pending', 'failed');
+create index if not exists notification_push_outbox_user_idx
+  on public.notification_push_outbox (user_id, created_at desc);
+create index if not exists notification_push_outbox_source_idx
+  on public.notification_push_outbox (source_type, source_id);
+create index if not exists notification_push_outbox_terminal_idx
+  on public.notification_push_outbox (status, finished_at)
+  where finished_at is not null;
+
+revoke all on public.notification_push_outbox from anon, authenticated;
+
+drop trigger if exists trg_update_notification_push_outbox_updated_at
+  on public.notification_push_outbox;
+create trigger trg_update_notification_push_outbox_updated_at
+  before update on public.notification_push_outbox
+  for each row execute procedure public.update_updated_at_column();
+
+-- ---------------------------------------------------------
+-- Durable showcase top-two tenures. One active row per post; a genuine
+-- re-entry gets entry_seq + 1 and therefore a distinct notification key.
+-- Server-only. Mirrors 2026102401_android_push_schema.sql.
+-- ---------------------------------------------------------
+create table if not exists public.showcase_top_entries (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts(id) on delete cascade,
+  entry_seq integer not null check (entry_seq > 0),
+  entered_at timestamp with time zone not null default timezone('utc'::text, now()),
+  left_at timestamp with time zone,
+  notified_at timestamp with time zone,
+  notification_id uuid references public.notifications(id) on delete set null,
+  created_at timestamp with time zone not null default timezone('utc'::text, now()),
+  constraint showcase_top_entries_seq_unique unique (post_id, entry_seq),
+  constraint showcase_top_entries_time_order_check
+    check (left_at is null or left_at >= entered_at)
+);
+
+create unique index if not exists showcase_top_entries_one_active_idx
+  on public.showcase_top_entries (post_id)
+  where left_at is null;
+create unique index if not exists showcase_top_entries_notification_idx
+  on public.showcase_top_entries (notification_id)
+  where notification_id is not null;
+create index if not exists showcase_top_entries_active_idx
+  on public.showcase_top_entries (entered_at desc)
+  where left_at is null;
+
+revoke all on public.showcase_top_entries from anon, authenticated;
+
+-- ---------------------------------------------------------
+-- Notification retention: one terminal predicate, batched cleanup, and
+-- a pg_cron schedule helper that is safe when pg_cron is not installed.
+-- Mirrors 2026102501_notification_retention.sql.
+-- ---------------------------------------------------------
+create or replace function public.notification_push_outbox_is_terminal(
+  p_status text,
+  p_finished_at timestamp with time zone,
+  p_next_attempt_at timestamp with time zone
+)
+returns boolean
+language sql
+stable
+set search_path = public, pg_temp
+as $$
+  select case
+    when p_status in ('sent', 'skipped') then true
+    when p_status = 'failed' then
+      p_finished_at is not null
+      or (p_next_attempt_at is not null
+          and p_next_attempt_at > now() + interval '1 day')
+    else false
+  end;
+$$;
+
+revoke all on function public.notification_push_outbox_is_terminal(
+  text, timestamp with time zone, timestamp with time zone
+) from public;
+revoke all on function public.notification_push_outbox_is_terminal(
+  text, timestamp with time zone, timestamp with time zone
+) from anon;
+revoke all on function public.notification_push_outbox_is_terminal(
+  text, timestamp with time zone, timestamp with time zone
+) from authenticated;
+
+create or replace function public.cleanup_expired_notifications(
+  p_notification_retention interval default interval '24 hours',
+  p_dedupe_retention interval default interval '30 days',
+  p_success_log_retention interval default interval '7 days',
+  p_failure_log_retention interval default interval '30 days',
+  p_batch_size integer default 1000,
+  p_max_batches integer default 10
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_now timestamp with time zone := now();
+  v_cutoff timestamp with time zone;
+  v_deleted_total bigint := 0;
+  v_released_total bigint := 0;
+  v_batch_deleted bigint;
+  v_batch_released bigint;
+  v_batches integer := 0;
+  v_orphan_released bigint := 0;
+  v_success_pruned bigint := 0;
+  v_failed_pruned bigint := 0;
+  v_dedupe_pruned bigint := 0;
+  v_remaining bigint := 0;
+  v_summary jsonb;
+begin
+  if p_notification_retention is null or p_notification_retention < interval '0' then
+    raise exception 'p_notification_retention must be a non-negative interval';
+  end if;
+  if p_dedupe_retention is null or p_dedupe_retention < interval '0' then
+    raise exception 'p_dedupe_retention must be a non-negative interval';
+  end if;
+  if p_success_log_retention is null or p_success_log_retention < interval '0' then
+    raise exception 'p_success_log_retention must be a non-negative interval';
+  end if;
+  if p_failure_log_retention is null or p_failure_log_retention < interval '0' then
+    raise exception 'p_failure_log_retention must be a non-negative interval';
+  end if;
+  if p_batch_size is null or p_batch_size <= 0 then
+    raise exception 'p_batch_size must be positive';
+  end if;
+  if p_max_batches is null or p_max_batches <= 0 then
+    raise exception 'p_max_batches must be positive';
+  end if;
+
+  v_cutoff := v_now - p_notification_retention;
+
+  update public.notification_push_outbox
+  set finished_at = coalesce(sent_at, updated_at, created_at)
+  where status in ('sent', 'skipped')
+    and finished_at is null;
+
+  update public.notification_push_outbox
+  set finished_at = coalesce(updated_at, created_at)
+  where status = 'failed'
+    and finished_at is null
+    and next_attempt_at > v_now + interval '1 day';
+
+  loop
+    exit when v_batches >= p_max_batches;
+
+    with expired as (
+      select n.id
+      from public.notifications n
+      where n.created_at < v_cutoff
+        and not exists (
+          select 1
+          from public.notification_push_outbox o
+          where o.notification_id = n.id
+            and not public.notification_push_outbox_is_terminal(
+              o.status, o.finished_at, o.next_attempt_at
+            )
+        )
+      order by n.created_at, n.id
+      limit p_batch_size
+      for update of n skip locked
+    ),
+    deleted as (
+      delete from public.notifications n
+      using expired e
+      where n.id = e.id
+      returning n.user_id, n.dedupe_key
+    ),
+    released as (
+      update public.notification_dedupe_ledger l
+      set released_at = v_now
+      from deleted d
+      where d.dedupe_key is not null
+        and l.user_id = d.user_id
+        and l.dedupe_key = d.dedupe_key
+        and l.released_at is null
+      returning 1
+    )
+    select
+      (select count(*) from deleted),
+      (select count(*) from released)
+    into v_batch_deleted, v_batch_released;
+
+    v_batches := v_batches + 1;
+    v_deleted_total := v_deleted_total + v_batch_deleted;
+    v_released_total := v_released_total + v_batch_released;
+
+    exit when v_batch_deleted = 0;
+    exit when v_batch_deleted < p_batch_size;
+  end loop;
+
+  update public.notification_dedupe_ledger l
+  set released_at = v_now
+  where l.released_at is null
+    and not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = l.user_id
+        and n.dedupe_key = l.dedupe_key
+    );
+  get diagnostics v_orphan_released = row_count;
+  v_released_total := v_released_total + v_orphan_released;
+
+  delete from public.notification_push_outbox o
+  where o.status in ('sent', 'skipped')
+    and coalesce(o.finished_at, o.sent_at, o.updated_at, o.created_at)
+        < v_now - p_success_log_retention;
+  get diagnostics v_success_pruned = row_count;
+
+  delete from public.notification_push_outbox o
+  where o.status = 'failed'
+    and public.notification_push_outbox_is_terminal(
+      o.status, o.finished_at, o.next_attempt_at
+    )
+    and coalesce(o.finished_at, o.updated_at, o.created_at)
+        < v_now - p_failure_log_retention;
+  get diagnostics v_failed_pruned = row_count;
+
+  delete from public.notification_dedupe_ledger l
+  where l.released_at is not null
+    and l.released_at < v_now - p_dedupe_retention
+    and not exists (
+      select 1
+      from public.notifications n
+      where n.user_id = l.user_id
+        and n.dedupe_key = l.dedupe_key
+    );
+  get diagnostics v_dedupe_pruned = row_count;
+
+  select count(*)
+  into v_remaining
+  from public.notifications n
+  where n.created_at < v_cutoff
+    and not exists (
+      select 1
+      from public.notification_push_outbox o
+      where o.notification_id = n.id
+        and not public.notification_push_outbox_is_terminal(
+          o.status, o.finished_at, o.next_attempt_at
+        )
+    );
+
+  v_summary := jsonb_build_object(
+    'cutoff', v_cutoff,
+    'deleted_notifications', v_deleted_total,
+    'released_dedupe_keys', v_released_total,
+    'pruned_success_logs', v_success_pruned,
+    'pruned_failed_logs', v_failed_pruned,
+    'pruned_dedupe_keys', v_dedupe_pruned,
+    'batches', v_batches,
+    'remaining_expired_notifications', v_remaining
+  );
+
+  raise notice
+    'notification retention: deleted=% released=% pruned_success=% pruned_failed=% pruned_dedupe=% batches=% remaining=%',
+    v_deleted_total, v_released_total, v_success_pruned, v_failed_pruned,
+    v_dedupe_pruned, v_batches, v_remaining;
+
+  return v_summary;
+end;
+$$;
+
+revoke all on function public.cleanup_expired_notifications(
+  interval, interval, interval, interval, integer, integer
+) from public;
+revoke all on function public.cleanup_expired_notifications(
+  interval, interval, interval, interval, integer, integer
+) from anon;
+revoke all on function public.cleanup_expired_notifications(
+  interval, interval, interval, interval, integer, integer
+) from authenticated;
+
+create or replace function public.ensure_notification_retention_schedule()
+returns boolean
+language plpgsql
+security definer
+set search_path = public, pg_temp
+as $$
+declare
+  v_jobname text := 'ucc2-cleanup-expired-notifications';
+  v_schedule text := '*/15 * * * *';
+  v_command text := 'select public.cleanup_expired_notifications();';
+  v_exists boolean;
+begin
+  if not exists (
+    select 1 from pg_extension where extname = 'pg_cron'
+  ) then
+    raise notice
+      'pg_cron is not installed; notification retention schedule was not created';
+    return false;
+  end if;
+
+  execute 'select exists (select 1 from cron.job where jobname = $1)'
+    into v_exists
+    using v_jobname;
+
+  if v_exists then
+    execute
+      'select cron.alter_job(jobid, schedule := $1, command := $2, active := true)
+         from cron.job
+        where jobname = $3
+        order by jobid
+        limit 1'
+      using v_schedule, v_command, v_jobname;
+  else
+    execute 'select cron.schedule($1, $2, $3)'
+      using v_jobname, v_schedule, v_command;
+  end if;
+
+  return true;
+end;
+$$;
+
+revoke all on function public.ensure_notification_retention_schedule() from public;
+revoke all on function public.ensure_notification_retention_schedule() from anon;
+revoke all on function public.ensure_notification_retention_schedule() from authenticated;
 
 -- =========================================================
 -- 8b. Content visits
@@ -686,16 +1167,6 @@ begin
   new.usn := old.usn;
   new.member_type := old.member_type;
   new.graduation_year := old.graduation_year;
-  return new;
-end;
-$$;
-
-create or replace function public.update_updated_at_column()
-returns trigger
-language plpgsql
-as $$
-begin
-  new.updated_at := timezone('utc'::text, now());
   return new;
 end;
 $$;
@@ -1262,6 +1733,315 @@ create trigger trg_enforce_participant_count
 before insert on public.conversation_participants
 for each row execute procedure public.enforce_conversation_participant_count();
 
+-- ---------------------------------------------------------
+-- Publish fan-out (announcements + events). Mirrors
+-- 2026102402_android_push_triggers.sql. AFTER INSERT only: edits
+-- (UPDATE) never publish. Eligibility = confirmed email, not
+-- banned/deleted, not the publisher. Each eligible recipient gets one
+-- in-app notification and, when the app preference allows it, one
+-- durable OneSignal push outbox row. Email is not enqueued.
+-- ---------------------------------------------------------
+create or replace function public.publish_recipient_ids(p_publisher uuid)
+returns setof uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id
+  from public.profiles p
+  join auth.users u on u.id = p.id
+  where u.email_confirmed_at is not null
+    and (u.banned_until is null or u.banned_until <= now())
+    and u.deleted_at is null
+    and (p_publisher is null or p.id <> p_publisher);
+$$;
+
+create or replace function public.on_publish_notification()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_kind text;
+  v_type text;
+  v_publisher uuid;
+  v_title text;
+  v_body text;
+  v_link text;
+  v_recipient uuid;
+  v_notification_id uuid;
+begin
+  if tg_table_name = 'announcements' then
+    v_kind := 'announcement';
+    v_type := 'announcement';
+    v_publisher := new.author_id;
+    v_title := left(new.title, 200);
+    v_body := left(new.body, 160);
+    v_link := '/announcements#announcement-' || new.id;
+  elsif tg_table_name = 'events' then
+    v_kind := 'event';
+    v_type := 'event_published';
+    v_publisher := new.host_id;
+    v_title := left(new.title, 200);
+    v_body := new.type || ' · ' || to_char(new.event_date, 'Dy, Mon DD, YYYY')
+              || ' · ' || to_char(new.event_time, 'HH24:MI');
+    v_link := '/#event-' || new.id;
+  else
+    return new;
+  end if;
+
+  for v_recipient in
+    select * from public.publish_recipient_ids(v_publisher)
+  loop
+    perform public.emit_notification(
+      v_recipient,
+      v_type,
+      v_title,
+      v_body,
+      v_link,
+      v_kind,
+      new.id,
+      'publish:' || v_kind || ':' || new.id
+    );
+
+    select n.id into v_notification_id
+    from public.notifications n
+    where n.user_id = v_recipient
+      and n.dedupe_key = 'publish:' || v_kind || ':' || new.id;
+
+    if v_notification_id is not null
+       and coalesce((
+         select p.push_enabled
+         from public.notification_preferences p
+         where p.user_id = v_recipient
+       ), true) then
+      insert into public.notification_push_outbox (
+        notification_id, user_id, source_type, source_id
+      ) values (
+        v_notification_id, v_recipient, v_kind, new.id
+      )
+      on conflict (notification_id) do nothing;
+    end if;
+  end loop;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_publish_fanout_announcement on public.announcements;
+create trigger trg_publish_fanout_announcement
+after insert on public.announcements
+for each row execute procedure public.on_publish_notification();
+
+drop trigger if exists trg_publish_fanout_event on public.events;
+create trigger trg_publish_fanout_event
+after insert on public.events
+for each row execute procedure public.on_publish_notification();
+
+-- ---------------------------------------------------------
+-- Showcase top-two tenures. Mirrors 2026102402_android_push_triggers.sql.
+-- Ranking: upvotes desc, created_at desc, id asc; only showcases with at
+-- least one upvote; cap 2. The advisory lock serializes ranking writers.
+-- ---------------------------------------------------------
+create or replace function public.recompute_showcase_top2()
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_top_ids uuid[] := '{}'::uuid[];
+  v_post record;
+  v_entry_id uuid;
+  v_seq integer;
+  v_notification_id uuid;
+  v_dedupe_key text;
+begin
+  perform pg_advisory_xact_lock(
+    hashtextextended('public.showcase_top2_ranking', 0)
+  );
+
+  select coalesce(array_agg(r.id order by r.rank_order), '{}'::uuid[])
+  into v_top_ids
+  from (
+    select
+      p.id,
+      row_number() over (
+        order by count(u.id) desc, p.created_at desc, p.id asc
+      ) as rank_order
+    from public.posts p
+    join public.upvotes u on u.post_id = p.id
+    where p.type = 'showcase'
+    group by p.id
+    order by count(u.id) desc, p.created_at desc, p.id asc
+    limit 2
+  ) r;
+
+  -- Close every active tenure that is no longer in the current top two.
+  -- Skip posts that are already gone: a showcase DELETE cascades to its
+  -- tenure rows in the same statement, and updating a tenure whose parent
+  -- post was just removed would violate the FK before the cascade lands.
+  update public.showcase_top_entries e
+  set left_at = timezone('utc'::text, now())
+  where e.left_at is null
+    and not (e.post_id = any(v_top_ids))
+    and exists (
+      select 1 from public.posts p where p.id = e.post_id
+    );
+
+  for v_post in
+    select p.id, p.author_id, p.title
+    from public.posts p
+    where p.id = any(v_top_ids)
+  loop
+    select e.id into v_entry_id
+    from public.showcase_top_entries e
+    where e.post_id = v_post.id
+      and e.left_at is null;
+
+    if v_entry_id is null then
+      select coalesce(max(e.entry_seq), 0) + 1 into v_seq
+      from public.showcase_top_entries e
+      where e.post_id = v_post.id;
+
+      insert into public.showcase_top_entries (post_id, entry_seq)
+      values (v_post.id, v_seq)
+      returning id into v_entry_id;
+
+      v_dedupe_key := 'showcase_top2:' || v_post.id || ':' || v_seq;
+
+      insert into public.notifications (
+        user_id, type, title, body, link,
+        content_type, content_id, dedupe_key
+      ) values (
+        v_post.author_id,
+        'showcase_top2',
+        'Your showcase is in the top two',
+        left(v_post.title, 160),
+        '/#showcase-' || v_post.id,
+        'showcase',
+        v_post.id,
+        v_dedupe_key
+      )
+      on conflict (user_id, dedupe_key) where dedupe_key is not null
+      do nothing
+      returning id into v_notification_id;
+
+      if v_notification_id is null then
+        select n.id into v_notification_id
+        from public.notifications n
+        where n.user_id = v_post.author_id
+          and n.dedupe_key = v_dedupe_key;
+      end if;
+
+      if v_notification_id is not null then
+        update public.showcase_top_entries
+        set notification_id = v_notification_id,
+            notified_at = timezone('utc'::text, now())
+        where id = v_entry_id;
+
+        if coalesce((
+          select p.push_enabled
+          from public.notification_preferences p
+          where p.user_id = v_post.author_id
+        ), true) then
+          insert into public.notification_push_outbox (
+            notification_id, user_id, source_type, source_id
+          ) values (
+            v_notification_id, v_post.author_id, 'showcase_top2', v_post.id
+          )
+          on conflict (notification_id) do nothing;
+        end if;
+      end if;
+    end if;
+  end loop;
+end;
+$$;
+
+create or replace function public.on_showcase_ranking_change()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  perform public.recompute_showcase_top2();
+  return null;
+end;
+$$;
+
+drop trigger if exists trg_showcase_ranking_post_insert on public.posts;
+create trigger trg_showcase_ranking_post_insert
+after insert on public.posts
+for each row execute procedure public.on_showcase_ranking_change();
+
+drop trigger if exists trg_showcase_ranking_post_delete on public.posts;
+create trigger trg_showcase_ranking_post_delete
+after delete on public.posts
+for each row execute procedure public.on_showcase_ranking_change();
+
+drop trigger if exists trg_showcase_ranking_post_update on public.posts;
+create trigger trg_showcase_ranking_post_update
+after update of type, author_id, created_at on public.posts
+for each row execute procedure public.on_showcase_ranking_change();
+
+drop trigger if exists trg_showcase_ranking_upvote_insert on public.upvotes;
+create trigger trg_showcase_ranking_upvote_insert
+after insert on public.upvotes
+for each row execute procedure public.on_showcase_ranking_change();
+
+drop trigger if exists trg_showcase_ranking_upvote_delete on public.upvotes;
+create trigger trg_showcase_ranking_upvote_delete
+after delete on public.upvotes
+for each row execute procedure public.on_showcase_ranking_change();
+
+drop trigger if exists trg_showcase_ranking_upvote_update on public.upvotes;
+create trigger trg_showcase_ranking_upvote_update
+after update of post_id, user_id on public.upvotes
+for each row execute procedure public.on_showcase_ranking_change();
+
+-- Seed current top-two entries as already notified on a new/upgraded
+-- database so deployment does not re-announce history. On a brand-new
+-- empty database this inserts nothing.
+insert into public.showcase_top_entries (
+  post_id, entry_seq, entered_at, notified_at
+)
+select r.id, 1, timezone('utc'::text, now()), timezone('utc'::text, now())
+from (
+  select p.id
+  from public.posts p
+  join public.upvotes u on u.post_id = p.id
+  where p.type = 'showcase'
+  group by p.id
+  order by count(u.id) desc, p.created_at desc, p.id asc
+  limit 2
+) r
+on conflict do nothing;
+
+-- Historical email table: new inserts are blocked. The table and rows are
+-- retained; email delivery is no longer part of this product flow.
+create or replace function public.block_new_email_enqueue()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  raise exception using
+    errcode = '0A000',
+    message = 'Email delivery is disabled for this deployment.',
+    hint = 'Use public.notification_push_outbox. Historical email rows are retained.';
+end;
+$$;
+
+drop trigger if exists trg_block_new_email_enqueue
+  on public.notification_email_outbox;
+create trigger trg_block_new_email_enqueue
+before insert on public.notification_email_outbox
+for each row execute procedure public.block_new_email_enqueue();
+
 -- =========================================================
 -- 15. Function permissions
 -- =========================================================
@@ -1270,6 +2050,22 @@ grant execute on function public.get_or_create_direct_conversation(uuid) to auth
 
 revoke all on function public.emit_notification(uuid, text, text, text, text, text, uuid, text) from public;
 revoke all on function public.emit_notification(uuid, text, text, text, text, text, uuid, text) from anon, authenticated;
+
+revoke all on function public.publish_recipient_ids(uuid) from public;
+revoke all on function public.publish_recipient_ids(uuid) from anon, authenticated;
+revoke all on function public.on_publish_notification() from public;
+revoke all on function public.on_publish_notification() from anon, authenticated;
+revoke all on function public.recompute_showcase_top2() from public;
+revoke all on function public.recompute_showcase_top2() from anon, authenticated;
+revoke all on function public.on_showcase_ranking_change() from public;
+revoke all on function public.on_showcase_ranking_change() from anon, authenticated;
+revoke all on function public.block_new_email_enqueue() from public;
+revoke all on function public.block_new_email_enqueue() from anon, authenticated;
+
+comment on table public.notification_email_outbox is
+  'HISTORICAL ONLY since 2026102403. New inserts are blocked; android push uses notification_push_outbox.';
+comment on function public.block_new_email_enqueue() is
+  'Fail-closed guard: email delivery is disabled. Drop this trigger only with an approved re-enable migration.';
 
 grant execute on function public.is_admin(uuid) to authenticated, anon;
 grant execute on function public.is_verified_faculty(uuid) to authenticated, anon;
@@ -1298,6 +2094,10 @@ alter table public.announcement_reactions enable row level security;
 alter table public.direct_conversation_pairs enable row level security;
 alter table public.profile_contacts enable row level security;
 alter table public.content_visits enable row level security;
+alter table public.notification_preferences enable row level security;
+alter table public.notification_email_outbox enable row level security;
+alter table public.notification_push_outbox enable row level security;
+alter table public.showcase_top_entries enable row level security;
 
 -- Profiles
 drop policy if exists "Public profiles are viewable by everyone" on public.profiles;
@@ -1381,6 +2181,15 @@ create policy "Users view own notifications" on public.notifications
   for select using (auth.uid() = user_id);
 create policy "Users can update own notifications" on public.notifications
   for update using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- Email preference — own row only (see 2026102303). The outbox has RLS
+-- enabled with NO policies on purpose: every client read/write denied.
+drop policy if exists "Users manage own notification preferences" on public.notification_preferences;
+create policy "Users manage own notification preferences"
+  on public.notification_preferences
+  for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
 
 -- Profile contacts — private by default.
 -- The owner can manage their row; admins may read every row; everyone else
@@ -1502,6 +2311,206 @@ create policy "No direct access to direct_conversation_pairs" on public.direct_c
   for all using (false) with check (false);
 
 -- =========================================================
+-- 16b. Discussion pins (UCC 2.0 verified-faculty pinning)
+--
+-- Discussions are public.posts rows with type = 'discussion'. Pins live
+-- in a dedicated table so a discussion can be pinned again after expiry
+-- without losing its pin history. An active pin is:
+--   unpinned_at is null AND pin_expires_at > now()
+--
+-- Mutations are only possible through the SECURITY DEFINER functions;
+-- the table has a read-only RLS policy for active rows and no write
+-- policies or write grants for anon/authenticated.
+-- =========================================================
+create table if not exists public.discussion_pins (
+  id uuid primary key default gen_random_uuid(),
+  post_id uuid not null references public.posts(id) on delete cascade,
+  pinned_by uuid not null references public.profiles(id) on delete cascade,
+  pinned_at timestamp with time zone not null default timezone('utc'::text, now()),
+  pin_expires_at timestamp with time zone not null
+    default (timezone('utc'::text, now()) + interval '7 days'),
+  unpinned_at timestamp with time zone,
+  unpinned_by uuid references public.profiles(id) on delete set null,
+  constraint discussion_pins_expiry_check
+    check (pin_expires_at > pinned_at),
+  constraint discussion_pins_unpin_pair_check
+    check (unpinned_at is not null or unpinned_by is null)
+);
+
+create unique index if not exists discussion_pins_one_active_per_discussion
+  on public.discussion_pins (post_id)
+  where unpinned_at is null;
+
+create index if not exists discussion_pins_active_idx
+  on public.discussion_pins (pinned_at desc, pin_expires_at desc)
+  where unpinned_at is null;
+
+create index if not exists discussion_pins_post_idx
+  on public.discussion_pins (post_id, pinned_at desc);
+
+create or replace function public.pin_discussion(p_discussion_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_now timestamp with time zone := timezone('utc'::text, now());
+  v_discussion public.posts%rowtype;
+  v_pin_id uuid;
+  v_active_count integer;
+begin
+  if v_uid is null
+     or not (
+       public.is_admin(v_uid)
+       or public.is_verified_faculty(v_uid)
+     ) then
+    raise exception 'Only admins and verified faculty can pin or unpin discussions.'
+      using errcode = '42501';
+  end if;
+
+  if p_discussion_id is null then
+    raise exception 'A discussion id is required.' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(2026102301::bigint);
+
+  select *
+    into v_discussion
+  from public.posts
+  where id = p_discussion_id;
+
+  if not found then
+    raise exception 'Discussion not found.' using errcode = 'P0002';
+  end if;
+
+  if v_discussion.type is distinct from 'discussion' then
+    raise exception 'Only discussions can be pinned.' using errcode = '22023';
+  end if;
+
+  update public.discussion_pins
+  set unpinned_at = v_now
+  where post_id = p_discussion_id
+    and unpinned_at is null
+    and pin_expires_at <= v_now;
+
+  if exists (
+    select 1
+    from public.discussion_pins
+    where post_id = p_discussion_id
+      and unpinned_at is null
+      and pin_expires_at > v_now
+  ) then
+    raise exception 'This discussion is already pinned.' using errcode = '23505';
+  end if;
+
+  select count(*)
+    into v_active_count
+  from public.discussion_pins
+  where unpinned_at is null
+    and pin_expires_at > v_now;
+
+  if v_active_count >= 3 then
+    raise exception
+      'The community already has 3 active pinned discussions. Wait for a pin to expire or unpin one first.'
+      using errcode = '23514';
+  end if;
+
+  insert into public.discussion_pins (
+    post_id,
+    pinned_by,
+    pinned_at,
+    pin_expires_at
+  )
+  values (
+    p_discussion_id,
+    v_uid,
+    v_now,
+    v_now + interval '7 days'
+  )
+  returning id into v_pin_id;
+
+  return v_pin_id;
+end;
+$$;
+
+create or replace function public.unpin_discussion(p_discussion_id uuid)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_uid uuid := auth.uid();
+  v_now timestamp with time zone := timezone('utc'::text, now());
+  v_pin_id uuid;
+begin
+  if v_uid is null
+     or not (
+       public.is_admin(v_uid)
+       or public.is_verified_faculty(v_uid)
+     ) then
+    raise exception 'Only admins and verified faculty can pin or unpin discussions.'
+      using errcode = '42501';
+  end if;
+
+  if p_discussion_id is null then
+    raise exception 'A discussion id is required.' using errcode = '22023';
+  end if;
+
+  perform pg_advisory_xact_lock(2026102301::bigint);
+
+  update public.discussion_pins
+  set
+    unpinned_at = v_now,
+    unpinned_by = v_uid
+  where post_id = p_discussion_id
+    and unpinned_at is null
+    and pin_expires_at > v_now
+  returning id into v_pin_id;
+
+  if v_pin_id is null then
+    if exists (
+      select 1
+      from public.discussion_pins
+      where post_id = p_discussion_id
+        and unpinned_at is null
+        and pin_expires_at <= v_now
+    ) then
+      raise exception 'This pin has already expired.' using errcode = 'P0002';
+    end if;
+
+    raise exception 'This discussion is not pinned.' using errcode = 'P0002';
+  end if;
+
+  return v_pin_id;
+end;
+$$;
+
+revoke all on public.discussion_pins from anon, authenticated;
+grant select on public.discussion_pins to anon, authenticated;
+
+revoke all on function public.pin_discussion(uuid) from public;
+revoke all on function public.pin_discussion(uuid) from anon;
+revoke all on function public.pin_discussion(uuid) from authenticated;
+grant execute on function public.pin_discussion(uuid) to authenticated;
+
+revoke all on function public.unpin_discussion(uuid) from public;
+revoke all on function public.unpin_discussion(uuid) from anon;
+revoke all on function public.unpin_discussion(uuid) from authenticated;
+grant execute on function public.unpin_discussion(uuid) to authenticated;
+
+alter table public.discussion_pins enable row level security;
+
+drop policy if exists "Active discussion pins are viewable by everyone"
+  on public.discussion_pins;
+create policy "Active discussion pins are viewable by everyone"
+  on public.discussion_pins
+  for select
+  using (unpinned_at is null and pin_expires_at > now());
+
+-- =========================================================
 -- 17. Realtime Publication
 -- =========================================================
 alter table public.messages replica identity full;
@@ -1529,4 +2538,1369 @@ begin
   end;
 end $$;
 
+select public.ensure_notification_retention_schedule();
+
 notify pgrst, 'reload schema';
+
+-- =========================================================
+-- 18. Administrator succession and faculty review (reconciled)
+--
+-- These blocks are copied verbatim (transaction markers removed)
+-- from the canonical migrations so a fresh install from this file
+-- includes the same administrator handover and atomic faculty
+-- review objects as an existing database that ran the chain:
+--   2026102208_single_admin_succession.sql
+--   2026102209_admin_bootstrap.sql
+--   2026102210_admin_role_check_alignment.sql
+--   2026102213_faculty_review_atomic.sql
+--   2026102602_admin_nominee_eligibility.sql (final eligibility rule)
+-- =========================================================
+
+-- >>> 2026102208_single_admin_succession.sql
+-- =========================================================
+-- UCC Phase 11 — single, transferable administrator role
+-- Date: 2026-10-22
+-- Migration: 2026102208_single_admin_succession.sql
+--
+-- REVIEW BEFORE APPLYING. This migration is additive, but it deliberately
+-- refuses to run when the existing data violates the new invariants. It never
+-- deletes a profile, never changes an existing administrator automatically,
+-- and never resets the database.
+--
+-- What it enforces
+-- ----------------
+--   1. At most one profile may have role = 'admin' at any time
+--      (partial unique index profiles_single_admin).
+--   2. An administrator must also be approved faculty:
+--      faculty_status in ('approved','verified') and member_type = 'faculty'
+--      (CHECK constraint profiles_admin_requires_approved).
+--   3. The admin role may only be granted or revoked through the
+--      SECURITY DEFINER succession functions below. A direct client UPDATE of
+--      role is blocked by trg_enforce_admin_transition, even for an existing
+--      administrator.
+--   4. Nomination, acceptance, decline, cancellation, resignation and
+--      operator recovery are audited with actor, target, timestamp and
+--      outcome. The audit log never grants privileges.
+--
+-- Succession model
+-- ----------------
+--   current admin --nominate--> approved faculty nominee
+--   nominee --accept--> atomic transfer in one transaction:
+--       old admin  -> role='faculty'  (keeps approved status)
+--       new admin  -> role='admin'    (already approved faculty)
+--   nominee --decline--> nomination declined, current admin unchanged
+--   admin --cancel--> nomination cancelled
+--   admin --resign--> role='faculty'; if no successor was accepted there is
+--       temporarily no admin. This is recoverable only by an explicit,
+--       audited operator action: public.recover_admin(target, reason), which
+--       is executable by service_role/database owner, never by a browser.
+--
+-- Apply after 2026102207_secure_faculty_onboarding.sql.
+-- Run supabase/admin/preflight.sql first and reconcile its output.
+-- =========================================================
+
+
+-- ---------------------------------------------------------
+-- 1. Preflight: refuse to guess about existing administrators.
+-- ---------------------------------------------------------
+do $$
+declare
+  n int;
+  ids text;
+begin
+  select count(*) into n from public.profiles where role = 'admin';
+  if n > 1 then
+    select string_agg(id::text, ', ' order by created_at) into ids
+    from public.profiles where role = 'admin';
+    raise exception using
+      errcode = '23514',
+      message = format(
+        'Cannot enforce a single administrator: %s profiles currently have role = admin.', n
+      ),
+      detail = format('Admin profile ids: %s', ids),
+      hint = 'Review supabase/admin/preflight.sql, decide which account remains admin, demote the others explicitly, then apply this migration.';
+  end if;
+end $$;
+
+do $$
+declare
+  n int;
+  ids text;
+begin
+  select count(*) into n
+  from public.profiles
+  where role = 'admin'
+    and not (
+      faculty_status in ('approved', 'verified')
+      and member_type = 'faculty'
+    );
+  if n > 0 then
+    select string_agg(id::text, ', ' order by created_at) into ids
+    from public.profiles
+    where role = 'admin'
+      and not (
+        faculty_status in ('approved', 'verified')
+        and member_type = 'faculty'
+      );
+    raise exception using
+      errcode = '23514',
+      message = 'An existing administrator is not approved faculty.',
+      detail = format('Admin profile ids needing review: %s', ids),
+      hint = 'Review supabase/admin/preflight.sql and explicitly set faculty_status/member_type for the current administrator before applying. The migration does not rewrite it automatically.';
+  end if;
+end $$;
+
+-- ---------------------------------------------------------
+-- 2. Database-level invariants.
+-- ---------------------------------------------------------
+
+-- At most one row with role = 'admin'. The partial unique index is the final
+-- race-condition guard: even if two transfer transactions overlap, only one
+-- can commit the admin row.
+create unique index if not exists profiles_single_admin
+  on public.profiles (role)
+  where role = 'admin';
+
+comment on index public.profiles_single_admin is
+  'UCC Phase 11: at most one profile may hold role = admin at a time.';
+
+-- An admin is also an approved faculty member. This is enforced on the table
+-- itself, not only in the UI or in a server route.
+alter table public.profiles
+  drop constraint if exists profiles_admin_requires_approved;
+alter table public.profiles
+  add constraint profiles_admin_requires_approved
+  check (
+    role <> 'admin'
+    or (
+      faculty_status in ('approved', 'verified')
+      and member_type = 'faculty'
+    )
+  );
+
+-- ---------------------------------------------------------
+-- 3. Protect the admin role from direct client writes.
+--
+-- The transaction-local GUC `ucc.admin_transition` is set only inside the
+-- SECURITY DEFINER functions below. auth.uid() IS NULL is the trusted
+-- operator/SQL-Editor path (including bootstrap and disaster recovery).
+-- A signed-in browser session can never set the GUC.
+-- ---------------------------------------------------------
+create or replace function public.enforce_admin_transition()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.role is distinct from old.role
+     and (new.role = 'admin' or old.role = 'admin')
+     and coalesce(current_setting('ucc.admin_transition', true), '') <> 'on'
+     and auth.uid() is not null then
+    raise exception using
+      errcode = '42501',
+      message = 'The administrator role can only change through the succession process.',
+      hint = 'Use nominate_admin/accept_admin_nomination/resign_admin instead of updating profiles.role directly.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_enforce_admin_transition on public.profiles;
+create trigger trg_enforce_admin_transition
+before update on public.profiles
+for each row execute procedure public.enforce_admin_transition();
+
+-- Re-state the existing privilege-protection trigger with one addition: the
+-- succession functions must be able to change the admin role even though the
+-- nominee (the caller) is not an administrator. Every other rule is unchanged.
+create or replace function public.protect_profile_privileges()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  -- Only set inside the SECURITY DEFINER succession functions. It is
+  -- transaction-local and cannot be set by a browser session.
+  if coalesce(current_setting('ucc.admin_transition', true), '') = 'on' then
+    return new;
+  end if;
+
+  if public.is_admin(auth.uid()) then
+    return new;
+  end if;
+
+  if new.faculty_status = 'pending'
+     and old.faculty_status in ('none', 'rejected')
+     and new.role is not distinct from old.role
+     and new.member_type is not distinct from old.member_type
+     and exists (
+       select 1
+       from public.faculty_applications a
+       where a.user_id = old.id and a.status = 'pending'
+     ) then
+    -- Only the non-privileged status transition is allowed. Review-managed
+    -- identity fields remain owned by the application/admin flow.
+    new.employee_id := old.employee_id;
+    new.designation := old.designation;
+    new.usn := old.usn;
+    new.graduation_year := old.graduation_year;
+    return new;
+  end if;
+
+  new.role := old.role;
+  new.faculty_status := old.faculty_status;
+  new.employee_id := old.employee_id;
+  new.designation := old.designation;
+  new.usn := old.usn;
+  new.member_type := old.member_type;
+  new.graduation_year := old.graduation_year;
+  return new;
+end;
+$$;
+
+-- ---------------------------------------------------------
+-- 4. Audit and nomination history.
+-- ---------------------------------------------------------
+create table if not exists public.admin_nominations (
+  id uuid primary key default gen_random_uuid(),
+  nominated_by uuid references public.profiles(id) on delete set null,
+  nominee_id uuid references public.profiles(id) on delete set null,
+  status text not null default 'pending'
+    check (status in ('pending', 'accepted', 'declined', 'cancelled')),
+  note text check (note is null or char_length(note) <= 500),
+  created_at timestamptz not null default timezone('utc'::text, now()),
+  responded_at timestamptz,
+  constraint admin_nominations_no_self
+    check (nominated_by is null or nominee_id is null or nominated_by <> nominee_id)
+);
+
+-- Only one pending nomination exists at a time. This makes "the current admin
+-- nominated X" unambiguous and lets the acceptance function verify that the
+-- nominator is still the current admin.
+create unique index if not exists admin_nominations_one_pending
+  on public.admin_nominations (status)
+  where status = 'pending';
+
+create index if not exists admin_nominations_created_idx
+  on public.admin_nominations (created_at desc);
+
+create table if not exists public.admin_audit_log (
+  id uuid primary key default gen_random_uuid(),
+  action text not null check (action in (
+    'nomination_created',
+    'nomination_declined',
+    'nomination_cancelled',
+    'admin_transfer',
+    'resignation',
+    'recovery'
+  )),
+  actor_id uuid references public.profiles(id) on delete set null,
+  -- Names are snapshotted so audit history survives a later profile deletion.
+  actor_name text,
+  target_id uuid references public.profiles(id) on delete set null,
+  target_name text,
+  nomination_id uuid references public.admin_nominations(id) on delete set null,
+  outcome text not null,
+  detail text,
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default timezone('utc'::text, now())
+);
+
+create index if not exists admin_audit_log_created_idx
+  on public.admin_audit_log (created_at desc);
+
+create index if not exists admin_audit_log_action_idx
+  on public.admin_audit_log (action, created_at desc);
+
+-- ---------------------------------------------------------
+-- 5. Eligibility and read helpers.
+-- ---------------------------------------------------------
+create or replace function public.is_eligible_admin_candidate(p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = p_user
+      and p.role = 'faculty'
+      and p.faculty_status in ('approved', 'verified')
+      and p.member_type = 'faculty'
+  );
+$$;
+
+revoke all on function public.is_eligible_admin_candidate(uuid) from public;
+grant execute on function public.is_eligible_admin_candidate(uuid)
+  to authenticated;
+
+create or replace function public.current_admin_id()
+returns uuid
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select p.id from public.profiles p where p.role = 'admin' limit 1;
+$$;
+
+revoke all on function public.current_admin_id() from public;
+grant execute on function public.current_admin_id() to authenticated;
+
+-- ---------------------------------------------------------
+-- 6. Nominate / accept / decline / cancel / resign.
+-- ---------------------------------------------------------
+create or replace function public.nominate_admin(
+  p_nominee uuid,
+  p_note text default null
+)
+returns uuid
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_admin uuid;
+  v_id uuid;
+  v_note text := nullif(btrim(coalesce(p_note, '')), '');
+begin
+  if v_actor is null then
+    raise exception using errcode = '42501', message = 'Sign in required.';
+  end if;
+
+  -- Serialise every succession action on the current admin row.
+  select p.id into v_admin
+  from public.profiles p
+  where p.role = 'admin'
+  for update;
+
+  if v_admin is null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'No current administrator exists.',
+      hint = 'Use the documented operator recovery procedure.';
+  end if;
+  if v_actor <> v_admin then
+    raise exception using
+      errcode = '42501',
+      message = 'Only the current administrator can nominate a successor.';
+  end if;
+  if p_nominee is null or p_nominee = v_actor then
+    raise exception using
+      errcode = '22023',
+      message = 'Choose another approved faculty member as the nominee.';
+  end if;
+  if not public.is_eligible_admin_candidate(p_nominee) then
+    raise exception using
+      errcode = '22023',
+      message = 'The nominee must be a currently approved faculty member.';
+  end if;
+  if exists (
+    select 1 from public.admin_nominations where status = 'pending'
+  ) then
+    raise exception using
+      errcode = '23505',
+      message = 'A nomination is already pending.',
+      hint = 'Cancel the pending nomination before nominating someone else.';
+  end if;
+
+  insert into public.admin_nominations (nominated_by, nominee_id, note)
+  values (v_actor, p_nominee, v_note)
+  returning id into v_id;
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    nomination_id, outcome, detail
+  )
+  select
+    'nomination_created', v_actor, a.name, p_nominee, t.name,
+    v_id, 'pending', v_note
+  from public.profiles a, public.profiles t
+  where a.id = v_actor and t.id = p_nominee;
+
+  return v_id;
+end;
+$$;
+
+create or replace function public.accept_admin_nomination(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_admin uuid;
+  v_nom public.admin_nominations%rowtype;
+  v_old_name text;
+  v_new_name text;
+begin
+  if v_actor is null then
+    raise exception using errcode = '42501', message = 'Sign in required.';
+  end if;
+
+  -- Lock order is always: current admin row, then nomination row. Every
+  -- succession function follows this order, so resignation and acceptance
+  -- cannot deadlock each other.
+  select p.id into v_admin
+  from public.profiles p
+  where p.role = 'admin'
+  for update;
+
+  select * into v_nom
+  from public.admin_nominations
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'Nomination not found.';
+  end if;
+  if v_nom.status <> 'pending' then
+    raise exception using
+      errcode = 'P0001',
+      message = 'This nomination is no longer pending.';
+  end if;
+  if v_actor <> v_nom.nominee_id then
+    raise exception using
+      errcode = '42501',
+      message = 'Only the nominee can accept this nomination.';
+  end if;
+  if v_admin is null or v_admin <> v_nom.nominated_by then
+    update public.admin_nominations
+    set status = 'cancelled', responded_at = timezone('utc'::text, now())
+    where id = p_id;
+    raise exception using
+      errcode = 'P0001',
+      message = 'The nominating administrator is no longer current.';
+  end if;
+  if not public.is_eligible_admin_candidate(v_actor) then
+    raise exception using
+      errcode = '22023',
+      message = 'The nominee is no longer an approved faculty member.';
+  end if;
+
+  select name into v_old_name from public.profiles where id = v_admin;
+  select name into v_new_name from public.profiles where id = v_actor;
+
+  -- The transaction-local flag lets the privilege-protection trigger accept
+  -- the two role changes. It is set only inside this SECURITY DEFINER
+  -- function and is cleared automatically at transaction end.
+  perform set_config('ucc.admin_transition', 'on', true);
+
+  -- Demote first, then promote: the partial unique index never sees two
+  -- administrators, even mid-transaction.
+  update public.profiles
+  set role = 'faculty',
+      updated_at = timezone('utc'::text, now())
+  where id = v_admin;
+
+  update public.profiles
+  set role = 'admin',
+      faculty_status = case
+        when faculty_status in ('approved', 'verified') then faculty_status
+        else 'approved'
+      end,
+      member_type = 'faculty',
+      updated_at = timezone('utc'::text, now())
+  where id = v_actor;
+
+  update public.admin_nominations
+  set status = 'accepted', responded_at = timezone('utc'::text, now())
+  where id = p_id;
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    nomination_id, outcome, detail, metadata
+  ) values (
+    'admin_transfer', v_actor, v_new_name, v_actor, v_new_name,
+    p_id, 'accepted',
+    format('Administrator role transferred from %s to %s', v_old_name, v_new_name),
+    jsonb_build_object('previous_admin_id', v_admin, 'new_admin_id', v_actor)
+  );
+end;
+$$;
+
+create or replace function public.decline_admin_nomination(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_nom public.admin_nominations%rowtype;
+  v_actor_name text;
+  v_target_name text;
+begin
+  if v_actor is null then
+    raise exception using errcode = '42501', message = 'Sign in required.';
+  end if;
+
+  select * into v_nom
+  from public.admin_nominations
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'Nomination not found.';
+  end if;
+  if v_actor <> v_nom.nominee_id then
+    raise exception using
+      errcode = '42501',
+      message = 'Only the nominee can decline this nomination.';
+  end if;
+  if v_nom.status <> 'pending' then
+    raise exception using
+      errcode = 'P0001',
+      message = 'This nomination is no longer pending.';
+  end if;
+
+  update public.admin_nominations
+  set status = 'declined', responded_at = timezone('utc'::text, now())
+  where id = p_id;
+
+  select name into v_actor_name from public.profiles where id = v_actor;
+  select name into v_target_name from public.profiles where id = v_nom.nominated_by;
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    nomination_id, outcome, detail
+  ) values (
+    'nomination_declined', v_actor, v_actor_name,
+    v_nom.nominated_by, v_target_name, p_id, 'declined',
+    'Nominee declined the administrator nomination'
+  );
+end;
+$$;
+
+create or replace function public.cancel_admin_nomination(p_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_admin uuid;
+  v_nom public.admin_nominations%rowtype;
+  v_actor_name text;
+  v_target_name text;
+begin
+  if v_actor is null then
+    raise exception using errcode = '42501', message = 'Sign in required.';
+  end if;
+
+  select p.id into v_admin
+  from public.profiles p
+  where p.role = 'admin'
+  for update;
+
+  if v_admin is null or v_actor <> v_admin then
+    raise exception using
+      errcode = '42501',
+      message = 'Only the current administrator can cancel a nomination.';
+  end if;
+
+  select * into v_nom
+  from public.admin_nominations
+  where id = p_id
+  for update;
+
+  if not found then
+    raise exception using errcode = 'P0002', message = 'Nomination not found.';
+  end if;
+  if v_nom.status <> 'pending' then
+    raise exception using
+      errcode = 'P0001',
+      message = 'This nomination is no longer pending.';
+  end if;
+
+  update public.admin_nominations
+  set status = 'cancelled', responded_at = timezone('utc'::text, now())
+  where id = p_id;
+
+  select name into v_actor_name from public.profiles where id = v_actor;
+  select name into v_target_name from public.profiles where id = v_nom.nominee_id;
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    nomination_id, outcome, detail
+  ) values (
+    'nomination_cancelled', v_actor, v_actor_name,
+    v_nom.nominee_id, v_target_name, p_id, 'cancelled',
+    'Nominating administrator cancelled the nomination'
+  );
+end;
+$$;
+
+create or replace function public.resign_admin(p_reason text default null)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_actor uuid := auth.uid();
+  v_admin uuid;
+  v_name text;
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+begin
+  if v_actor is null then
+    raise exception using errcode = '42501', message = 'Sign in required.';
+  end if;
+
+  select p.id into v_admin
+  from public.profiles p
+  where p.role = 'admin'
+  for update;
+
+  if v_admin is null or v_actor <> v_admin then
+    raise exception using
+      errcode = '42501',
+      message = 'Only the current administrator can resign.';
+  end if;
+
+  select name into v_name from public.profiles where id = v_actor;
+
+  perform set_config('ucc.admin_transition', 'on', true);
+
+  update public.profiles
+  set role = 'faculty',
+      updated_at = timezone('utc'::text, now())
+  where id = v_actor;
+
+  -- A resignation invalidates any outstanding nomination: the next
+  -- administrator must be chosen by a current administrator, or through the
+  -- documented operator recovery process.
+  update public.admin_nominations
+  set status = 'cancelled', responded_at = timezone('utc'::text, now())
+  where status = 'pending';
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    outcome, detail, metadata
+  ) values (
+    'resignation', v_actor, v_name, v_actor, v_name,
+    'completed',
+    coalesce(v_reason, 'Administrator resigned'),
+    jsonb_build_object('admin_remaining', public.current_admin_id())
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------
+-- 7. Explicit operator recovery.
+--
+-- This is the only path out of a resignation without an accepted successor.
+-- It is NOT callable by a browser session: execute is revoked from anon and
+-- authenticated, and the function itself rejects any caller that has a JWT
+-- (auth.uid() is not null). It requires an explicit operator decision, a
+-- reason, and it writes an audit row.
+-- ---------------------------------------------------------
+create or replace function public.recover_admin(
+  p_target uuid,
+  p_reason text
+)
+returns void
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_reason text := nullif(btrim(coalesce(p_reason, '')), '');
+  v_admin uuid;
+  v_target_name text;
+begin
+  if auth.uid() is not null then
+    raise exception using
+      errcode = '42501',
+      message = 'Administrator recovery is an operator-only action.';
+  end if;
+  if v_reason is null or char_length(v_reason) < 10 then
+    raise exception using
+      errcode = '22023',
+      message = 'A recovery reason of at least 10 characters is required.';
+  end if;
+  if p_target is null then
+    raise exception using
+      errcode = '22023',
+      message = 'A recovery target is required.';
+  end if;
+
+  select p.id into v_admin
+  from public.profiles p
+  where p.role = 'admin'
+  for update;
+
+  if v_admin is not null then
+    raise exception using
+      errcode = 'P0001',
+      message = 'An administrator already exists.',
+      hint = 'Use the normal nomination and acceptance process.';
+  end if;
+  if not public.is_eligible_admin_candidate(p_target) then
+    raise exception using
+      errcode = '22023',
+      message = 'The recovery target must be a currently approved faculty member.';
+  end if;
+
+  select name into v_target_name from public.profiles where id = p_target;
+
+  perform set_config('ucc.admin_transition', 'on', true);
+
+  update public.profiles
+  set role = 'admin',
+      faculty_status = case
+        when faculty_status in ('approved', 'verified') then faculty_status
+        else 'approved'
+      end,
+      member_type = 'faculty',
+      updated_at = timezone('utc'::text, now())
+  where id = p_target;
+
+  insert into public.admin_audit_log (
+    action, actor_id, actor_name, target_id, target_name,
+    outcome, detail, metadata
+  ) values (
+    'recovery', null, format('operator (%s)', session_user),
+    p_target, v_target_name, 'completed', v_reason,
+    jsonb_build_object('reason', v_reason, 'operator', session_user)
+  );
+end;
+$$;
+
+-- ---------------------------------------------------------
+-- 8. Permissions.
+-- ---------------------------------------------------------
+revoke all on function public.nominate_admin(uuid, text) from public;
+revoke all on function public.accept_admin_nomination(uuid) from public;
+revoke all on function public.decline_admin_nomination(uuid) from public;
+revoke all on function public.cancel_admin_nomination(uuid) from public;
+revoke all on function public.resign_admin(text) from public;
+
+grant execute on function public.nominate_admin(uuid, text) to authenticated;
+grant execute on function public.accept_admin_nomination(uuid) to authenticated;
+grant execute on function public.decline_admin_nomination(uuid) to authenticated;
+grant execute on function public.cancel_admin_nomination(uuid) to authenticated;
+grant execute on function public.resign_admin(text) to authenticated;
+
+revoke all on function public.recover_admin(uuid, text) from public;
+revoke all on function public.recover_admin(uuid, text) from anon;
+revoke all on function public.recover_admin(uuid, text) from authenticated;
+grant execute on function public.recover_admin(uuid, text) to service_role;
+
+-- ---------------------------------------------------------
+-- 9. RLS: history is readable to the people involved and to the admin.
+--    No client INSERT/UPDATE/DELETE policy exists, so the tables are
+--    append-only from the API's point of view.
+-- ---------------------------------------------------------
+alter table public.admin_nominations enable row level security;
+alter table public.admin_audit_log enable row level security;
+
+drop policy if exists "Admins and participants read admin nominations"
+  on public.admin_nominations;
+create policy "Admins and participants read admin nominations"
+  on public.admin_nominations
+  for select
+  using (
+    public.is_admin(auth.uid())
+    or auth.uid() = nominated_by
+    or auth.uid() = nominee_id
+  );
+
+drop policy if exists "Admins read admin audit log"
+  on public.admin_audit_log;
+create policy "Admins read admin audit log"
+  on public.admin_audit_log
+  for select
+  using (public.is_admin(auth.uid()));
+
+revoke insert, update, delete on public.admin_nominations from anon, authenticated;
+revoke insert, update, delete on public.admin_audit_log from anon, authenticated;
+grant select on public.admin_nominations to authenticated;
+grant select on public.admin_audit_log to authenticated;
+
+-- Internal helper functions do not need public execute.
+revoke all on function public.enforce_admin_transition() from public;
+revoke all on function public.current_admin_id() from public;
+grant execute on function public.current_admin_id() to authenticated;
+
+
+notify pgrst, 'reload schema';
+
+
+-- >>> 2026102209_admin_bootstrap.sql
+-- =========================================================
+-- UCC Phase 12 — one-time initial administrator bootstrap
+-- Date: 2026-10-22
+-- Migration: 2026102209_admin_bootstrap.sql
+--
+-- Apply after 2026102208_single_admin_succession.sql.
+--
+-- This migration adds the *bookkeeping* for a single, operator-run bootstrap.
+-- It deliberately does not promote anyone and it does not leave a callable
+-- privileged function behind. The promotion itself is the one-off,
+-- owner-executed script in supabase/admin/bootstrap-initial-admin.sql.
+--
+-- Invariants
+-- ----------
+--   1. public.admin_bootstrap_state has exactly zero or one row. Once the
+--      bootstrap completes, the marker blocks every later run, including after
+--      an administrator resigns. Recovery after a resignation is the explicit
+--      operator process from Phase 11, not a second bootstrap.
+--   2. The audit log now accepts the 'bootstrap' action so the initial grant
+--      is recorded with the same actor/target/outcome evidence as succession.
+--   3. No browser role can read or write the marker: RLS is enabled with no
+--      policies and all table privileges are revoked from anon/authenticated.
+--
+-- The hard "at most one admin" guarantee remains the partial unique index
+-- public.profiles_single_admin from Phase 11. This migration does not weaken it.
+-- =========================================================
+
+
+-- ---------------------------------------------------------
+-- 1. Extend the audit vocabulary with the one-time bootstrap action.
+-- ---------------------------------------------------------
+alter table public.admin_audit_log
+  drop constraint if exists admin_audit_log_action_check;
+
+alter table public.admin_audit_log
+  add constraint admin_audit_log_action_check
+  check (action in (
+    'bootstrap',
+    'nomination_created',
+    'nomination_declined',
+    'nomination_cancelled',
+    'admin_transfer',
+    'resignation',
+    'recovery'
+  ));
+
+-- ---------------------------------------------------------
+-- 2. Permanent one-time marker.
+--
+-- The boolean primary key can only ever hold TRUE, so at most one row can
+-- exist. The bootstrap script inserts this row in the same transaction as the
+-- role change and the audit entry; a failure rolls all three back together.
+-- ---------------------------------------------------------
+create table if not exists public.admin_bootstrap_state (
+  bootstrap_key boolean primary key default true,
+  constraint admin_bootstrap_state_single_row check (bootstrap_key is true),
+  completed_at timestamptz not null default timezone('utc'::text, now()),
+  completed_by text not null,
+  target_id uuid references public.profiles(id) on delete set null,
+  target_email text not null,
+  detail text
+);
+
+comment on table public.admin_bootstrap_state is
+  'UCC Phase 12: permanent marker proving the one-time initial administrator bootstrap ran. Presence blocks every later bootstrap attempt.';
+
+-- This marker is operator/audit infrastructure, never client-readable data.
+alter table public.admin_bootstrap_state enable row level security;
+
+revoke all on table public.admin_bootstrap_state from public;
+revoke all on table public.admin_bootstrap_state from anon;
+revoke all on table public.admin_bootstrap_state from authenticated;
+
+-- No SELECT policy is created. Even if a future policy is added, the table
+-- privileges above must be granted explicitly first.
+
+-- ---------------------------------------------------------
+-- 3. Make the marker append-only for ordinary roles. The owner remains able
+--    to perform a documented disaster-recovery repair, but no runtime role
+--    can silently delete the proof that bootstrap already happened.
+-- ---------------------------------------------------------
+create or replace function public.prevent_admin_bootstrap_state_rewrite()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if auth.uid() is not null then
+    raise exception using
+      errcode = '42501',
+      message = 'The administrator bootstrap marker is append-only.';
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_admin_bootstrap_state_append_only
+  on public.admin_bootstrap_state;
+create trigger trg_admin_bootstrap_state_append_only
+before update or delete on public.admin_bootstrap_state
+for each row execute procedure public.prevent_admin_bootstrap_state_rewrite();
+
+revoke all on function public.prevent_admin_bootstrap_state_rewrite() from public;
+
+
+notify pgrst, 'reload schema';
+
+
+-- >>> 2026102210_admin_role_check_alignment.sql
+-- =========================================================
+-- UCC Phase 12.1 — profiles.role must allow 'admin'
+-- Date: 2026-10-22
+-- Migration: 2026102210_admin_role_check_alignment.sql
+--
+-- Why this exists
+-- ---------------
+-- Phase 11/12 grant role = 'admin', but some hand-migrated live databases
+-- still carry an older profiles_role_check that only allows 'student' and
+-- 'faculty'. In that state the one-time bootstrap fails with:
+--
+--   23514: new row for relation "profiles" violates check constraint
+--          "profiles_role_check"
+--
+-- The canonical base migrations already widen this constraint, but the
+-- bootstrap must not assume every environment has them. This migration makes
+-- the permission explicit and idempotent before the bootstrap is run.
+--
+-- It only widens the allowed role vocabulary. It does not promote anyone,
+-- does not rewrite existing rows, and does not weaken any other constraint.
+-- Apply after 2026102209_admin_bootstrap.sql and before the one-time
+-- bootstrap script.
+-- =========================================================
+
+
+alter table public.profiles drop constraint if exists profiles_role_check;
+alter table public.profiles add constraint profiles_role_check
+  check (role in ('student', 'faculty', 'admin'));
+
+
+notify pgrst, 'reload schema';
+
+
+-- >>> 2026102213_faculty_review_atomic.sql
+-- =========================================================
+-- UCC 2.0 — atomic, truthful faculty application review
+-- Date: 2026-10-23
+-- Migration: 2026102213_faculty_review_atomic.sql
+--
+-- Why this migration exists
+-- -------------------------
+-- The admin API wrote `faculty_applications.notes`, but the review reason is
+-- stored in `review_notes`. The status trigger also read `new.notes`, so a
+-- rejection reason was never persisted or shown to the applicant.
+--
+-- More importantly, the API performed a direct table UPDATE and treated an
+-- empty result as "already reviewed". That conflates three different states:
+--   * the row is already approved/rejected,
+--   * the row does not exist,
+--   * RLS (or a trigger) silently matched zero rows.
+--
+-- This migration makes review a single database transaction:
+--   * `review_faculty_application()` checks auth.uid() is an administrator,
+--     transitions only a row that is still `pending`, and forces the reviewer
+--     and timestamp from the trusted session.
+--   * The RPC accepts `approve` / `reject` and maps them to the stored
+--     `approved` / `rejected` status, matching the admin UI's decision values.
+--     It deliberately rejects `approved` / `rejected` to keep one vocabulary
+--     at the API boundary.
+--   * The existing status trigger promotes the profile in the same
+--     transaction. The RPC verifies the resulting profile state and rolls
+--     back if it did not reach the expected state.
+--   * A zero-row transition re-reads the row and returns the real current
+--     state to the caller.
+--   * Rejection requires a reason and stores it in `review_notes`.
+--
+-- Safety
+-- ------
+-- * Forward-only, idempotent, additive.
+-- * Does not delete or bulk-rewrite reviewed records.
+-- * Does not touch Supabase Auth users or email verification.
+-- * Re-asserts the admin-only UPDATE policy (live databases can drift).
+-- =========================================================
+
+
+-- ---------------------------------------------------------
+-- 1. Canonical review-reason column and profile columns.
+--
+-- Older databases created `notes`; the live UCC 2.0 database uses
+-- `review_notes`. Ensure target databases converge on `review_notes` without
+-- creating a second review column.
+-- ---------------------------------------------------------
+alter table public.faculty_applications
+  add column if not exists review_notes text;
+
+do $$
+begin
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'faculty_applications'
+      and column_name = 'notes'
+  ) then
+    execute $copy$
+      update public.faculty_applications
+      set review_notes = notes
+      where review_notes is null and notes is not null
+    $copy$;
+  end if;
+end $$;
+
+alter table public.profiles add column if not exists designation text;
+alter table public.profiles add column if not exists employee_id text;
+
+-- Do not alter profiles_faculty_status_check. The live UCC 2.0 constraint
+-- allows only pending / approved / rejected, and approval writes 'approved'.
+-- Dropping and re-adding the constraint here would weaken that guarantee.
+
+-- ---------------------------------------------------------
+-- 2. Transition guard.
+--
+-- Only an administrator may review, only a pending application may be
+-- reviewed, and the audit fields always come from auth.uid()/now().
+-- ---------------------------------------------------------
+create or replace function public.enforce_faculty_application_transition()
+returns trigger
+language plpgsql
+as $$
+begin
+  if tg_op = 'INSERT' then
+    if new.status is distinct from 'pending' then
+      raise exception 'Faculty applications must start as pending.';
+    end if;
+    if new.reviewed_by is not null or new.reviewed_at is not null then
+      raise exception 'Cannot set reviewer on a new application.';
+    end if;
+    if exists (
+      select 1
+      from public.profiles p
+      where p.id = new.user_id
+        and (
+          p.role = 'admin'
+          or (p.role = 'faculty' and p.faculty_status = 'approved')
+        )
+    ) then
+      raise exception 'This account already has faculty access.';
+    end if;
+    return new;
+  end if;
+
+  if tg_op = 'UPDATE' then
+    if new.status is distinct from old.status then
+      if not public.is_admin(auth.uid()) then
+        raise exception 'Only administrators can change application status.';
+      end if;
+      if old.status is distinct from 'pending' then
+        raise exception 'Only pending applications can be reviewed.';
+      end if;
+      if new.status not in ('approved', 'rejected') then
+        raise exception 'Application status must be approved or rejected.';
+      end if;
+      if new.status = 'rejected'
+         and nullif(btrim(coalesce(new.review_notes, '')), '') is null then
+        raise exception 'A rejection reason is required.';
+      end if;
+
+      -- Never trust client-supplied audit fields.
+      new.reviewed_by := auth.uid();
+      new.reviewed_at := timezone('utc'::text, now());
+    end if;
+
+    if new.reviewed_by is distinct from old.reviewed_by
+       or new.reviewed_at is distinct from old.reviewed_at then
+      if not public.is_admin(auth.uid()) then
+        raise exception 'Only administrators can set reviewer fields.';
+      end if;
+    end if;
+  end if;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_faculty_application_transition on public.faculty_applications;
+create trigger trg_faculty_application_transition
+  before insert or update on public.faculty_applications
+  for each row execute procedure public.enforce_faculty_application_transition();
+
+-- ---------------------------------------------------------
+-- 3. Profile synchronisation.
+--
+-- Approval: promote to faculty and approved, copy valid designation and
+-- employee ID only when present, and leave email verification untouched.
+-- Rejection: mark rejected, never promote.
+-- ---------------------------------------------------------
+create or replace function public.on_faculty_application_status()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+begin
+  if new.status = 'approved' and old.status is distinct from 'approved' then
+    update public.profiles
+    set
+      role = case when role = 'admin' then 'admin' else 'faculty' end,
+      faculty_status = 'approved',
+      member_type = 'faculty',
+      designation = coalesce(nullif(btrim(new.designation), ''), designation),
+      employee_id = coalesce(nullif(btrim(new.employee_id), ''), employee_id),
+      name = coalesce(nullif(name, ''), new.full_name),
+      updated_at = timezone('utc'::text, now())
+    where id = new.user_id;
+
+    perform public.emit_notification(
+      new.user_id,
+      'faculty_decision',
+      'Faculty access approved',
+      'Your faculty application was approved. You now have faculty permissions.',
+      '/faculty/dashboard'
+    );
+  elsif new.status = 'rejected' and old.status is distinct from 'rejected' then
+    update public.profiles
+    set faculty_status = 'rejected', updated_at = timezone('utc'::text, now())
+    where id = new.user_id and role <> 'admin';
+
+    perform public.emit_notification(
+      new.user_id,
+      'faculty_decision',
+      'Faculty application update',
+      coalesce(
+        nullif(btrim(new.review_notes), ''),
+        'Your faculty application was not approved.'
+      ),
+      '/signup/faculty'
+    );
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_faculty_application_status on public.faculty_applications;
+create trigger trg_faculty_application_status
+  after update on public.faculty_applications
+  for each row execute procedure public.on_faculty_application_status();
+
+-- ---------------------------------------------------------
+-- 4. Atomic review entry point.
+--
+-- p_decision is `approve` or `reject`. Returns a jsonb object with:
+--   outcome: approved | rejected | already_approved | already_rejected |
+--            changed | not_found
+--   decision: the validated approve/reject input
+--   current_status: the real status after the attempt
+--   application: the current application row (except not_found)
+-- ---------------------------------------------------------
+create or replace function public.review_faculty_application(
+  p_application_id uuid,
+  p_decision text,
+  p_notes text default null
+)
+returns jsonb
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  v_admin uuid := auth.uid();
+  v_decision text := lower(btrim(coalesce(p_decision, '')));
+  v_status_new text;
+  v_notes text := nullif(btrim(coalesce(p_notes, '')), '');
+  v_app public.faculty_applications;
+  v_current public.faculty_applications;
+  v_role text;
+  v_status text;
+begin
+  if v_admin is null or not public.is_admin(v_admin) then
+    raise exception using
+      errcode = '42501',
+      message = 'Administrator access required.';
+  end if;
+
+  if v_decision not in ('approve', 'reject') then
+    raise exception using
+      errcode = '22023',
+      message = 'Decision must be approve or reject.';
+  end if;
+
+  if v_decision = 'reject' and v_notes is null then
+    raise exception using
+      errcode = '22023',
+      message = 'A rejection reason is required.';
+  end if;
+
+  if v_notes is not null and length(v_notes) > 500 then
+    v_notes := left(v_notes, 500);
+  end if;
+
+  v_status_new := case when v_decision = 'approve' then 'approved' else 'rejected' end;
+
+  -- The status predicate is the concurrency guard: PostgreSQL re-checks it
+  -- against the committed row after any competing transaction releases its
+  -- lock, so only one administrator can transition a pending row.
+  update public.faculty_applications
+  set
+    status = v_status_new,
+    reviewed_by = v_admin,
+    reviewed_at = timezone('utc'::text, now()),
+    review_notes = case when v_decision = 'reject' then v_notes else null end
+  where id = p_application_id
+    and status = 'pending'
+  returning * into v_app;
+
+  if v_app.id is null then
+    select * into v_current
+    from public.faculty_applications
+    where id = p_application_id;
+
+    if v_current.id is null then
+      return jsonb_build_object('outcome', 'not_found');
+    end if;
+
+    return jsonb_build_object(
+      'outcome',
+      case v_current.status
+        when 'approved' then 'already_approved'
+        when 'rejected' then 'already_rejected'
+        else 'changed'
+      end,
+      'current_status', v_current.status,
+      'application', to_jsonb(v_current)
+    );
+  end if;
+
+  -- Verify the status trigger completed the profile side atomically. If it
+  -- did not, raise: the caller must never see a successful review with a
+  -- half-promoted profile.
+  select p.role, p.faculty_status
+  into v_role, v_status
+  from public.profiles p
+  where p.id = v_app.user_id;
+
+  if v_role is null then
+    raise exception using
+      errcode = '23503',
+      message = 'Applicant profile is missing; review rolled back.';
+  end if;
+
+  if v_decision = 'approve'
+     and (v_role not in ('faculty', 'admin') or v_status <> 'approved') then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Faculty profile update did not complete; approval rolled back.';
+  end if;
+
+  if v_decision = 'reject'
+     and v_role <> 'admin'
+     and v_status <> 'rejected' then
+    raise exception using
+      errcode = 'P0001',
+      message = 'Faculty profile update did not complete; rejection rolled back.';
+  end if;
+
+  return jsonb_build_object(
+    'outcome', v_status_new,
+    'decision', v_decision,
+    'current_status', v_app.status,
+    'application', to_jsonb(v_app)
+  );
+end;
+$$;
+
+revoke all on function public.review_faculty_application(uuid, text, text) from public;
+revoke all on function public.review_faculty_application(uuid, text, text) from anon;
+grant execute on function public.review_faculty_application(uuid, text, text) to authenticated;
+
+comment on function public.review_faculty_application(uuid, text, text) is
+  'Administrator-only, atomic faculty application review. Transitions only a pending row, forces reviewer fields from auth.uid(), stores the rejection reason in review_notes, and reports the real state when no transition occurs.';
+
+-- ---------------------------------------------------------
+-- 5. Re-assert RLS. Admins review; applicants only read their own row and
+-- insert a pending application. No policy is weakened.
+-- ---------------------------------------------------------
+alter table public.faculty_applications enable row level security;
+
+drop policy if exists "Admins manage faculty applications" on public.faculty_applications;
+create policy "Admins manage faculty applications" on public.faculty_applications
+  for update
+  using (public.is_admin(auth.uid()))
+  with check (public.is_admin(auth.uid()));
+
+
+notify pgrst, 'reload schema';
+
+
+-- >>> 2026102602_admin_nominee_eligibility.sql
+-- =========================================================
+-- UCC 2.0 — align administrator nominee eligibility with the
+-- canonical verified-faculty rule
+-- Date: 2026-10-26
+-- Migration: 2026102602_admin_nominee_eligibility.sql
+--
+-- Why this migration exists
+-- -------------------------
+-- public.is_eligible_admin_candidate() required
+--   role = 'faculty' AND faculty_status IN ('approved','verified')
+--   AND member_type = 'faculty'
+--
+-- member_type is descriptive identity (student / alumni / faculty), not the
+-- privilege model. The canonical verified-faculty rule
+-- (public.is_verified_faculty, 2026102206) checks only role and
+-- faculty_status. 2026102212 gave profiles.member_type a default of
+-- 'student', so an account approved as faculty can legitimately still carry
+-- member_type = 'student' (legacy rows, or rows approved before the
+-- onboarding trigger wrote member_type). Those accounts are excluded from
+-- the administrator handover list and rejected by nominate_admin() even
+-- though every other faculty action accepts them.
+--
+-- The rule is now identical to the canonical verification rule:
+--   role = 'faculty' AND faculty_status IN ('approved','verified')
+--
+-- Students, alumni and unverified/pending/rejected accounts remain
+-- ineligible because their role is not 'faculty' (role is protected by
+-- public.protect_profile_privileges()). An administrator is not a nominee;
+-- nominate_admin() already rejects self/current-admin nominations and the
+-- single-admin index is unchanged.
+--
+-- This migration does not grant administrator privileges. It only decides
+-- who may be nominated; acceptance still transfers the role atomically
+-- through the existing succession RPC.
+--
+-- Safety
+-- ------
+-- * create or replace on one function; no table, row, policy or grant is
+--   dropped.
+-- * Idempotent.
+-- * If the function does not exist (a database that never applied
+--   2026102208), this migration creates it; admin_nominations/nominate_admin
+--   remain governed by that migration.
+-- =========================================================
+
+
+create or replace function public.is_eligible_admin_candidate(p_user uuid)
+returns boolean
+language sql
+stable
+security definer
+set search_path = public
+as $$
+  select exists (
+    select 1
+    from public.profiles p
+    where p.id = p_user
+      and p.role = 'faculty'
+      and p.faculty_status in ('approved', 'verified')
+  );
+$$;
+
+revoke all on function public.is_eligible_admin_candidate(uuid) from public;
+revoke all on function public.is_eligible_admin_candidate(uuid) from anon;
+grant execute on function public.is_eligible_admin_candidate(uuid)
+  to authenticated;
+
+comment on function public.is_eligible_admin_candidate(uuid) is
+  'A nominee must be an approved/verified faculty profile (role = faculty). member_type is descriptive, not an eligibility condition.';
+
+notify pgrst, 'reload schema';
+

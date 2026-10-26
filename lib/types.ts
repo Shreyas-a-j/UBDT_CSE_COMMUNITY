@@ -109,6 +109,25 @@ export interface Post {
   like_count?: number
   upvote_count?: number
   comment_count?: number
+  /**
+   * Active faculty pin, merged from public.discussion_pins. Absent/null when
+   * the discussion is not pinned. A pin is active only while
+   * `pin_expires_at` is in the future; the database applies the same rule.
+   */
+  pinned_by?: string | null
+  pinned_at?: string | null
+  pin_expires_at?: string | null
+}
+
+/** One row from public.discussion_pins. Expired/unpinned rows are history. */
+export interface DiscussionPin {
+  id: string
+  discussion_id: string
+  pinned_by: string
+  pinned_at: string
+  pin_expires_at: string
+  unpinned_at: string | null
+  unpinned_by?: string | null
 }
 
 export interface Comment {
@@ -135,6 +154,7 @@ export type NotificationType =
   | 'message'
   | 'announcement'
   | 'faculty_decision'
+  | 'event_published'
 
 export interface Notification {
   id: string

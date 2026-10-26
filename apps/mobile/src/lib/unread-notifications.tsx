@@ -4,6 +4,9 @@
  * Small shared unread-notification counter. It powers the Alerts tab badge
  * and lets the notifications screen update the badge immediately after
  * marking items read. Realtime INSERT/UPDATE events keep it live.
+ *
+ * Legacy messaging and connection rows are excluded from the same server-side
+ * filter as the notification list, so they can never contribute to the badge.
  */
 
 import {
@@ -16,7 +19,9 @@ import {
   useState,
   type ReactNode,
 } from 'react';
+import { AppState } from 'react-native';
 import { useAuth } from './auth-context';
+import { HIDDEN_NOTIFICATION_FILTER } from './notifications';
 import { supabase } from './supabase';
 
 interface UnreadState {
@@ -48,7 +53,8 @@ export function UnreadNotificationsProvider({ children }: { children: ReactNode 
       .from('notifications')
       .select('id', { count: 'exact', head: true })
       .eq('user_id', userId)
-      .eq('read', false);
+      .eq('read', false)
+      .not('type', 'in', HIDDEN_NOTIFICATION_FILTER);
     if (!error && mounted.current) setCount(unread ?? 0);
   }, [userId]);
 
@@ -71,6 +77,16 @@ export function UnreadNotificationsProvider({ children }: { children: ReactNode 
       void supabase.removeChannel(channel);
     };
   }, [userId, refresh]);
+
+  // A realtime INSERT that lands while the app is backgrounded can be missed
+  // when the socket reconnects. Re-read the count on resume so the Alerts
+  // badge catches up with the list, which also refetches on resume.
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (next) => {
+      if (next === 'active') void refresh();
+    });
+    return () => subscription.remove();
+  }, [refresh]);
 
   const value = useMemo(() => ({ count, refresh }), [count, refresh]);
 

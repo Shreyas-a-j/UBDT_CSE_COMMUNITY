@@ -28,6 +28,8 @@ repo but this document has no record of their application against the live DB �
 | 9 | `2026102209_admin_bootstrap.sql` | Phase 12: `bootstrap` audit action + permanent one-time marker; contains no promotion | apply after 2208; the promotion is the owner-only script in `supabase/admin/bootstrap-initial-admin.sql` |
 | 10 | `2026102210_admin_role_check_alignment.sql` | Phase 12.1: widens `profiles_role_check` to permit `role = 'admin'` on hand-migrated databases that predate the canonical base migration | apply after 2209 and before the bootstrap; contains no promotion |
 | 11 | `2026102211_signup_provisioning_schema_alignment.sql` | Phase 12.2: restores the `profiles` columns written by `handle_new_user()` and the application sync triggers on hand-migrated databases that skipped the base column repairs | apply before 2207 on a drifted database; idempotent no-op on the canonical chain |
+| 12 | `2026102301_discussion_pins.sql` | Verified-faculty discussion pinning: dedicated `discussion_pins` table, 3-pin global limit with an advisory lock, 7-day expiry, RLS + RPC-only mutations | additive; apply after 2213; verified by `verify_schema.sql` §22.12 and `test-discussion-pins.sql` |
+| 13 | `2026102302_discussion_pin_admin_authorization.sql` | Fixes pin/unpin authorization to `is_admin(auth.uid()) OR is_verified_faculty(auth.uid())`, so administrators never need faculty verification. Idempotently repairs the pin table/indexes/policy if 2301 was never applied; preserves the 3-pin cap, 7-day expiry, duplicate guard, advisory lock and RPC-only writes. | additive; apply after 2301 (or alone on a database that missed it); verified by `verify_schema.sql` §22.12 and `test-discussion-pins.sql` TEST 0 |
 
 ### Faculty onboarding on a drifted live database
 
@@ -138,6 +140,124 @@ ends with its own `notify pgrst, 'reload schema';`.
 -- Then confirm:
 NOTIFY pgrst, 'reload schema';
 ```
+
+---
+
+## Android push + email shutdown (2026-10-24)
+
+Three forward-only migrations, in mandatory order, after every migration above.
+They replace the email delivery channel with Android push while preserving
+historical email rows and all existing in-app notification behavior.
+
+| Order | File | Purpose | Depends on |
+|---|---|---|---|
+| 1 | `2026102401_android_push_schema.sql` | Adds `showcase_top2` to `notifications.type`; `notification_preferences.push_enabled` (default true); `notification_push_outbox` (one row per notification, UUID idempotency key, RLS with no client policies); `showcase_top_entries` (durable top-two tenures). | `2026102303` |
+| 2 | `2026102402_android_push_triggers.sql` | Publish fan-out enqueues push and stops email; showcase ranking recompute with advisory lock, top-two tenures and one notification per tenure; seeds current top two silently. | #1, `2026102304` |
+| 3 | `2026102403_disable_publish_email.sql` | Drops Database Webhook triggers on `notification_email_outbox`; installs a BEFORE INSERT guard that rejects all new email work; retains historical rows/table. | #1, #2; **must follow #2** |
+
+**Why order matters:** applying #3 before #2 leaves the old publish trigger
+writing the email outbox, where the new guard rejects the insert and rolls back
+the publication. Apply all three in order in one maintenance window.
+
+**After applying:** run `supabase/verify_schema.sql` (expect
+`VERIFICATION PASSED`; blocks 22.15–22.17), then
+`supabase/test-notification-fanout.sql` (Tests 1–10). Deploy
+`send-push-notifications` and the HTTP 410 `send-notification-emails` tombstone;
+see `docs/android-push-notifications-deployment.md`.
+
+**Rollback:** each migration header carries object-by-object manual rollback.
+Email is **not** re-enabled by reverting application code alone; that requires
+a deliberate new migration (drop `trg_block_new_email_enqueue`), worker
+restoration, and provider secrets. Historical email rows are never deleted.
+
+---
+
+## Notification retention (2026-10-25)
+
+One forward-only migration, after the Android push chain. It deletes in-app
+notification rows older than 24 hours and prunes outbox/dedupe state without
+allowing a delivered push to be sent again.
+
+**Hosted status (2026-10-25):** `2026102501` is applied to
+`brfxqnkafqunxauhtmar` (remote ledger matches local), and
+`send-push-notifications` version 5 is deployed. The hosted post-apply check
+found 25 notifications (0 expired), 25 terminal outbox rows with `finished_at`
+set, 25 live dedupe-ledger keys, `ON DELETE SET NULL`, the BEFORE INSERT
+trigger, RLS with zero policies, and all four retention functions. `pg_cron`
+1.6.4 is installed in `pg_catalog`; the
+`ucc2-cleanup-expired-notifications` job is active on `*/15 * * * *`; runids 1
+(12:15 UTC), 2 (12:30 UTC), and 3 (12:45 UTC) succeeded. A scheduled run deleted
+a synthetic 25-hour-old notification and released its dedupe key, while a
+23-hour-old notification and an expired notification with a pending outbox job
+survived. Synthetic fixtures were removed afterwards. The relation did not
+shrink (25 real rows, 114,688 bytes after cleanup), so no storage reclamation
+is claimed.
+
+| Order | File | Purpose | Depends on |
+|---|---|---|---|
+| 4 | `2026102501_notification_retention.sql` | Adds `notifications (created_at)` index; `notification_dedupe_ledger` plus a BEFORE INSERT dedupe guard; makes `notification_push_outbox.notification_id` nullable with `ON DELETE SET NULL` and adds `finished_at`; adds the terminal predicate, batched `cleanup_expired_notifications()`, and the `pg_cron` schedule helper `ensure_notification_retention_schedule()`. | #1–#3; `2026102303` for `dedupe_key` |
+
+**Ordering and prerequisites:** apply #4 only after the push chain. It
+backfills `finished_at` for rows settled by the old worker, so the retention
+scan treats them as terminal instead of protecting them forever.
+
+**Scheduling prerequisite:** the `postgres` role on a hosted Supabase project
+is not a superuser. Enable `pg_cron` through the Supabase Dashboard, or run the
+equivalent SQL through the Management API:
+
+```sql
+create extension if not exists pg_cron with schema pg_catalog;
+grant usage on schema cron to postgres;
+grant all privileges on all tables in schema cron to postgres;
+```
+
+Then call `select public.ensure_notification_retention_schedule();`. Without
+the extension the helper is a no-op that returns `false`; nothing is deleted
+automatically. The migration itself does not install the extension. On
+2026-10-25 the Management API path worked against `brfxqnkafqunxauhtmar`, even
+though a direct non-superuser connection may be rejected.
+
+**Verification:** `supabase/verify_schema.sql` block 22.18, then
+`supabase/test-notification-retention.sql` Tests 1–13. The hosted schedule was
+verified with `cron.job_run_details` runids 1–3, a real scheduled deletion,
+a pending-outbox survival check, and a before/after size measurement; see the
+deployment runbook for the exact results.
+
+**Rollback:** unschedule the cron job (`select cron.unschedule('ucc2-cleanup-expired-notifications');`)
+or call `cron.alter_job(..., active := false)`. Dropping the retention objects
+is safe for delivery state; do not restore the old `ON DELETE CASCADE` while
+retention is disabled without first checking existing outbox links.
+
+---
+
+## Publish fan-out (2026-10-23) — in-app notifications + email outbox
+
+> **Superseded by the 2026-10-24 Android push change.** New email enqueue is
+> disabled by `2026102403`; this section is retained as the history of the
+> earlier email phase. The in-app fan-out design remains current.
+
+Two forward-only migrations dated 2026-10-23, in mandatory order. They sit
+after every migration above (including the uncommitted discussion-pin files
+`2026102301`/`2026102302` if those are applied first — the rehearsal harness
+CANONICAL list is the authoritative order). Full design in
+**`docs/notifications-publish-fanout-design.md`**; the historical email
+activation steps in **`docs/notifications-publish-fanout-deployment.md`** are
+now disabled and must not be followed.
+
+| Order | File | Purpose | Depends on |
+|---|---|---|---|
+| 1 | `2026102303_notification_publish_schema.sql` | Additive constraint extensions (`notifications.type += event_published`, `content_type += announcement`); new `notification_preferences` (default-on email flag, own-row RLS); new `notification_email_outbox` (durable queue, unique idempotency key, RLS on with no client policies, privileges revoked from anon/authenticated) | baseline + `2026102202` |
+| 2 | `2026102304_notification_publish_triggers.sql` | `publish_recipient_ids()` + `on_publish_notification()` (both SECURITY DEFINER, execute revoked from clients); AFTER INSERT fan-out triggers on `announcements` and `events` — one in-app notification + one outbox row per eligible member except the publisher; edits never publish | #1 (this table) |
+
+**After applying (historical):** `supabase/verify_schema.sql` reported
+`VERIFICATION PASSED` (blocks 22.13/22.14 cover these objects), and
+`supabase/test-notification-fanout.sql` covered Tests 1–8. The current suite
+has 10 tests because the 2026-10-24 push change extends it. Strip `\echo` lines
+before running in the SQL editor.
+
+**Rollback:** each migration header carries its manual, object-by-object
+rollback (forward-only chain; nothing drops or rewrites pre-existing tables
+beyond re-adding two CHECK constraints with their original value lists).
 
 ---
 

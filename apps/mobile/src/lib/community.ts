@@ -7,7 +7,18 @@
  * must never crash a list.
  */
 
-import type { Event, EventType, Post, PostType, Profile, UserRole } from './types';
+import type {
+  Announcement,
+  AnnouncementReaction,
+  AnnouncementReactionRow,
+  DiscussionPin,
+  Event,
+  EventType,
+  Post,
+  PostType,
+  Profile,
+  UserRole,
+} from './types';
 
 type Row = Record<string, unknown>;
 
@@ -23,13 +34,23 @@ export const POST_SELECT = `
 export const EVENT_SELECT = `
   id, host_id, title, description, type, event_date, event_time, duration,
   link, target_years, created_at,
-  host:profiles!host_id (id, name, usn, avatar_url, role),
+  host:profiles!host_id (id, name, usn, avatar_url, year, role),
   event_rsvps (count)
 `;
 
 export const COMMENT_SELECT = `
   id, post_id, author_id, body, parent_id, created_at,
   author:profiles!author_id (id, name, usn, avatar_url)
+`;
+
+export const ANNOUNCEMENT_SELECT = `
+  *,
+  author:profiles!author_id (id, name, avatar_url, designation),
+  reactions:announcement_reactions (user_id, reaction, created_at)
+`;
+
+export const PIN_SELECT = `
+  id, post_id, pinned_by, pinned_at, pin_expires_at, unpinned_at, unpinned_by
 `;
 
 const EVENT_TYPES: EventType[] = ['Workshop', 'Meeting', 'Showcase', 'Seminar', 'Project Session'];
@@ -85,6 +106,11 @@ function embeddedProfile(value: unknown): Profile | null {
     designation: null,
     employee_id: null,
     expertise: [],
+    member_type: asRole(source.role) === 'student' ? 'student' : 'faculty',
+    graduation_year: null,
+    portfolio_url: null,
+    github_url: null,
+    linkedin_url: null,
     created_at: '',
   };
 }
@@ -135,8 +161,150 @@ export function mapEvent(row: Row): Event {
     host_usn: host?.usn ?? '',
     host_avatar: host?.avatar_url ?? null,
     host_role: host?.role ?? 'student',
+    host_year: host?.year ?? null,
     rsvp_count: countFromEmbed(row.event_rsvps) || Number(row.rsvp_count) || 0,
   };
+}
+
+/* ----------------------------- announcements ----------------------------- */
+
+export const ANNOUNCEMENT_REACTIONS: readonly {
+  type: AnnouncementReaction;
+  emoji: string;
+  label: string;
+}[] = [
+  { type: 'thumbs_up', emoji: '👍', label: 'Thumbs up' },
+  { type: 'heart', emoji: '❤️', label: 'Love' },
+  { type: 'party', emoji: '🎉', label: 'Celebrate' },
+  { type: 'clap', emoji: '👏', label: 'Applause' },
+];
+
+export function isAnnouncementReaction(value: unknown): value is AnnouncementReaction {
+  return ANNOUNCEMENT_REACTIONS.some((reaction) => reaction.type === value);
+}
+
+/**
+ * A member has at most one reaction per announcement. Legacy rows may contain
+ * more than one, so keep the latest row per user before counting.
+ */
+export function normalizeReactionRows(value: unknown): AnnouncementReactionRow[] {
+  if (!Array.isArray(value)) return [];
+  const byUser = new Map<string, AnnouncementReactionRow>();
+  const order: string[] = [];
+
+  for (const item of value) {
+    if (!item || typeof item !== 'object') continue;
+    const row = item as Row;
+    const userId = typeof row.user_id === 'string' ? row.user_id : '';
+    if (!userId || !isAnnouncementReaction(row.reaction)) continue;
+    const candidate: AnnouncementReactionRow = {
+      user_id: userId,
+      reaction: row.reaction,
+      created_at: typeof row.created_at === 'string' ? row.created_at : undefined,
+    };
+    const current = byUser.get(userId);
+    if (!current) {
+      byUser.set(userId, candidate);
+      order.push(userId);
+      continue;
+    }
+    const candidateTime = Date.parse(candidate.created_at ?? '');
+    const currentTime = Date.parse(current.created_at ?? '');
+    if (Number.isFinite(candidateTime) && Number.isFinite(currentTime) && candidateTime < currentTime) {
+      continue;
+    }
+    byUser.set(userId, candidate);
+  }
+
+  return order.map((userId) => byUser.get(userId)!);
+}
+
+export function summarizeReactions(
+  rows: readonly {
+    user_id?: string | null;
+    reaction?: string | null;
+    created_at?: string | null;
+  }[] | null | undefined,
+  viewerId?: string | null
+): { counts: Record<AnnouncementReaction, number>; mine: AnnouncementReaction[] } {
+  const counts: Record<AnnouncementReaction, number> = {
+    thumbs_up: 0,
+    heart: 0,
+    party: 0,
+    clap: 0,
+  };
+  const mine: AnnouncementReaction[] = [];
+
+  for (const row of normalizeReactionRows(rows)) {
+    counts[row.reaction] += 1;
+    if (viewerId && row.user_id === viewerId) mine.push(row.reaction);
+  }
+
+  return { counts, mine };
+}
+
+export function mapAnnouncement(row: Row): Announcement {
+  const author = embeddedProfile(row.author ?? row.profiles);
+  const images = Array.isArray(row.image_urls)
+    ? row.image_urls.filter(
+        (item): item is string => typeof item === 'string' && /^https?:\/\//i.test(item.trim())
+      )
+    : [];
+
+  return {
+    id: String(row.id),
+    author_id: String(row.author_id ?? ''),
+    title: asString(row.title, 'Untitled announcement'),
+    body: asString(row.body),
+    image_urls: images.slice(0, 4),
+    created_at: asString(row.created_at, new Date().toISOString()),
+    updated_at: asString(row.updated_at ?? row.created_at, new Date().toISOString()),
+    author_name: author?.name,
+    author_avatar: author?.avatar_url ?? null,
+    author_designation: author?.designation ?? null,
+    reactions: normalizeReactionRows(row.reactions),
+  };
+}
+
+/* ------------------------------- pins ----------------------------------- */
+
+export function mapDiscussionPin(row: Row): DiscussionPin | null {
+  const id = asNullableString(row.id);
+  const postId = asNullableString(row.post_id);
+  const pinnedBy = asNullableString(row.pinned_by);
+  const pinnedAt = asNullableString(row.pinned_at);
+  const expiresAt = asNullableString(row.pin_expires_at);
+  if (!id || !postId || !pinnedBy || !pinnedAt || !expiresAt) return null;
+  return {
+    id,
+    post_id: postId,
+    pinned_by: pinnedBy,
+    pinned_at: pinnedAt,
+    pin_expires_at: expiresAt,
+    unpinned_at: asNullableString(row.unpinned_at),
+    unpinned_by: asNullableString(row.unpinned_by),
+  };
+}
+
+export function isPinActive(
+  pin: Pick<DiscussionPin, 'unpinned_at' | 'pin_expires_at'>,
+  now: number = Date.now()
+): boolean {
+  if (pin.unpinned_at) return false;
+  const expires = Date.parse(pin.pin_expires_at);
+  return Number.isFinite(expires) && expires > now;
+}
+
+/** Active pins only, newest first, capped at the community limit. */
+export function selectActivePins(
+  pins: DiscussionPin[],
+  now: number = Date.now(),
+  limit = 3
+): DiscussionPin[] {
+  return pins
+    .filter((pin) => isPinActive(pin, now))
+    .sort((a, b) => Date.parse(b.pinned_at) - Date.parse(a.pinned_at))
+    .slice(0, limit);
 }
 
 /* -------------------------------- dates ---------------------------------- */

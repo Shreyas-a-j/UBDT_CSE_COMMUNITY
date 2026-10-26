@@ -7,6 +7,7 @@ import {
   profileWritableFields,
   displayName,
   isVerifiedFaculty,
+  canManageDiscussionPins,
   alumniTag,
 } from './profile'
 
@@ -493,6 +494,25 @@ describe('isVerifiedFaculty', () => {
   })
   it('false for null', () => {
     expect(isVerifiedFaculty(null)).toBe(false)
+  })
+})
+
+describe('canManageDiscussionPins', () => {
+  it('allows an admin without any faculty approval status', () => {
+    expect(canManageDiscussionPins({ role: 'admin', faculty_status: 'none' })).toBe(true)
+    expect(canManageDiscussionPins({ role: 'admin', faculty_status: 'rejected' })).toBe(true)
+  })
+
+  it('allows approved and verified faculty', () => {
+    expect(canManageDiscussionPins({ role: 'faculty', faculty_status: 'approved' })).toBe(true)
+    expect(canManageDiscussionPins({ role: 'faculty', faculty_status: 'verified' })).toBe(true)
+  })
+
+  it('denies pending/rejected faculty and students', () => {
+    expect(canManageDiscussionPins({ role: 'faculty', faculty_status: 'pending' })).toBe(false)
+    expect(canManageDiscussionPins({ role: 'faculty', faculty_status: 'rejected' })).toBe(false)
+    expect(canManageDiscussionPins({ role: 'student', faculty_status: 'none' })).toBe(false)
+    expect(canManageDiscussionPins(null)).toBe(false)
   })
 })
 

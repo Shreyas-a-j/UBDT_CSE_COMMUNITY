@@ -33,6 +33,19 @@ export default function AnnouncementsPage() {
     queueMicrotask(() => setClock(new Date()))
   }, [])
 
+  // Deep links from publish notifications ("/announcements#announcement-<id>")
+  // cannot rely on native hash scrolling: the list renders after the feed
+  // loads, so the target element does not exist at first paint. Scroll to it
+  // once announcements arrive. (Optional call: jsdom in tests does not
+  // implement scrollIntoView.)
+  useEffect(() => {
+    if (typeof window === 'undefined' || announcements.length === 0) return
+    const match = /^#announcement-(.+)$/.exec(window.location.hash)
+    if (!match) return
+    const el = document.getElementById(`announcement-${match[1]}`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [announcements])
+
   // One rail entry per faculty member who has posted, most active first.
   const authors = useMemo<AuthorSummary[]>(() => {
     const byAuthor = new Map<string, AuthorSummary>()

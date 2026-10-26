@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { parseTags, sanitizeText } from '@/lib/community';
+import { KEYBOARD_AVOIDING_BEHAVIOR } from '@/lib/keyboard';
 import { Brand, Type } from '@/lib/theme';
 import { BackHeader, Screen } from '@/components/layout';
 import { PrimaryButton, StatusBanner, TextField } from '@/components/ui';
@@ -90,7 +91,7 @@ export default function CreatePostScreen() {
   return (
     <Screen bottom>
       <BackHeader title="New post" subtitle={profile?.name ?? 'Publish to the community'} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.fill}>
+      <KeyboardAvoidingView behavior={KEYBOARD_AVOIDING_BEHAVIOR} style={styles.fill}>
         <ScrollView
           contentContainerStyle={[styles.content, { paddingBottom: Math.max(insets.bottom, 20) + 20 }]}
           keyboardShouldPersistTaps="handled"

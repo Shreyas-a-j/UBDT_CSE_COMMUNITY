@@ -1,7 +1,7 @@
 'use client';
 
 /**
- * Authenticated tab shell: Feed · Events · Network · Alerts · Profile.
+ * Authenticated tab shell: Feed · Events · People · Alerts · Profile.
  *
  * React Navigation handles bottom safe-area padding, the active-tab state,
  * Android back history and keyboard hiding. The tab bar is opaque (not
@@ -14,14 +14,10 @@ import { PixelRatio } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Brand, Type } from '@/lib/theme';
-import { UnreadNotificationsProvider, useUnreadNotifications } from '@/lib/unread-notifications';
+import { useUnreadNotifications } from '@/lib/unread-notifications';
 
 export default function TabsLayout() {
-  return (
-    <UnreadNotificationsProvider>
-      <TabsNavigator />
-    </UnreadNotificationsProvider>
-  );
+  return <TabsNavigator />;
 }
 
 function TabsNavigator() {
@@ -85,11 +81,11 @@ function TabsNavigator() {
         }}
       />
       <Tabs.Screen
-        name="network"
+        name="people"
         options={{
-          title: 'Network',
-          tabBarAccessibilityLabel: 'Connections and messages',
-          tabBarButtonTestID: 'tab-network',
+          title: 'People',
+          tabBarAccessibilityLabel: 'People directory',
+          tabBarButtonTestID: 'tab-people',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? 'people' : 'people-outline'} size={23} color={color as string} />
           ),

@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Camera, Check, Edit2, ExternalLink, GraduationCap, Loader2, Plus, Save, X } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { alumniTag, normalizeProfileLinks, type ProfileLinkErrors } from '@/lib/profile'
+import { validateAcademicYear } from '@/lib/validation'
 import { getAvatarFallback, getYearLabel } from '@/lib/utils'
 import { createClient } from '@/lib/supabase/client'
 import { compressAndTokenize } from '@/lib/imageProcessing'
@@ -19,6 +20,7 @@ export default function ProfileModal() {
     selectedProfileForView,
     currentUser,
     updateProfile,
+    linkStudentUsn,
   } = useCommunity()
 
   const supabase = createClient()
@@ -30,6 +32,8 @@ export default function ProfileModal() {
   const [isEditMode, setIsEditMode] = useState(false)
   const [name, setName] = useState(profile?.name || 'Member')
   const [bio, setBio] = useState(profile?.bio || '')
+  const [year, setYear] = useState<number | null>(profile?.year ?? null)
+  const [yearError, setYearError] = useState<string | null>(null)
   const [avatarUrl, setAvatarUrl] = useState(profile?.avatar_url || '')
   const [skills, setSkills] = useState<string[]>(profile?.skills || [])
   const [portfolioUrl, setPortfolioUrl] = useState(profile?.portfolio_url || '')
@@ -39,18 +43,52 @@ export default function ProfileModal() {
   const [newSkillInput, setNewSkillInput] = useState('')
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [uploadMessage, setUploadMessage] = useState<string | null>(null)
+  const [usnInput, setUsnInput] = useState('')
+  const [usnError, setUsnError] = useState<string | null>(null)
+  const [usnPending, setUsnPending] = useState(false)
+  const [admissionNumber, setAdmissionNumber] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!isProfileModalOpen || !isEditingSelf || !currentUser) {
+      setAdmissionNumber(null)
+      return
+    }
+
+    let active = true
+    void supabase
+      .from('student_admission_numbers')
+      .select('admission_number')
+      .eq('profile_id', currentUser.id)
+      .maybeSingle()
+      .then(({ data, error }) => {
+        // A missing table means the additive migration has not been applied
+        // yet. Hide the row rather than logging the private value.
+        if (!active || error) return
+        setAdmissionNumber(
+          typeof data?.admission_number === 'string' ? data.admission_number : null,
+        )
+      })
+
+    return () => {
+      active = false
+    }
+  }, [isProfileModalOpen, isEditingSelf, currentUser?.id])
 
   useEffect(() => {
     if (profile) {
       queueMicrotask(() => {
         setName(profile.name || 'Member')
         setBio(profile.bio || '')
+        setYear(profile.year ?? null)
+        setYearError(null)
         setAvatarUrl(profile.avatar_url || '')
         setSkills(profile.skills || [])
         setPortfolioUrl(profile.portfolio_url || '')
         setGithubUrl(profile.github_url || '')
         setLinkedinUrl(profile.linkedin_url || '')
         setLinkErrors({})
+        setUsnInput('')
+        setUsnError(null)
         setIsEditMode(false)
       })
     }
@@ -135,7 +173,30 @@ export default function ProfileModal() {
     setSkills(skills.filter(s => s !== skillToRemove))
   }
 
+  const handleLinkUsn = async (event: React.FormEvent) => {
+    event.preventDefault()
+    if (usnPending) return
+    setUsnPending(true)
+    setUsnError(null)
+    const result = await linkStudentUsn(usnInput)
+    setUsnPending(false)
+    if (!result.ok) {
+      setUsnError(result.error || 'Could not link the USN.')
+      return
+    }
+    setUsnInput('')
+  }
+
   const handleSave = () => {
+    const isStudent = profile.member_type === 'student'
+    if (isStudent) {
+      const yearMessage = validateAcademicYear(year)
+      if (yearMessage) {
+        setYearError(yearMessage)
+        return
+      }
+    }
+
     const links = normalizeProfileLinks({
       portfolio_url: portfolioUrl,
       github_url: githubUrl,
@@ -146,12 +207,14 @@ export default function ProfileModal() {
       return
     }
 
+    setYearError(null)
     setLinkErrors({})
     updateProfile({
       name: name.trim(),
       bio: bio.trim(),
       avatar_url: avatarUrl || null,
       skills,
+      ...(isStudent ? { year } : {}),
       ...links.values,
     })
     setIsEditMode(false)
@@ -266,6 +329,87 @@ export default function ProfileModal() {
                 placeholder="What are you working on?"
               />
             </div>
+
+            {isEditingSelf && profile.member_type === 'student' && (
+              <div>
+                <label className="label" htmlFor="profile-usn">
+                  {profile.usn ? 'USN' : 'Add your USN'}
+                </label>
+                {profile.usn ? (
+                  <input
+                    id="profile-usn"
+                    type="text"
+                    value={profile.usn}
+                    readOnly
+                    className="field font-mono"
+                  />
+                ) : (
+                  <form onSubmit={handleLinkUsn} className="flex gap-2">
+                    <input
+                      id="profile-usn"
+                      type="text"
+                      value={usnInput}
+                      onChange={event => {
+                        setUsnInput(event.target.value.toUpperCase())
+                        setUsnError(null)
+                      }}
+                      className="field flex-1 font-mono uppercase placeholder:normal-case"
+                      placeholder="e.g. 4UB24CS045"
+                      maxLength={12}
+                      autoCapitalize="characters"
+                      aria-invalid={Boolean(usnError)}
+                      aria-describedby={usnError ? 'profile-usn-error' : undefined}
+                    />
+                    <button
+                      type="submit"
+                      className="btn btn-soft shrink-0"
+                      disabled={!usnInput.trim() || usnPending}
+                    >
+                      {usnPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Link'}
+                    </button>
+                  </form>
+                )}
+                {usnError && (
+                  <p id="profile-usn-error" role="alert" className="mt-1 text-[11px] text-danger">
+                    {usnError}
+                  </p>
+                )}
+                {!profile.usn && (
+                  <p className="mt-1.5 text-[10.5px] text-dim">
+                    You can link a USN once. It cannot be changed later.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {profile.member_type === 'student' && (
+              <div>
+                <label className="label" htmlFor="profile-year">Academic year</label>
+                <select
+                  id="profile-year"
+                  value={year ?? ''}
+                  onChange={event => {
+                    setYear(event.target.value ? Number(event.target.value) : null)
+                    setYearError(null)
+                  }}
+                  className="field"
+                  required
+                  aria-invalid={Boolean(yearError)}
+                  aria-describedby={yearError ? 'profile-year-error' : undefined}
+                >
+                  <option value="">Select your academic year</option>
+                  <option value={1}>1st year</option>
+                  <option value={2}>2nd year</option>
+                  <option value={3}>3rd year</option>
+                  <option value={4}>4th year</option>
+                </select>
+                {yearError && (
+                  <p id="profile-year-error" className="mt-1 text-[11px] text-danger">
+                    {yearError}
+                  </p>
+                )}
+              </div>
+            )}
 
             <div>
               <span className="label">Skills and technologies</span>
@@ -429,6 +573,13 @@ export default function ProfileModal() {
               <p className="text-[12.5px] text-dim">
                 {isEditingSelf ? 'Add a short bio so classmates know what you work on.' : 'No bio yet.'}
               </p>
+            )}
+
+            {isEditingSelf && admissionNumber && (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-line bg-canvas px-3 py-2">
+                <span className="text-[11.5px] text-muted">Admission number on file</span>
+                <span className="chip chip-mono">{admissionNumber}</span>
+              </div>
             )}
 
             <ProfileLinks profile={profile} />

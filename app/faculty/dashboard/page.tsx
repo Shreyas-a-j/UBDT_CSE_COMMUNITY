@@ -1,6 +1,6 @@
 'use client'
 
-import { Suspense, useCallback, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Calendar, LayoutDashboard, Loader2, Megaphone, Plus } from 'lucide-react'
@@ -14,6 +14,7 @@ import CommunityActivityExport from '@/components/CommunityActivityExport'
 import { useAuth } from '@/contexts/AuthContext'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { canPublishFacultyContent } from '@/lib/profile'
+import { logSupabaseError } from '@/lib/supabase/errors'
 import { formatDate, formatEventDateTime } from '@/lib/utils'
 import toast from 'react-hot-toast'
 
@@ -21,35 +22,69 @@ function FacultyDashboard() {
   const router = useRouter()
   const supabase = createClient()
   const { profile: currentUser } = useAuth()
-  const { openCreateEvent } = useCommunity()
+  const { openCreateEvent, deleteAnnouncement } = useCommunity()
   const [myEvents, setMyEvents] = useState<Event[]>([])
   const [myAnnouncements, setMyAnnouncements] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const deletingRef = useRef<Set<string>>(new Set())
+  // A deletion is final. Remember the ids so a stale/slow refetch can never
+  // put a deleted row (and its Delete control) back on screen.
+  const deletedAnnouncementIds = useRef<Set<string>>(new Set())
 
-  const fetchMyContent = useCallback(async () => {
-    if (!currentUser) return
-    setLoading(true)
+  const fetchMyContent = useCallback(
+    async (options?: { silent?: boolean }): Promise<boolean> => {
+      if (!currentUser) return false
+      if (!options?.silent) setLoading(true)
 
-    const { data: eventsData } = await supabase
-      .from('events')
-      .select('*')
-      .eq('host_id', currentUser.id)
-      .order('event_date', { ascending: false })
-      .limit(10)
+      // The two host-scoped lists are independent: fetch them together.
+      const [eventsRes, announcementsRes] = await Promise.all([
+        supabase
+          .from('events')
+          .select('*')
+          .eq('host_id', currentUser.id)
+          .order('event_date', { ascending: false })
+          .limit(10),
+        supabase
+          .from('announcements')
+          .select('*')
+          .eq('author_id', currentUser.id)
+          .order('created_at', { ascending: false })
+          .limit(10),
+      ])
 
-    if (eventsData) setMyEvents(eventsData as Event[])
+      let failed = false
+      if (eventsRes.error) {
+        failed = true
+        logSupabaseError('[faculty dashboard] events refresh failed', eventsRes.error)
+      } else if (eventsRes.data) {
+        setMyEvents(eventsRes.data as Event[])
+      }
 
-    const { data: announcementsData } = await supabase
-      .from('announcements')
-      .select('*')
-      .eq('author_id', currentUser.id)
-      .order('created_at', { ascending: false })
-      .limit(10)
+      if (announcementsRes.error) {
+        failed = true
+        // Never replace the list with an empty one on error: a failed refresh
+        // must not erase a successful optimistic delete or invent data.
+        logSupabaseError(
+          '[faculty dashboard] announcements refresh failed',
+          announcementsRes.error
+        )
+      } else if (announcementsRes.data) {
+        setMyAnnouncements(
+          (announcementsRes.data as Announcement[]).filter(
+            row => !deletedAnnouncementIds.current.has(row.id)
+          )
+        )
+      }
 
-    if (announcementsData) setMyAnnouncements(announcementsData as Announcement[])
-
-    setLoading(false)
-  }, [currentUser, supabase])
+      setLoadError(
+        failed ? 'Some of your content could not be refreshed. Retry when online.' : null
+      )
+      if (!options?.silent) setLoading(false)
+      return !failed
+    },
+    [currentUser, supabase]
+  )
 
   useEffect(() => {
     if (currentUser) {
@@ -62,14 +97,63 @@ function FacultyDashboard() {
     }
   }, [currentUser, fetchMyContent, router])
 
+  // Deletions can happen on the announcements channel, in another tab, or by
+  // an administrator. Refresh the host-scoped lists when the page becomes
+  // active again so a removed announcement cannot keep its Delete control.
+  useEffect(() => {
+    if (!currentUser || !canPublishFacultyContent(currentUser)) return
+
+    const refresh = () => {
+      if (document.visibilityState === 'visible') {
+        void fetchMyContent({ silent: true })
+      }
+    }
+    const onPageShow = () => {
+      void fetchMyContent({ silent: true })
+    }
+
+    window.addEventListener('focus', refresh)
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('pageshow', onPageShow)
+    return () => {
+      window.removeEventListener('focus', refresh)
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('pageshow', onPageShow)
+    }
+  }, [currentUser, fetchMyContent])
+
   const handleDeleteAnnouncement = async (id: string) => {
-    if (!confirm('Delete this announcement?')) return
-    const { error } = await supabase.from('announcements').delete().eq('id', id)
-    if (error) {
-      toast.error(error.message)
-    } else {
-      toast.success('Announcement deleted')
-      fetchMyContent()
+    if (deletingRef.current.has(id)) return
+    if (!confirm('Delete this announcement? This cannot be undone.')) return
+
+    deletingRef.current.add(id)
+    try {
+      // Same trusted route as the channel: it re-checks author/admin and
+      // removes the row before best-effort image cleanup.
+      const result = await deleteAnnouncement(id)
+      if (!result.ok) {
+        toast.error(result.error || 'The announcement could not be deleted.')
+        return
+      }
+
+      // Remove it from this page's own state immediately. The dashboard keeps
+      // a host-scoped copy separate from CommunityContext; waiting only for a
+      // refetch left a deleted row (and its Delete button) on screen whenever
+      // the follow-up read failed or was delayed.
+      deletedAnnouncementIds.current.add(id)
+      setMyAnnouncements(previous => previous.filter(row => row.id !== id))
+      toast.success(
+        result.alreadyGone ? 'The announcement was already gone.' : 'Announcement deleted'
+      )
+
+      // Best-effort reconciliation. A failure is logged and surfaced by
+      // fetchMyContent, and the optimistic removal above still stands.
+      await fetchMyContent({ silent: true })
+    } catch (error) {
+      logSupabaseError('[faculty dashboard] delete announcement failed', error)
+      toast.error('The announcement was deleted, but the list could not be refreshed.')
+    } finally {
+      deletingRef.current.delete(id)
     }
   }
 
@@ -102,6 +186,22 @@ function FacultyDashboard() {
       <div className="mb-5">
         <CommunityActivityExport />
       </div>
+
+      {loadError && !loading && (
+        <div
+          role="status"
+          className="mb-5 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-warn/30 bg-warn/[0.06] px-3 py-2"
+        >
+          <p className="text-[12px] text-warn">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => void fetchMyContent()}
+            className="btn btn-outline btn-sm"
+          >
+            Retry
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <LoadingSkeleton rows={3} />

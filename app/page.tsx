@@ -1,10 +1,10 @@
 'use client'
 
-import React, { useMemo } from 'react'
+import React, { useEffect, useMemo } from 'react'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import {
-  CalendarDays, Code2, Megaphone, MessageSquare, Plus, Search, Sparkles, TrendingUp, X,
+  CalendarDays, Code2, Megaphone, MessageSquare, Pin, Plus, Search, Sparkles, TrendingUp, X,
 } from 'lucide-react'
 import AppShell from '@/components/AppShell'
 import SidebarRight from '@/components/SidebarRight'
@@ -15,9 +15,11 @@ import SectionHeader from '@/components/SectionHeader'
 import FilterTabs, { FilterTab } from '@/components/FilterTabs'
 import EmptyState from '@/components/EmptyState'
 import UserAvatar from '@/components/UserAvatar'
+
 import { useCommunity } from '@/contexts/CommunityContext'
-import { displayName } from '@/lib/profile'
+import { displayName, canManageDiscussionPins } from '@/lib/profile'
 import { rankPopularShowcases } from '@/lib/logic/ranking'
+import { MAX_ACTIVE_DISCUSSION_PINS, PIN_SLOTS_FULL_MESSAGE } from '@/lib/logic/discussionPins'
 import { filterFeedAnnouncements, filterFeedEvents, filterFeedPosts } from '@/lib/logic/feed'
 import { normalizeBatch } from '@/lib/logic/batch'
 import { FeedFilter, YearFilter } from '@/lib/types'
@@ -32,7 +34,7 @@ const YEAR_OPTIONS: { id: YearFilter; label: string }[] = [
 
 export default function Home() {
   const {
-    currentUser, posts, events, announcements, feedLoading, feedError,
+    currentUser, posts, pinnedPosts, events, announcements, feedLoading, feedError,
     feedFilter, setFeedFilter, yearFilter, setYearFilter,
     searchQuery, setSearchQuery, setIsCreatePostOpen, openCreateEvent,
     setIsAuthModalOpen,
@@ -48,7 +50,25 @@ export default function Home() {
     [feedFilter, yearFilter, searchQuery]
   )
 
-  const filteredPosts = useMemo(() => filterFeedPosts(posts, selection), [posts, selection])
+  // Pins are community-wide discussions, so they stay at the top of the
+  // All/Discussions views and are independent of the batch filter. A search
+  // is a deliberate narrow view; the pinned rail would be noise there.
+  const showPinned =
+    (feedFilter === 'all' || feedFilter === 'discussions') && !searchQuery.trim()
+
+  const pinnedIdSet = useMemo(
+    () => new Set(pinnedPosts.map(post => post.id)),
+    [pinnedPosts]
+  )
+
+  // A pinned discussion is rendered once, in the Pinned section, instead of
+  // appearing twice on the same page. The database query still owns feed
+  // ordering and pagination; this only removes the duplicate from the view.
+  const filteredPosts = useMemo(() => {
+    const matched = filterFeedPosts(posts, selection)
+    if (!showPinned) return matched
+    return matched.filter(post => !pinnedIdSet.has(post.id))
+  }, [posts, selection, showPinned, pinnedIdSet])
 
   // Top of the feed: the labeled "Popular" section — up to two Project
   // Showcase posts ranked by actual upvote count (newest first on ties, then
@@ -67,6 +87,18 @@ export default function Home() {
   )
 
   const filteredEvents = useMemo(() => filterFeedEvents(events, selection), [events, selection])
+
+  // Deep links from publish notifications ("/#event-<id>") land here with a
+  // hash that matches nothing at first paint — the events section renders
+  // after the feed loads. Scroll to the card once the list exists.
+  // (Optional call: jsdom in tests does not implement scrollIntoView.)
+  useEffect(() => {
+    if (typeof window === 'undefined' || filteredEvents.length === 0) return
+    const match = /^#event-(.+)$/.exec(window.location.hash)
+    if (!match) return
+    const el = document.getElementById(`event-${match[1]}`)
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  }, [filteredEvents])
 
   const filteredAnnouncements = useMemo(
     () => filterFeedAnnouncements(announcements, selection),
@@ -233,6 +265,34 @@ export default function Home() {
             </p>
           )}
 
+          {!feedLoading && showPinned && pinnedPosts.length > 0 && (
+            <section className="space-y-3" aria-labelledby="pinned-heading">
+              <SectionHeader
+                id="pinned-heading"
+                title="Pinned"
+                count={pinnedPosts.length}
+                icon={<Pin className="h-4 w-4" />}
+                action={
+                  <span className="text-[11px] text-dim">Community-wide · 7 days</span>
+                }
+              />
+              {pinnedPosts.length >= MAX_ACTIVE_DISCUSSION_PINS &&
+                canManageDiscussionPins(currentUser) && (
+                  <p
+                    role="status"
+                    className="rounded-md border border-line bg-surface px-3.5 py-2.5 text-[12px] text-dim"
+                  >
+                    {PIN_SLOTS_FULL_MESSAGE}
+                  </p>
+                )}
+              <div className="space-y-4">
+                {pinnedPosts.map(post => (
+                  <PostCard key={`pinned-${post.id}`} post={post} />
+                ))}
+              </div>
+            </section>
+          )}
+
           {feedLoading ? (
             <div className="space-y-4" aria-busy="true" aria-label="Loading the feed">
               {[0, 1, 2].map(item => (
@@ -375,6 +435,7 @@ export default function Home() {
               )}
             </div>
           )}
+
         </div>
 
         <div className="hidden min-[1360px]:block">

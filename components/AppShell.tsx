@@ -9,6 +9,8 @@ import CreatePostModal from '@/components/CreatePostModal'
 import CreateEventModal from '@/components/CreateEventModal'
 import ProfileModal from '@/components/ProfileModal'
 import AuthModal from '@/components/AuthModal'
+import AdminNominationBanner from '@/components/AdminNominationBanner'
+import NotificationPopup from '@/components/NotificationPopup'
 import { useCommunity } from '@/contexts/CommunityContext'
 
 function Footer() {
@@ -90,6 +92,8 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       <CreateEventModal />
       <ProfileModal />
       <AuthModal />
+      <AdminNominationBanner />
+      <NotificationPopup />
     </div>
   )
 }

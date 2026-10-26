@@ -1,11 +1,12 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import {
-  Calendar, Check, Clock, Edit2, ExternalLink, Save, Users, Video, X,
+  Calendar, Check, Clock, Edit2, ExternalLink, Save, Trash2, Users, Video, X,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import { Event } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatEventDateTime, getCountdown } from '@/lib/utils'
@@ -55,11 +56,14 @@ function DateBlock({ date }: { date: string }) {
 
 export default function EventCard({ event, compact = false }: EventCardProps) {
   const router = useRouter()
-  const { rsvpedEventIds, toggleRsvpEvent, currentUser, updateEvent } = useCommunity()
+  const { rsvpedEventIds, toggleRsvpEvent, currentUser, updateEvent, deleteEvent } =
+    useCommunity()
   const isRsvped = rsvpedEventIds.has(event.id)
   const isHost = currentUser?.id === event.host_id
   const [countdown, setCountdown] = useState('')
   const [isEditing, setIsEditing] = useState(false)
+  const [isDeleting, setIsDeleting] = useState(false)
+  const deletingRef = useRef(false)
   const [eTitle, setETitle] = useState(event.title)
   const [eDesc, setEDesc] = useState(event.description)
   const [eType, setEType] = useState(event.type)
@@ -92,6 +96,23 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
     setIsEditing(false)
   }
 
+  const handleDelete = async () => {
+    if (deletingRef.current) return
+    if (!window.confirm('Delete this event? This cannot be undone.')) return
+
+    deletingRef.current = true
+    setIsDeleting(true)
+    try {
+      // RLS is the authority (host or admin). The context distinguishes an
+      // RLS denial from an already-gone row and toasts the failure itself.
+      const deleted = await deleteEvent(event.id)
+      if (deleted) toast.success('Event deleted')
+    } finally {
+      deletingRef.current = false
+      setIsDeleting(false)
+    }
+  }
+
   const toggleYear = (year: number) => {
     if (eTargetYears.includes(year)) {
       if (eTargetYears.length > 1) setETargetYears(eTargetYears.filter(y => y !== year))
@@ -102,7 +123,7 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
 
   if (isEditing) {
     return (
-      <article className="card overflow-hidden">
+      <article id={`event-${event.id}`} className="card overflow-hidden">
         <div className="flex items-center justify-between border-b border-line px-4 py-3 sm:px-5">
           <h3 className="flex items-center gap-2 font-display text-[13.5px] font-semibold text-ink">
             <Edit2 className="h-4 w-4 text-info" /> Editing event
@@ -239,7 +260,7 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
   }
 
   return (
-    <article className="card card-hover flex gap-4 p-5 sm:gap-5 sm:p-6">
+    <article id={`event-${event.id}`} className="card card-hover flex gap-4 p-5 sm:gap-5 sm:p-6">
       <DateBlock date={event.event_date} />
 
       <div className="min-w-0 flex-1">
@@ -267,14 +288,26 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
             )}
           </div>
           {isHost && (
-            <button
-              type="button"
-              className="btn-icon h-7 w-7 shrink-0 border-transparent"
-              onClick={() => setIsEditing(true)}
-              aria-label="Edit event"
-            >
-              <Edit2 className="h-3.5 w-3.5" />
-            </button>
+            <div className="flex shrink-0 items-center gap-1">
+              <button
+                type="button"
+                className="btn-icon h-7 w-7 border-transparent"
+                onClick={() => setIsEditing(true)}
+                aria-label="Edit event"
+              >
+                <Edit2 className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                className="btn-icon h-7 w-7 border-transparent hover:text-error"
+                onClick={handleDelete}
+                disabled={isDeleting}
+                aria-label="Delete event"
+                aria-disabled={isDeleting}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
 

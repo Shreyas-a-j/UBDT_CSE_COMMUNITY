@@ -51,6 +51,10 @@ vi.mock('@/components/CommunityActivityExport', () => ({
   default: () => null,
 }))
 
+vi.mock('@/components/AdminHandover', () => ({
+  default: () => null,
+}))
+
 vi.mock('react-hot-toast', () => ({
   default: {
     success: mocks.toastSuccess,

@@ -48,7 +48,11 @@ function makePost(overrides: Partial<Post> = {}): Post {
   }
 }
 
-function makeContext(currentUser: Profile | null, deletePost: ReturnType<typeof vi.fn>) {
+function makeContext(
+  currentUser: Profile | null,
+  deletePost: ReturnType<typeof vi.fn>,
+  overrides: Record<string, unknown> = {}
+) {
   return {
     currentUser,
     likedPostIds: new Set<string>(),
@@ -57,8 +61,35 @@ function makeContext(currentUser: Profile | null, deletePost: ReturnType<typeof 
     addComment: vi.fn(),
     updatePost: vi.fn(),
     deletePost,
+    pinnedPostIds: new Set<string>(),
+    pinPendingIds: new Set<string>(),
+    pinDiscussion: vi.fn().mockResolvedValue(true),
+    unpinDiscussion: vi.fn().mockResolvedValue(true),
+    refreshPins: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
   }
 }
+
+const approvedFaculty = {
+  id: 'faculty-1',
+  usn: null,
+  role: 'faculty',
+  faculty_status: 'approved',
+} as unknown as Profile
+
+const pendingFaculty = {
+  id: 'faculty-pending',
+  usn: null,
+  role: 'faculty',
+  faculty_status: 'pending',
+} as unknown as Profile
+
+const adminWithoutFaculty = {
+  id: 'admin-1',
+  usn: null,
+  role: 'admin',
+  faculty_status: 'none',
+} as unknown as Profile
 
 beforeEach(() => {
   useRouterMock.push.mockReset()
@@ -154,6 +185,57 @@ describe('PostCard delete controls', () => {
   })
 })
 
+describe('PostCard pin countdown and cap', () => {
+  const farFuture = '2099-01-01T00:00:00.000Z'
+
+  it('shows a live countdown for an active pin to authorized faculty', () => {
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), {
+      pinnedPostIds: new Set(['post-9']),
+    }))
+
+    render(<PostCard post={makePost({ pin_expires_at: farFuture })} />)
+
+    expect(screen.getByText(/Pinned by faculty/)).toBeInTheDocument()
+    expect(screen.getByText(/Expires in \d+d \d+h/)).toBeInTheDocument()
+  })
+
+  it('keeps the pin control hidden from members who cannot manage pins', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.queryByRole('button', { name: 'Pin discussion' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unpin discussion' })).not.toBeInTheDocument()
+  })
+
+  it('disables pinning with a cap label when all three slots are occupied', () => {
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), {
+      pinnedPostIds: new Set(['post-1', 'post-2', 'post-3']),
+    }))
+
+    render(<PostCard post={makePost({ id: 'post-9' })} />)
+
+    const button = screen.getByRole('button', { name: 'Maximum 3 active pins' })
+    expect(button).toBeDisabled()
+    expect(button.getAttribute('title')).toMatch(/All 3 pin slots are in use/)
+  })
+
+  it('always offers Unpin for an active pin to authorized faculty', () => {
+    const unpinDiscussion = vi.fn().mockResolvedValue(true)
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), {
+      pinnedPostIds: new Set(['post-9']),
+      unpinDiscussion,
+    }))
+
+    render(<PostCard post={makePost({ pin_expires_at: farFuture })} />)
+
+    const button = screen.getByRole('button', { name: 'Unpin discussion' })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+    expect(unpinDiscussion).toHaveBeenCalledWith('post-9')
+  })
+})
+
 describe('PostCard achievement indicator', () => {
   it('shows the achievement indicator for a popular showcase', () => {
     useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
@@ -183,6 +265,90 @@ describe('PostCard achievement indicator', () => {
     expect(
       screen.queryByRole('img', { name: 'Popular project achievement' })
     ).not.toBeInTheDocument()
+  })
+})
+
+describe('PostCard pin controls', () => {
+  it('shows a pin control to approved faculty and calls pinDiscussion', async () => {
+    const pinDiscussion = vi.fn().mockResolvedValue(true)
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), { pinDiscussion }))
+
+    render(<PostCard post={makePost()} />)
+
+    const button = screen.getByRole('button', { name: 'Pin discussion' })
+    expect(button).toBeEnabled()
+    fireEvent.click(button)
+
+    await waitFor(() => expect(pinDiscussion).toHaveBeenCalledWith('post-9'))
+  })
+
+  it('shows an unpin control and expiry for an active pin', async () => {
+    const unpinDiscussion = vi.fn().mockResolvedValue(true)
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), {
+      pinnedPostIds: new Set(['post-9']),
+      unpinDiscussion,
+    }))
+
+    render(<PostCard post={makePost({ pin_expires_at: '2099-01-01T00:00:00.000Z' })} />)
+
+    expect(screen.getByText('Pinned by faculty')).toBeInTheDocument()
+    expect(screen.getByText(/Expires in \d+d \d+h/)).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Unpin discussion' }))
+    await waitFor(() => expect(unpinDiscussion).toHaveBeenCalledWith('post-9'))
+  })
+
+  it('shows the pin control to an admin without faculty verification', () => {
+    useCommunityMock.mockReturnValue(makeContext(adminWithoutFaculty, vi.fn()))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.getByRole('button', { name: 'Pin discussion' })).toBeEnabled()
+  })
+
+  it('shows the unpin control to an admin without faculty verification', () => {
+    useCommunityMock.mockReturnValue(makeContext(adminWithoutFaculty, vi.fn(), {
+      pinnedPostIds: new Set(['post-9']),
+    }))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.getByRole('button', { name: 'Unpin discussion' })).toBeEnabled()
+  })
+
+  it('does not show pin controls to students', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.queryByRole('button', { name: 'Pin discussion' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Unpin discussion' })).not.toBeInTheDocument()
+  })
+
+  it('does not show pin controls to unapproved faculty', () => {
+    useCommunityMock.mockReturnValue(makeContext(pendingFaculty, vi.fn()))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.queryByRole('button', { name: 'Pin discussion' })).not.toBeInTheDocument()
+  })
+
+  it('never offers pinning on a showcase', () => {
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn()))
+
+    render(<PostCard post={makePost({ type: 'showcase' })} />)
+
+    expect(screen.queryByRole('button', { name: 'Pin discussion' })).not.toBeInTheDocument()
+  })
+
+  it('disables the control while a pin request is pending', () => {
+    useCommunityMock.mockReturnValue(makeContext(approvedFaculty, vi.fn(), {
+      pinPendingIds: new Set(['post-9']),
+    }))
+
+    render(<PostCard post={makePost()} />)
+
+    expect(screen.getByRole('button', { name: 'Pin discussion' })).toBeDisabled()
   })
 })
 
@@ -233,5 +399,63 @@ describe('PostCard edit buffer', () => {
     // Reopen: the fields must reflect the post again, not the abandoned draft.
     fireEvent.click(screen.getByRole('button', { name: 'Edit post' }))
     expect(screen.getByLabelText('Title')).toHaveValue('How to get started with Rust?')
+  })
+})
+
+describe('PostCard description links', () => {
+  beforeEach(() => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+  })
+
+  it('renders URLs in the description as safe external anchors', () => {
+    const { container } = render(
+      <PostCard post={makePost({ body: 'Check https://github.com/user/repo for the code' })} />
+    )
+
+    const link = screen.getByRole('link', { name: 'https://github.com/user/repo' })
+    expect(link).toHaveAttribute('href', 'https://github.com/user/repo')
+    expect(link).toHaveAttribute('target', '_blank')
+    expect(link).toHaveAttribute('rel', 'noopener noreferrer')
+    // The anchor lives inside the description paragraph, not elsewhere.
+    expect(container.querySelector('p')?.contains(link)).toBe(true)
+  })
+
+  it('upgrades www URLs and keeps surrounding description text', () => {
+    const text = 'Notes at www.example.com, plus a second line\nafter the break.'
+    render(<PostCard post={makePost({ body: text })} />)
+
+    const link = screen.getByRole('link', { name: 'www.example.com' })
+    expect(link).toHaveAttribute('href', 'https://www.example.com')
+    expect(screen.getByText(/Notes at/)).toBeInTheDocument()
+    expect(screen.getByText(/after the break\./)).toBeInTheDocument()
+  })
+
+  it('does not trigger card navigation when a description link is clicked', () => {
+    render(<PostCard post={makePost({ body: 'Open www.example.com' })} />)
+
+    fireEvent.click(screen.getByRole('link', { name: 'www.example.com' }))
+
+    expect(useRouterMock.push).not.toHaveBeenCalled()
+  })
+
+  it('never renders unsafe values as clickable links', () => {
+    const text = 'Sneaky javascript:alert(1) stays plain text'
+    const { container } = render(<PostCard post={makePost({ body: text })} />)
+
+    expect(container.querySelector('a')).toBeNull()
+    expect(screen.getByText(/javascript:alert\(1\)/)).toBeInTheDocument()
+  })
+
+  it('renders an empty description without links or errors', () => {
+    const { container } = render(<PostCard post={makePost({ body: '' })} />)
+
+    expect(container.querySelectorAll('a')).toHaveLength(0)
+  })
+
+  it('renders link-less descriptions as plain text', () => {
+    const { container } = render(<PostCard post={makePost({ body: 'Sharing resources.' })} />)
+
+    expect(container.querySelectorAll('a')).toHaveLength(0)
+    expect(screen.getByText('Sharing resources.')).toBeInTheDocument()
   })
 })

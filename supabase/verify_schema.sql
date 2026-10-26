@@ -1280,11 +1280,24 @@ begin
       );
     end if;
 
-    if v_src not ilike '%member_kind%' or v_src not ilike '%alumni%' then
+    -- The audit finding was a duplicated member_type mapping. Assert the
+    -- mapping is defined exactly once and that the profiles insert consumes
+    -- that same variable, rather than only checking for a token.
+    if regexp_count(v_src, 'member_kind\s*:=', 1, 'i') <> 1
+       or v_src !~* 'member_kind\s*:=\s*case\s+when\s+intent\s*=\s*''alumni''\s+then\s+''alumni''\s+else\s+''student''\s+end' then
       insert into ucc2_verify_failures values (
         '2026102201', 'handle_new_user alumni intent',
-        'intent = ''alumni'' provisions member_type = ''alumni'' (role stays ''student'')',
-        'alumni branch missing from function body'
+        'member_kind is assigned exactly once as
+         case when intent = ''alumni'' then ''alumni'' else ''student'' end',
+        'alumni member_type mapping missing, duplicated, or changed in function body'
+      );
+    end if;
+    if v_src !~* 'member_kind\s*,\s*grad_yr' then
+      insert into ucc2_verify_failures values (
+        '2026102201', 'handle_new_user alumni intent',
+        'the single member_kind assignment is passed to the profiles insert
+         as the member_type value',
+        'member_kind assignment is not used by the profiles insert'
       );
     end if;
 
@@ -1616,6 +1629,1261 @@ exception when others then
   );
 end;
 $gate$;
+
+-- ---------------------------------------------------------
+-- 22.12 Discussion pin surface [2026102301]
+--
+-- Pins must be readable only while active, writable only through the
+-- SECURITY DEFINER RPCs, and globally limited to 3. This gate checks the
+-- structural guarantees; supabase/test-discussion-pins.sql exercises the
+-- behaviour (including concurrency).
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_cols int;
+  v_rls boolean;
+  v_select_policy int;
+  v_write_policies int;
+  v_bad_privs text[] := '{}';
+  v_bad_definer text[] := '{}';
+  v_indexdef text;
+  v_src text;
+begin
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public'
+    and table_name = 'discussion_pins'
+    and column_name in (
+      'post_id', 'pinned_by', 'pinned_at',
+      'pin_expires_at', 'unpinned_at', 'unpinned_by'
+    );
+
+  if v_cols <> 6 then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion_pins columns',
+      'post_id, pinned_by, pinned_at, pin_expires_at, unpinned_at, unpinned_by',
+      'found ' || v_cols || ' of 6 expected columns'
+    );
+  end if;
+
+  -- The primary key must be exactly (id). A legacy PRIMARY KEY (post_id)
+  -- makes unpin -> re-pin collide with the retained history row and is the
+  -- cause of "duplicate key value violates ... discussion_pins_pkey".
+  -- 2026102601 repairs that shape without deleting history.
+  if to_regclass('public.discussion_pins') is not null
+     and not exists (
+       select 1
+       from pg_constraint
+       where conrelid = 'public.discussion_pins'::regclass
+         and contype = 'p'
+         and pg_get_constraintdef(oid) = 'PRIMARY KEY (id)'
+     ) then
+    insert into ucc2_verify_failures values (
+      '2026102601', 'discussion_pins primary key',
+      'PRIMARY KEY (id)',
+      'legacy or missing primary key (expected id)'
+    );
+  end if;
+
+  -- post_id is the single source of truth. It must be NOT NULL (the live
+  -- failure was a NULL post_id insert) and the legacy discussion_id column
+  -- must not survive the repair.
+  if not exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'discussion_pins'
+      and column_name = 'post_id'
+      and is_nullable = 'NO'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102302', 'discussion_pins canonical post_id',
+      'post_id NOT NULL',
+      'post_id is missing or nullable'
+    );
+  end if;
+
+  if exists (
+    select 1
+    from information_schema.columns
+    where table_schema = 'public'
+      and table_name = 'discussion_pins'
+      and column_name = 'discussion_id'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102302', 'discussion_pins canonical post_id',
+      'no legacy discussion_id column',
+      'discussion_id still exists'
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c
+  where c.oid = 'public.discussion_pins'::regclass;
+
+  if v_rls is not true then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion_pins RLS',
+      'row level security enabled', 'RLS is disabled'
+    );
+  end if;
+
+  select count(*) into v_select_policy
+  from pg_policies
+  where schemaname = 'public'
+    and tablename = 'discussion_pins'
+    and cmd = 'SELECT'
+    and qual ilike '%pin_expires_at%now()%'
+    and qual ilike '%unpinned_at%is null%';
+
+  if v_select_policy <> 1 then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion_pins active-read policy',
+      'one SELECT policy requiring unpinned_at is null AND pin_expires_at > now()',
+      'matching SELECT policies: ' || v_select_policy
+    );
+  end if;
+
+  select count(*) into v_write_policies
+  from pg_policies
+  where schemaname = 'public'
+    and tablename = 'discussion_pins'
+    and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL');
+
+  if v_write_policies <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion_pins write policies',
+      'no direct write policies (mutations only through RPCs)',
+      'found ' || v_write_policies || ' write policy/policies'
+    );
+  end if;
+
+  if has_table_privilege('anon', 'public.discussion_pins', 'SELECT') is not true
+     or has_table_privilege('authenticated', 'public.discussion_pins', 'SELECT') is not true then
+    v_bad_privs := v_bad_privs || 'missing SELECT grant';
+  end if;
+  if has_table_privilege('anon', 'public.discussion_pins', 'INSERT')
+     or has_table_privilege('anon', 'public.discussion_pins', 'UPDATE')
+     or has_table_privilege('anon', 'public.discussion_pins', 'DELETE') then
+    v_bad_privs := v_bad_privs || 'anon has write privilege';
+  end if;
+  if has_table_privilege('authenticated', 'public.discussion_pins', 'INSERT')
+     or has_table_privilege('authenticated', 'public.discussion_pins', 'UPDATE')
+     or has_table_privilege('authenticated', 'public.discussion_pins', 'DELETE') then
+    v_bad_privs := v_bad_privs || 'authenticated has write privilege';
+  end if;
+  if array_length(v_bad_privs, 1) > 0 then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion_pins table privileges',
+      'anon/authenticated SELECT only',
+      array_to_string(v_bad_privs, ', ')
+    );
+  end if;
+
+  if has_function_privilege('anon', 'public.pin_discussion(uuid)', 'EXECUTE')
+     or has_function_privilege('anon', 'public.unpin_discussion(uuid)', 'EXECUTE') then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion pin RPC grants',
+      'anon cannot execute pin/unpin',
+      'anon has EXECUTE'
+    );
+  end if;
+  if has_function_privilege('authenticated', 'public.pin_discussion(uuid)', 'EXECUTE') is not true
+     or has_function_privilege('authenticated', 'public.unpin_discussion(uuid)', 'EXECUTE') is not true then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion pin RPC grants',
+      'authenticated can execute pin/unpin',
+      'missing EXECUTE for authenticated'
+    );
+  end if;
+
+  select p.prosecdef, coalesce(p.proconfig::text, ''), p.prosrc
+    into v_rls, v_indexdef, v_src
+  from pg_proc p
+  where p.oid = 'public.pin_discussion(uuid)'::regprocedure;
+
+  if v_rls is not true or v_indexdef not ilike '%search_path%' then
+    v_bad_definer := v_bad_definer || 'pin_discussion';
+  end if;
+  if v_src not ilike '%pg_advisory_xact_lock%' then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'pin_discussion concurrency',
+      'transaction-scoped advisory lock around the global count',
+      'pg_advisory_xact_lock not found in function body'
+    );
+  end if;
+  if v_src not ilike '%is_admin%' or v_src not ilike '%is_verified_faculty%' then
+    insert into ucc2_verify_failures values (
+      '2026102302', 'pin_discussion authorization',
+      'explicit is_admin(auth.uid()) OR is_verified_faculty(auth.uid())',
+      'one or both authorization helpers are missing from the function body'
+    );
+  end if;
+
+  select p.prosecdef, coalesce(p.proconfig::text, ''), p.prosrc
+    into v_rls, v_indexdef, v_src
+  from pg_proc p
+  where p.oid = 'public.unpin_discussion(uuid)'::regprocedure;
+
+  if v_rls is not true or v_indexdef not ilike '%search_path%' then
+    v_bad_definer := v_bad_definer || 'unpin_discussion';
+  end if;
+  if v_src not ilike '%is_admin%' or v_src not ilike '%is_verified_faculty%' then
+    insert into ucc2_verify_failures values (
+      '2026102302', 'unpin_discussion authorization',
+      'explicit is_admin(auth.uid()) OR is_verified_faculty(auth.uid())',
+      'one or both authorization helpers are missing from the function body'
+    );
+  end if;
+
+  if array_length(v_bad_definer, 1) > 0 then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'discussion pin SECURITY DEFINER',
+      'SECURITY DEFINER with SET search_path on pin/unpin',
+      'missing on: ' || array_to_string(v_bad_definer, ', ')
+    );
+  end if;
+
+  select indexdef into v_indexdef
+  from pg_indexes
+  where schemaname = 'public'
+    and tablename = 'discussion_pins'
+    and indexname = 'discussion_pins_one_active_per_discussion';
+
+  if v_indexdef is null or v_indexdef not ilike '%UNIQUE%'
+     or v_indexdef not ilike '%unpinned_at IS NULL%' then
+    insert into ucc2_verify_failures values (
+      '2026102301', 'one active pin per discussion',
+      'partial UNIQUE index on post_id WHERE unpinned_at IS NULL',
+      coalesce(v_indexdef, 'index missing')
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures
+    where migration = '2026102301'
+  ) then
+    raise notice 'PASS 22.12 discussion pin surface';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102301', '22.12 block', 'discussion pin surface',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.13 Publish notification schema surface [2026102303]
+--
+-- The additive constraint values, the default-on email preference and
+-- the client-invisible email outbox. Behaviour (defaults, RLS
+-- deny-direction, unique idempotency) is exercised by
+-- supabase/test-notification-fanout.sql.
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_def text;
+  v_cols int;
+  v_rls boolean;
+  v_policies int;
+  v_ok boolean;
+begin
+  -- constraint extensions (containment: legacy values must survive)
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notifications'::regclass
+    and c.conname = 'notifications_content_type_check';
+  if v_def is null or v_def not ilike '%''announcement''%' then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notifications_content_type_check accepts announcement',
+      'CHECK (content_type IS NULL OR ... ''announcement'')',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notifications'::regclass
+    and c.conname = 'notifications_type_check';
+  if v_def is null or v_def not ilike '%''event_published''%' then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notifications_type_check accepts event_published',
+      'CHECK (type in (... ''event_published''))',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  -- notification_preferences: shape, default-on column, own-row RLS
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'notification_preferences'
+    and column_name in ('user_id', 'email_enabled', 'updated_at');
+  if v_cols <> 3 then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_preferences columns',
+      'user_id, email_enabled, updated_at',
+      'found ' || v_cols || ' of 3 expected columns'
+    );
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'notification_preferences'
+      and column_name = 'email_enabled'
+      and is_nullable = 'NO' and column_default = 'true'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_preferences default-on',
+      'email_enabled boolean NOT NULL DEFAULT true',
+      'email_enabled missing, nullable, or not defaulting to true'
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c where c.oid = 'public.notification_preferences'::regclass;
+  if not coalesce(v_rls, false) then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_preferences RLS enabled',
+      'row level security enabled',
+      'RLS is not enabled'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_policies
+    where schemaname = 'public' and tablename = 'notification_preferences'
+      and policyname = 'Users manage own notification preferences'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_preferences own-row policy',
+      'policy "Users manage own notification preferences"',
+      'policy missing'
+    );
+  end if;
+
+  -- notification_email_outbox: shape, status default, unique key,
+  -- RLS enabled with zero policies, client privileges revoked
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'notification_email_outbox'
+    and column_name in (
+      'id', 'source_type', 'source_id', 'user_id', 'status', 'attempts',
+      'last_error', 'next_attempt_at', 'locked_at', 'provider',
+      'provider_message_id', 'sent_at', 'created_at', 'updated_at'
+    );
+  if v_cols <> 14 then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_email_outbox columns',
+      '14 worker columns (id .. updated_at)',
+      'found ' || v_cols || ' of 14 expected columns'
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notification_email_outbox'::regclass
+    and c.conname = 'notification_email_outbox_unique';
+  if v_def is null
+     or v_def not ilike '%source_type%'
+     or v_def not ilike '%source_id%'
+     or v_def not ilike '%user_id%' then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_email_outbox unique idempotency key',
+      'UNIQUE (source_type, source_id, user_id)',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c where c.oid = 'public.notification_email_outbox'::regclass;
+  if not coalesce(v_rls, false) then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_email_outbox RLS enabled',
+      'row level security enabled',
+      'RLS is not enabled'
+    );
+  end if;
+
+  select count(*) into v_policies
+  from pg_policies
+  where schemaname = 'public' and tablename = 'notification_email_outbox';
+  if v_policies <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_email_outbox has no client policies',
+      'zero row level security policies',
+      v_policies || ' policy/policies present'
+    );
+  end if;
+
+  v_ok := not has_table_privilege('anon', 'public.notification_email_outbox', 'select')
+      and not has_table_privilege('anon', 'public.notification_email_outbox', 'insert')
+      and not has_table_privilege('authenticated', 'public.notification_email_outbox', 'select')
+      and not has_table_privilege('authenticated', 'public.notification_email_outbox', 'insert');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102303', 'notification_email_outbox client lockout',
+      'anon/authenticated hold no select/insert on the outbox',
+      'at least one client role still holds a table privilege'
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102303'
+  ) then
+    raise notice 'PASS 22.13 publish notification schema surface';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102303', '22.13 block', 'publish notification schema surface',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.14 Publish fan-out triggers [2026102304]
+--
+-- Structural guarantees: the two fan-out functions exist as SECURITY
+-- DEFINER locked to the database itself, both AFTER INSERT triggers
+-- call them, and no trigger of any kind invokes the fan-out on UPDATE
+-- (edits must never publish). Behaviour is exercised by
+-- supabase/test-notification-fanout.sql.
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_n int;
+  v_ok boolean;
+begin
+  -- functions: present, SECURITY DEFINER, not client-executable
+  select count(*) into v_n
+  from pg_proc p
+  where p.oid in (
+    'public.publish_recipient_ids(uuid)'::regprocedure,
+    'public.on_publish_notification()'::regprocedure
+  ) and p.prosecdef;
+  if v_n <> 2 then
+    insert into ucc2_verify_failures values (
+      '2026102304', 'fan-out functions SECURITY DEFINER',
+      'publish_recipient_ids(uuid) and on_publish_notification() exist and are SECURITY DEFINER',
+      'found ' || v_n || ' of 2 expected functions'
+    );
+  end if;
+
+  v_ok := not has_function_privilege('anon', 'public.publish_recipient_ids(uuid)', 'execute')
+      and not has_function_privilege('authenticated', 'public.publish_recipient_ids(uuid)', 'execute')
+      and not has_function_privilege('anon', 'public.on_publish_notification()', 'execute')
+      and not has_function_privilege('authenticated', 'public.on_publish_notification()', 'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102304', 'fan-out function execute lockout',
+      'anon/authenticated hold no execute on the fan-out functions',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  -- triggers: AFTER INSERT ROW, calling the fan-out function
+  select count(*) into v_n
+  from pg_trigger t
+  where t.tgrelid = 'public.announcements'::regclass
+    and t.tgname = 'trg_publish_fanout_announcement'
+    and t.tgfoid = 'public.on_publish_notification()'::regprocedure
+    and (t.tgtype & 1) = 1    -- FOR EACH ROW
+    and (t.tgtype & 2) = 0    -- not BEFORE (=> AFTER)
+    and (t.tgtype & 4) = 4;   -- INSERT
+  if v_n <> 1 then
+    insert into ucc2_verify_failures values (
+      '2026102304', 'announcements AFTER INSERT fan-out trigger',
+      'one AFTER INSERT row trigger trg_publish_fanout_announcement',
+      'found ' || v_n
+    );
+  end if;
+
+  select count(*) into v_n
+  from pg_trigger t
+  where t.tgrelid = 'public.events'::regclass
+    and t.tgname = 'trg_publish_fanout_event'
+    and t.tgfoid = 'public.on_publish_notification()'::regprocedure
+    and (t.tgtype & 1) = 1
+    and (t.tgtype & 2) = 0
+    and (t.tgtype & 4) = 4;
+  if v_n <> 1 then
+    insert into ucc2_verify_failures values (
+      '2026102304', 'events AFTER INSERT fan-out trigger',
+      'one AFTER INSERT row trigger trg_publish_fanout_event',
+      'found ' || v_n
+    );
+  end if;
+
+  -- edits never publish: no UPDATE (or INSERT-or-UPDATE) trigger may
+  -- call the fan-out function on either table
+  if exists (
+    select 1 from pg_trigger t
+    where t.tgrelid in ('public.announcements'::regclass, 'public.events'::regclass)
+      and t.tgfoid = 'public.on_publish_notification()'::regprocedure
+      and (t.tgtype & 16) = 16   -- UPDATE
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102304', 'no publish fan-out on UPDATE',
+      'on_publish_notification is attached to INSERT only',
+      'an UPDATE trigger invokes the publish fan-out'
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102304'
+  ) then
+    raise notice 'PASS 22.14 publish fan-out triggers';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102304', '22.14 block', 'publish fan-out triggers',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.15 Android push schema surface [2026102401]
+--
+-- Additive notification type, push preference, one-row-per-notification
+-- push outbox, and durable showcase tenures. Behaviour is exercised by
+-- supabase/test-notification-fanout.sql.
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_def text;
+  v_cols int;
+  v_rls boolean;
+  v_policies int;
+  v_ok boolean;
+begin
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notifications'::regclass
+    and c.conname = 'notifications_type_check';
+  if v_def is null or v_def not ilike '%''showcase_top2''%' then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'notifications_type_check accepts showcase_top2',
+      'CHECK (type in (... ''showcase_top2''))',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'notification_preferences'
+      and column_name = 'push_enabled'
+      and data_type = 'boolean' and is_nullable = 'NO' and column_default = 'true'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'notification_preferences.push_enabled',
+      'push_enabled boolean NOT NULL DEFAULT true',
+      'missing, nullable, or not defaulting to true'
+    );
+  end if;
+
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'notification_push_outbox'
+    and column_name in (
+      'id', 'notification_id', 'user_id', 'source_type', 'source_id',
+      'status', 'attempts', 'last_error', 'next_attempt_at', 'locked_at',
+      'provider', 'provider_message_id', 'sent_at', 'created_at', 'updated_at'
+    );
+  if v_cols <> 15 then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'notification_push_outbox columns',
+      '15 worker columns (id .. updated_at)',
+      'found ' || v_cols || ' of 15 expected columns'
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notification_push_outbox'::regclass
+    and c.conname = 'notification_push_outbox_notification_unique';
+  if v_def is null or v_def not ilike '%notification_id%' then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'push outbox one row per notification',
+      'UNIQUE (notification_id)',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'notification_push_outbox'
+      and column_name = 'status' and column_default like '%pending%'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'push outbox status default',
+      'status text NOT NULL DEFAULT pending',
+      'status missing or not defaulting to pending'
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c where c.oid = 'public.notification_push_outbox'::regclass;
+  if not coalesce(v_rls, false) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'push outbox RLS enabled',
+      'row level security enabled',
+      'RLS is not enabled'
+    );
+  end if;
+
+  select count(*) into v_policies
+  from pg_policies
+  where schemaname = 'public' and tablename = 'notification_push_outbox';
+  if v_policies <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'push outbox has no client policies',
+      'zero row level security policies',
+      v_policies || ' policy/policies present'
+    );
+  end if;
+
+  v_ok := not has_table_privilege('anon', 'public.notification_push_outbox', 'select')
+      and not has_table_privilege('anon', 'public.notification_push_outbox', 'insert')
+      and not has_table_privilege('authenticated', 'public.notification_push_outbox', 'select')
+      and not has_table_privilege('authenticated', 'public.notification_push_outbox', 'insert');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'push outbox client lockout',
+      'anon/authenticated hold no select/insert on the push outbox',
+      'at least one client role still holds a table privilege'
+    );
+  end if;
+
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'showcase_top_entries'
+    and column_name in (
+      'id', 'post_id', 'entry_seq', 'entered_at', 'left_at',
+      'notified_at', 'notification_id', 'created_at'
+    );
+  if v_cols <> 8 then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'showcase_top_entries columns',
+      '8 tenure columns (id .. created_at)',
+      'found ' || v_cols || ' of 8 expected columns'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_constraint c
+    where c.conrelid = 'public.showcase_top_entries'::regclass
+      and c.conname = 'showcase_top_entries_seq_unique'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'showcase tenure per-post sequence uniqueness',
+      'UNIQUE (post_id, entry_seq)',
+      'constraint missing'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'showcase_top_entries'
+      and indexname = 'showcase_top_entries_one_active_idx'
+      and indexdef ilike '%unique%'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'one active showcase tenure per post',
+      'unique partial index on post_id WHERE left_at IS NULL',
+      'index missing or not unique'
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c where c.oid = 'public.showcase_top_entries'::regclass;
+  if not coalesce(v_rls, false) then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'showcase_top_entries RLS enabled',
+      'row level security enabled',
+      'RLS is not enabled'
+    );
+  end if;
+
+  select count(*) into v_policies
+  from pg_policies
+  where schemaname = 'public' and tablename = 'showcase_top_entries';
+  if v_policies <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'showcase_top_entries has no client policies',
+      'zero row level security policies',
+      v_policies || ' policy/policies present'
+    );
+  end if;
+
+  v_ok := not has_table_privilege('anon', 'public.showcase_top_entries', 'select')
+      and not has_table_privilege('authenticated', 'public.showcase_top_entries', 'select');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102401', 'showcase_top_entries client lockout',
+      'anon/authenticated hold no select on showcase_top_entries',
+      'at least one client role still holds select'
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102401'
+  ) then
+    raise notice 'PASS 22.15 Android push schema surface';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102401', '22.15 block', 'Android push schema surface',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.16 Push and showcase triggers [2026102402]
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_n int;
+  v_ok boolean;
+  v_src text;
+begin
+  select count(*) into v_n
+  from pg_proc p
+  where p.oid in (
+    'public.recompute_showcase_top2()'::regprocedure,
+    'public.on_showcase_ranking_change()'::regprocedure
+  ) and p.prosecdef;
+  if v_n <> 2 then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase ranking functions SECURITY DEFINER',
+      'recompute_showcase_top2() and on_showcase_ranking_change() exist and are SECURITY DEFINER',
+      'found ' || v_n || ' of 2 expected functions'
+    );
+  end if;
+
+  v_ok := not has_function_privilege('anon', 'public.recompute_showcase_top2()', 'execute')
+      and not has_function_privilege('authenticated', 'public.recompute_showcase_top2()', 'execute')
+      and not has_function_privilege('anon', 'public.on_showcase_ranking_change()', 'execute')
+      and not has_function_privilege('authenticated', 'public.on_showcase_ranking_change()', 'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase ranking function execute lockout',
+      'anon/authenticated hold no execute on ranking functions',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  select pg_get_functiondef('public.on_publish_notification()'::regprocedure) into v_src;
+  if v_src not ilike '%notification_push_outbox%' then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'publish fan-out enqueues push',
+      'on_publish_notification() inserts into notification_push_outbox',
+      'function body has no push enqueue'
+    );
+  end if;
+  if v_src ilike '%notification_email_outbox%' then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'publish fan-out stopped writing email',
+      'on_publish_notification() contains no email-outbox write',
+      'function body still references notification_email_outbox'
+    );
+  end if;
+
+  select pg_get_functiondef('public.recompute_showcase_top2()'::regprocedure) into v_src;
+  if v_src not ilike '%pg_advisory_xact_lock%' then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase ranking serialized',
+      'recompute_showcase_top2() takes the ranking advisory lock',
+      'function body has no advisory lock'
+    );
+  end if;
+  if v_src not ilike '%limit 2%'
+     or v_src not ilike '%count(u.id) desc%'
+     or v_src not ilike '%p.created_at desc%'
+     or v_src not ilike '%p.id asc%' then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase ranking order and cap',
+      'order by upvotes desc, created_at desc, id asc; limit 2; at least one upvote',
+      'function body does not contain the expected order/cap fragments'
+    );
+  end if;
+
+  select count(*) into v_n
+  from pg_trigger t
+  where t.tgname in (
+    'trg_showcase_ranking_post_insert',
+    'trg_showcase_ranking_post_delete',
+    'trg_showcase_ranking_upvote_insert',
+    'trg_showcase_ranking_upvote_delete'
+  )
+    and t.tgfoid = 'public.on_showcase_ranking_change()'::regprocedure
+    and (t.tgtype & 1) = 1
+    and (t.tgtype & 2) = 0;
+  if v_n <> 4 then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase ranking row triggers',
+      'AFTER INSERT/DELETE row triggers on posts and upvotes',
+      'found ' || v_n || ' of 4 expected triggers'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger t
+    where t.tgrelid = 'public.posts'::regclass
+      and t.tgname = 'trg_showcase_ranking_post_update'
+      and t.tgfoid = 'public.on_showcase_ranking_change()'::regprocedure
+      and (t.tgtype & 1) = 1
+      and (t.tgtype & 2) = 0
+      and (t.tgtype & 16) = 16
+      and pg_get_triggerdef(t.oid) ilike '%update of type, author_id, created_at%'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase post update trigger scope',
+      'AFTER UPDATE OF type, author_id, created_at on posts',
+      'trigger missing or watching unrelated columns'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger t
+    where t.tgrelid = 'public.upvotes'::regclass
+      and t.tgname = 'trg_showcase_ranking_upvote_update'
+      and t.tgfoid = 'public.on_showcase_ranking_change()'::regprocedure
+      and (t.tgtype & 1) = 1
+      and (t.tgtype & 2) = 0
+      and (t.tgtype & 16) = 16
+      and pg_get_triggerdef(t.oid) ilike '%update of post_id, user_id%'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102402', 'showcase upvote update trigger scope',
+      'AFTER UPDATE OF post_id, user_id on upvotes',
+      'trigger missing or watching unrelated columns'
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102402'
+  ) then
+    raise notice 'PASS 22.16 push and showcase triggers';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102402', '22.16 block', 'push and showcase triggers',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.17 Email delivery disabled, history retained [2026102403]
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_ok boolean;
+  v_n int;
+  v_comment text;
+begin
+  if not exists (
+    select 1 from pg_trigger t
+    where t.tgrelid = 'public.notification_email_outbox'::regclass
+      and t.tgname = 'trg_block_new_email_enqueue'
+      and t.tgfoid = 'public.block_new_email_enqueue()'::regprocedure
+      and (t.tgtype & 1) = 1
+      and (t.tgtype & 2) = 2
+      and (t.tgtype & 4) = 4
+      and t.tgenabled <> 'D'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102403', 'email enqueue hard block',
+      'enabled BEFORE INSERT row trigger trg_block_new_email_enqueue',
+      'trigger missing, disabled, or not BEFORE INSERT'
+    );
+  end if;
+
+  v_ok := not has_function_privilege('anon', 'public.block_new_email_enqueue()', 'execute')
+      and not has_function_privilege('authenticated', 'public.block_new_email_enqueue()', 'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102403', 'email guard execute lockout',
+      'anon/authenticated hold no execute on block_new_email_enqueue()',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  select count(*) into v_n
+  from pg_trigger t
+  join pg_proc p on p.oid = t.tgfoid
+  join pg_namespace n on n.oid = p.pronamespace
+  where t.tgrelid = 'public.notification_email_outbox'::regclass
+    and not t.tgisinternal
+    and n.nspname = 'supabase_functions';
+  if v_n <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102403', 'email webhook triggers removed',
+      'zero notification_email_outbox triggers in supabase_functions',
+      v_n || ' webhook trigger(s) remain'
+    );
+  end if;
+
+  if to_regclass('public.notification_email_outbox') is null then
+    insert into ucc2_verify_failures values (
+      '2026102403', 'historical email table retained',
+      'public.notification_email_outbox still exists',
+      'table was dropped'
+    );
+  else
+    v_comment := obj_description('public.notification_email_outbox'::regclass, 'pg_class');
+    if v_comment is null or v_comment not ilike '%HISTORICAL ONLY%' then
+      insert into ucc2_verify_failures values (
+        '2026102403', 'historical email table marked',
+        'table comment contains HISTORICAL ONLY',
+        coalesce(v_comment, 'comment missing')
+      );
+    end if;
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102403'
+  ) then
+    raise notice 'PASS 22.17 email disabled, history retained';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102403', '22.17 block', 'email disabled and history retained',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.18 Notification retention, dedupe ledger, push log pruning
+-- [2026102501]
+-- ---------------------------------------------------------
+do $gate$
+declare
+  v_def text;
+  v_cols int;
+  v_rls boolean;
+  v_policies int;
+  v_ok boolean;
+  v_nullable text;
+  v_src text;
+begin
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'notifications'
+      and indexname = 'notifications_created_at_idx'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'notification retention scan index',
+      'notifications_created_at_idx on notifications (created_at)',
+      'index missing'
+    );
+  end if;
+
+  select count(*) into v_cols
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'notification_dedupe_ledger'
+    and column_name in ('user_id', 'dedupe_key', 'created_at', 'released_at');
+  if v_cols <> 4 then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger columns',
+      'user_id, dedupe_key, created_at, released_at',
+      'found ' || v_cols || ' of 4 expected columns'
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notification_dedupe_ledger'::regclass
+    and c.conname = 'notification_dedupe_ledger_pkey';
+  if v_def is null or v_def not ilike '%user_id%' or v_def not ilike '%dedupe_key%' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger primary key',
+      'PRIMARY KEY (user_id, dedupe_key)',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notification_dedupe_ledger'::regclass
+    and c.conname = 'notification_dedupe_ledger_dedupe_key_check';
+  if v_def is null or v_def not ilike '%char_length%' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger key length check',
+      'CHECK (char_length(dedupe_key) between 1 and 200)',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  select c.relrowsecurity into v_rls
+  from pg_class c where c.oid = 'public.notification_dedupe_ledger'::regclass;
+  if not coalesce(v_rls, false) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger RLS enabled',
+      'row level security enabled',
+      'RLS is not enabled'
+    );
+  end if;
+
+  select count(*) into v_policies
+  from pg_policies
+  where schemaname = 'public' and tablename = 'notification_dedupe_ledger';
+  if v_policies <> 0 then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger has no client policies',
+      'zero row level security policies',
+      v_policies || ' policy/policies present'
+    );
+  end if;
+
+  v_ok := not has_table_privilege('anon', 'public.notification_dedupe_ledger', 'select')
+      and not has_table_privilege('anon', 'public.notification_dedupe_ledger', 'insert')
+      and not has_table_privilege('anon', 'public.notification_dedupe_ledger', 'update')
+      and not has_table_privilege('anon', 'public.notification_dedupe_ledger', 'delete')
+      and not has_table_privilege('authenticated', 'public.notification_dedupe_ledger', 'select')
+      and not has_table_privilege('authenticated', 'public.notification_dedupe_ledger', 'insert')
+      and not has_table_privilege('authenticated', 'public.notification_dedupe_ledger', 'update')
+      and not has_table_privilege('authenticated', 'public.notification_dedupe_ledger', 'delete');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe ledger client lockout',
+      'anon/authenticated hold no select/insert/update/delete on the ledger',
+      'at least one client role still holds a privilege'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_trigger t
+    where t.tgrelid = 'public.notifications'::regclass
+      and t.tgname = 'trg_guard_notification_dedupe'
+      and t.tgfoid = 'public.guard_notification_dedupe()'::regprocedure
+      and (t.tgtype & 1) = 1
+      and (t.tgtype & 2) = 2
+      and (t.tgtype & 4) = 4
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'notification dedupe guard trigger',
+      'BEFORE INSERT row trigger trg_guard_notification_dedupe',
+      'trigger missing or wrong type'
+    );
+  end if;
+
+  select p.prosecdef into v_ok
+  from pg_proc p
+  where p.oid = 'public.guard_notification_dedupe()'::regprocedure;
+  if not coalesce(v_ok, false) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe guard SECURITY DEFINER',
+      'guard_notification_dedupe() is SECURITY DEFINER',
+      'function missing or security invoker'
+    );
+  end if;
+
+  v_ok := not has_function_privilege(
+      'anon', 'public.guard_notification_dedupe()'::regprocedure, 'execute')
+    and not has_function_privilege(
+      'authenticated', 'public.guard_notification_dedupe()'::regprocedure, 'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'dedupe guard execute lockout',
+      'anon/authenticated hold no execute on the guard',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  select is_nullable into v_nullable
+  from information_schema.columns
+  where table_schema = 'public' and table_name = 'notification_push_outbox'
+    and column_name = 'notification_id';
+  if v_nullable is distinct from 'YES' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'push outbox detachable notification link',
+      'notification_id is nullable',
+      coalesce(v_nullable, 'column missing')
+    );
+  end if;
+
+  select pg_get_constraintdef(c.oid, true) into v_def
+  from pg_constraint c
+  where c.conrelid = 'public.notification_push_outbox'::regclass
+    and c.conname = 'notification_push_outbox_notification_id_fkey';
+  if v_def is null or v_def not ilike '%ON DELETE SET NULL%' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'push outbox FK detaches on notification delete',
+      'FOREIGN KEY (notification_id) REFERENCES notifications(id) ON DELETE SET NULL',
+      coalesce(v_def, 'constraint missing')
+    );
+  end if;
+
+  if not exists (
+    select 1 from information_schema.columns
+    where table_schema = 'public' and table_name = 'notification_push_outbox'
+      and column_name = 'finished_at'
+      and data_type = 'timestamp with time zone'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'push outbox terminal timestamp',
+      'finished_at timestamp with time zone',
+      'column missing or wrong type'
+    );
+  end if;
+
+  if not exists (
+    select 1 from pg_indexes
+    where schemaname = 'public' and tablename = 'notification_push_outbox'
+      and indexname = 'notification_push_outbox_terminal_idx'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'push outbox terminal pruning index',
+      'notification_push_outbox_terminal_idx on (status, finished_at)',
+      'index missing'
+    );
+  end if;
+
+  if to_regprocedure(
+    'public.notification_push_outbox_is_terminal(text,timestamptz,timestamptz)'
+  ) is null then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'push outbox terminal predicate',
+      'notification_push_outbox_is_terminal(text, timestamptz, timestamptz) exists',
+      'function missing'
+    );
+  end if;
+
+  select p.prosecdef into v_ok
+  from pg_proc p
+  where p.oid = 'public.cleanup_expired_notifications(
+    interval, interval, interval, interval, integer, integer
+  )'::regprocedure;
+  if not coalesce(v_ok, false) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention cleanup SECURITY DEFINER',
+      'cleanup_expired_notifications() exists and is SECURITY DEFINER',
+      'function missing or security invoker'
+    );
+  end if;
+
+  v_ok := not has_function_privilege(
+      'anon',
+      'public.cleanup_expired_notifications(interval,interval,interval,interval,integer,integer)'::regprocedure,
+      'execute')
+    and not has_function_privilege(
+      'authenticated',
+      'public.cleanup_expired_notifications(interval,interval,interval,interval,integer,integer)'::regprocedure,
+      'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention cleanup execute lockout',
+      'anon/authenticated hold no execute on cleanup_expired_notifications',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p
+  where p.oid = 'public.cleanup_expired_notifications(
+    interval, interval, interval, interval, integer, integer
+  )'::regprocedure;
+  if v_src is null
+     or v_src not ilike '%notification_dedupe_ledger%'
+     or v_src not ilike '%released_at%'
+     or v_src not ilike '%notification_push_outbox_is_terminal%'
+     or v_src not ilike '%finished_at%' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention cleanup preserves dedupe and push state',
+      'cleanup references the ledger, released_at, terminal predicate and finished_at',
+      'function body is missing an expected fragment'
+    );
+  end if;
+
+  select p.prosecdef into v_ok
+  from pg_proc p
+  where p.oid = 'public.ensure_notification_retention_schedule()'::regprocedure;
+  if not coalesce(v_ok, false) then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention schedule SECURITY DEFINER',
+      'ensure_notification_retention_schedule() exists and is SECURITY DEFINER',
+      'function missing or security invoker'
+    );
+  end if;
+
+  v_ok := not has_function_privilege(
+      'anon', 'public.ensure_notification_retention_schedule()'::regprocedure, 'execute')
+    and not has_function_privilege(
+      'authenticated', 'public.ensure_notification_retention_schedule()'::regprocedure, 'execute');
+  if not v_ok then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention schedule execute lockout',
+      'anon/authenticated hold no execute on ensure_notification_retention_schedule',
+      'at least one client role still holds execute'
+    );
+  end if;
+
+  select pg_get_functiondef(p.oid) into v_src
+  from pg_proc p
+  where p.oid = 'public.ensure_notification_retention_schedule()'::regprocedure;
+  if v_src is null
+     or v_src not ilike '%pg_cron%'
+     or v_src not ilike '%cron.schedule%'
+     or v_src not ilike '%ucc2-cleanup-expired-notifications%' then
+    insert into ucc2_verify_failures values (
+      '2026102501', 'retention schedule helper shape',
+      'helper checks pg_cron and creates/updates ucc2-cleanup-expired-notifications',
+      'function body is missing an expected fragment'
+    );
+  end if;
+
+  if not exists (
+    select 1 from ucc2_verify_failures where migration = '2026102501'
+  ) then
+    raise notice 'PASS 22.18 notification retention, dedupe ledger, push log pruning';
+  end if;
+
+exception when others then
+  insert into ucc2_verify_failures values (
+    '2026102501', '22.18 block',
+    'notification retention, dedupe ledger, push log pruning',
+    'unexpected error: ' || coalesce(SQLERRM, 'unknown')
+  );
+end;
+$gate$;
+
+-- ---------------------------------------------------------
+-- 22.19 announcements DELETE policy (2026102603)
+--
+-- RLS without a DELETE policy silently filters deletes to zero rows, which
+-- used to be reported as "already gone". The author/admin policy must exist.
+-- ---------------------------------------------------------
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_policies
+    where schemaname = 'public'
+      and tablename = 'announcements'
+      and cmd = 'DELETE'
+      and qual ilike '%author_id%'
+      and qual ilike '%is_admin%'
+  ) then
+    insert into ucc2_verify_failures values (
+      '2026102603', 'announcements DELETE policy',
+      'author OR administrator DELETE policy',
+      'missing or incomplete DELETE policy'
+    );
+  else
+    raise notice 'PASS 22.19 announcements DELETE policy';
+  end if;
+end $$;
 
 -- ---------------------------------------------------------
 -- 23. VERDICT

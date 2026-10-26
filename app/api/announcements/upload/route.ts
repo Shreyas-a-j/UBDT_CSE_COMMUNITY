@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { AwsClient } from 'aws4fetch'
 import { createClient } from '@/lib/supabase/server'
 import { canPublishAnnouncements, validateAnnouncementImage } from '@/lib/logic/announcements'
+import { r2Config, r2ObjectEndpoint } from '@/lib/r2'
 
 /** File extensions for the accepted image types. */
 const EXTENSIONS: Record<string, string> = {
@@ -9,20 +10,6 @@ const EXTENSIONS: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
-}
-
-function r2Config() {
-  const accessKeyId = process.env.R2_ACCESS_KEY_ID?.replace(/[<>]/g, '').trim()
-  const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY?.replace(/[<>]/g, '').trim()
-  const accountId = process.env.R2_ACCOUNT_ID?.replace(/[<>]/g, '').trim()
-  const bucketName = process.env.R2_BUCKET_NAME?.replace(/[<>]/g, '').trim()
-  const publicDomain = process.env.NEXT_PUBLIC_R2_PUBLIC_DOMAIN?.replace(/[<>]/g, '').trim()
-
-  if (!accessKeyId || !secretAccessKey || !accountId || !bucketName || !publicDomain) {
-    return null
-  }
-
-  return { accessKeyId, secretAccessKey, accountId, bucketName, publicDomain }
 }
 
 /**
@@ -94,7 +81,7 @@ export async function POST(req: NextRequest) {
     region: 'auto',
   })
 
-  const endpoint = `https://${config.accountId}.r2.cloudflarestorage.com/${config.bucketName}/${key}`
+  const endpoint = r2ObjectEndpoint(config, key)
 
   try {
     const bytes = await file.arrayBuffer()

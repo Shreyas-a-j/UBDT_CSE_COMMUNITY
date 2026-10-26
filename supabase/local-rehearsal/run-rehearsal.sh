@@ -18,6 +18,7 @@
 #  11. supabase/test-faculty-onboarding.sql
 #  12. negative controls (both must FAIL with the expected message)
 #  13. residue check
+#  14. fresh-install check: supabase/schema.sql in a separate database
 #
 # Requires: docker, a POSIX shell, and the Supabase CLI.
 # Usage:    bash supabase/local-rehearsal/run-rehearsal.sh
@@ -54,6 +55,19 @@ CANONICAL=(
   2026102211_signup_provisioning_schema_alignment
   2026102212_faculty_visibility_and_email_verification
   2026102213_faculty_review_atomic
+  2026102301_discussion_pins
+  2026102302_discussion_pin_admin_authorization
+  20261023025000_backfill_updated_at_helper
+  2026102303_notification_publish_schema
+  2026102304_notification_publish_triggers
+  2026102401_android_push_schema
+  2026102402_android_push_triggers
+  2026102403_disable_publish_email
+  2026102501_notification_retention
+  2026102502_admission_numbers_and_usn_linking
+  2026102601_discussion_pins_pkey_repair
+  2026102602_admin_nominee_eligibility
+  2026102603_announcement_delete_policy
 )
 
 FAIL=0
@@ -120,9 +134,26 @@ step "3. pre-Phase-1 consolidated baseline (production's current shape)"
 # If the working-tree schema.sql already contains the Phase 1 objects, fall
 # back to the last committed revision, which is the pre-Phase-1 baseline.
 if grep -q 'member_type' "$REPO/supabase/schema.sql"; then
-  git -C "$REPO" show HEAD:supabase/schema.sql > "$WORK/schema_baseline.sql" 2>/dev/null \
+  # HEAD stopped being the pre-Phase-1 baseline once the Phase 1 schema was
+  # committed (8aa3ca7 "Brand new features added"). Walk history for the
+  # newest schema.sql revision that still predates the Phase 1 markers —
+  # the same revision this harness used when it last ran green.
+  baseline_rev=""
+  for rev in $(git -C "$REPO" log --format=%H -- supabase/schema.sql); do
+    # Read the file into a variable first: under `set -o pipefail`,
+    # `git show | grep -q` reports git's SIGPIPE (141) once grep exits on
+    # the first match, which would invert the test above. A here-string
+    # has no pipeline, so grep's status is the status.
+    schema_at_rev="$(git -C "$REPO" show "$rev:supabase/schema.sql" 2>/dev/null)" || continue
+    if ! grep -qE 'member_type|profile_contacts|content_visits|dedupe_key' <<<"$schema_at_rev"; then
+      baseline_rev="$rev"
+      break
+    fi
+  done
+  [ -n "$baseline_rev" ] || { echo "cannot find a pre-Phase-1 schema.sql revision in git history"; exit 1; }
+  git -C "$REPO" show "$baseline_rev:supabase/schema.sql" > "$WORK/schema_baseline.sql" \
     || { echo "cannot read the pre-Phase-1 baseline from git"; exit 1; }
-  note "baseline: git HEAD:supabase/schema.sql (working tree already contains Phase 1)"
+  note "baseline: git ${baseline_rev:0:7}:supabase/schema.sql (newest pre-Phase-1 revision)"
 else
   cp "$REPO/supabase/schema.sql" "$WORK/schema_baseline.sql"
   note "baseline: supabase/schema.sql"
@@ -138,26 +169,55 @@ ok "baseline applied"
 step "4. seed live-shaped profile data (11 profiles / 10 USNs / 0 collisions)"
 # profiles.id references auth.users(id), so every seeded profile needs a
 # backing auth user.
-$PG -q >/dev/null 2>&1 <<'SQL'
+seed_out=$($PG -q 2>&1 <<'SQL'
 insert into auth.users (id, email, encrypted_password, email_confirmed_at, raw_user_meta_data, created_at, updated_at)
 select gen_random_uuid(), 'seed' || g || '@example.com', encode(gen_random_bytes(16), 'base64'),
        now(), '{}'::jsonb, now(), now()
 from generate_series(1, 11) g;
-insert into public.profiles (id, email, name, usn, year, branch, role, faculty_status, member_type, created_at)
+-- The auth trigger already provisions a profile for each seeded user. Upsert
+-- the live-shaped fields onto those rows. member_type does not exist in the
+-- pre-Phase-1 baseline; migration 2026102201 backfills it from role later.
+insert into public.profiles (id, email, name, usn, year, branch, role, faculty_status, created_at)
 select u.id, 'seed' || g || '@example.com', 'Seed Member ' || g,
        case when g <= 10 then '4UB24CS' || lpad(g::text, 3, '0') else null end,
        case when g <= 8 then (g % 4) + 1 else null end, 'CSE',
        -- No seeded administrator: Phase 11 preflight requires an existing
        -- admin to already be approved faculty, and Phase 12's bootstrap
        -- rehearsal needs the true "no admin yet" state.
+       -- The pre-Phase-1 constraint only allows 'verified'; migration
+       -- 2026102206 later accepts both 'verified' and 'approved'.
        case when g <= 2 then 'faculty' else 'student' end,
-       case when g <= 2 then 'approved' else 'none' end,
-       case when g <= 2 then 'faculty' else 'student' end,
+       case when g <= 2 then 'verified' else 'none' end,
        now() - (g || ' days')::interval
 from generate_series(1, 11) g
-join auth.users u on u.email = 'seed' || g || '@example.com';
+join auth.users u on u.email = 'seed' || g || '@example.com'
+on conflict (id) do update set
+  email = excluded.email,
+  name = excluded.name,
+  usn = excluded.usn,
+  year = excluded.year,
+  branch = excluded.branch,
+  role = excluded.role,
+  faculty_status = excluded.faculty_status,
+  created_at = excluded.created_at;
 SQL
-note "seeded profiles: $(q "select count(*) from public.profiles;")"
+)
+seed_rc=$?
+if [ $seed_rc -ne 0 ]; then
+  bad "seed failed (exit $seed_rc)"
+  printf '%s\n' "$seed_out" | tail -20 | sed 's/^/    /'
+  exit 1
+fi
+seeded_profiles=$(q "select count(*) from public.profiles;")
+seeded_usns=$(q "select count(*) from public.profiles where usn is not null;")
+seeded_dupes=$(q "select count(*) from (select usn from public.profiles where usn is not null group by usn having count(*) > 1) d;")
+note "seeded profiles: $seeded_profiles / USNs: $seeded_usns / duplicate USNs: $seeded_dupes"
+if [ "$seeded_profiles" = "11" ] && [ "$seeded_usns" = "10" ] && [ "$seeded_dupes" = "0" ]; then
+  ok "seed produced 11 profiles, 10 unique USNs and no collisions"
+else
+  bad "seed counts are wrong (expected 11 profiles / 10 USNs / 0 duplicate USNs)"
+  exit 1
+fi
 
 # ------------------------------------------------- 5. CLI dry-run
 step "5. supabase db push --dry-run (must list the canonical files, in order)"
@@ -337,6 +397,112 @@ $PG -q -c "delete from public.admin_nominations;
               'demo@gmail.com', 'admin-peer@example.com', 'student-account@example.com'
             );" >/dev/null 2>&1
 
+# --------------------------------- 11c. discussion pins
+step "11c. supabase/test-discussion-pins.sql"
+$PG < "$REPO/supabase/test-discussion-pins.sql" > "$WORK/discussion-pins.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'TEST [0-9]|PASS|FAIL|SKIP|All discussion pin' "$WORK/discussion-pins.out" | sed 's/^/    /' | head -50
+if grep -qE 'FAIL:|ERROR' "$WORK/discussion-pins.out"; then
+  bad "DISCUSSION PIN TESTS REPORTED A FAILURE"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'All discussion pin SQL tests passed' "$WORK/discussion-pins.out" \
+  && ok "pin authorization, 3-pin limit, expiry, unpin and concurrency scenarios passed" \
+  || bad "discussion pin suite did not reach its summary"
+$PG -q -c "delete from auth.users where email like 'pin-%@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11c2. legacy discussion_pins primary key
+step "11c2. supabase/test-discussion-pins-legacy-pkey.sql"
+docker cp "$REPO/supabase/migrations/2026102601_discussion_pins_pkey_repair.sql" \
+  "$CTR":/tmp/repair.sql >/dev/null 2>&1
+$PG -v repair_file=/tmp/repair.sql < "$REPO/supabase/test-discussion-pins-legacy-pkey.sql" > "$WORK/discussion-pins-legacy.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'PASS L|FAIL|ERROR|Legacy pkey' "$WORK/discussion-pins-legacy.out" | sed 's/^/    /' | head -20
+if grep -qE 'FAIL|ERROR' "$WORK/discussion-pins-legacy.out"; then
+  bad "LEGACY DISCUSSION_PINS PK REGRESSION FAILED"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'Legacy pkey repair regression: PASS' "$WORK/discussion-pins-legacy.out" \
+  && ok "legacy PRIMARY KEY (post_id) reproduced, repaired, history preserved" \
+  || bad "legacy pin regression did not reach its summary"
+$PG -q -c "delete from auth.users where email = 'pinrepair-faculty@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11c3. administrator nominee eligibility
+step "11c3. supabase/test-admin-nominee-eligibility.sql"
+$PG < "$REPO/supabase/test-admin-nominee-eligibility.sql" > "$WORK/admin-eligibility.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'PASS E|FAIL|ERROR|Admin nominee' "$WORK/admin-eligibility.out" | sed 's/^/    /' | head -20
+if grep -qE 'FAIL|ERROR' "$WORK/admin-eligibility.out"; then
+  bad "ADMIN NOMINEE ELIGIBILITY REGRESSION FAILED"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'Admin nominee eligibility regression: PASS' "$WORK/admin-eligibility.out" \
+  && ok "legacy member_type faculty eligible; student/alumni/self/non-admin rejected" \
+  || bad "admin nominee eligibility regression did not reach its summary"
+$PG -q -c "delete from auth.users where email like 'nominee-%@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11c4. announcements DELETE policy
+step "11c4. supabase/test-announcement-delete-policy.sql"
+$PG < "$REPO/supabase/test-announcement-delete-policy.sql" > "$WORK/announcement-delete.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'PASS A|FAIL|ERROR|Announcement delete policy regression' "$WORK/announcement-delete.out" | sed 's/^/    /' | head -20
+if grep -qE 'FAIL|ERROR' "$WORK/announcement-delete.out"; then
+  bad "ANNOUNCEMENT DELETE POLICY REGRESSION FAILED"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'Announcement delete policy regression: PASS' "$WORK/announcement-delete.out" \
+  && ok "announcement DELETE policy: author/admin allowed, other faculty/student denied" \
+  || bad "announcement delete regression did not reach its summary"
+
+# --------------------------------- 11d. publish fan-out + Android push
+step "11d. supabase/test-notification-fanout.sql"
+$PG < "$REPO/supabase/test-notification-fanout.sql" > "$WORK/notification-fanout.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'TEST [0-9]|PASS|FAIL|PRECONDITION|All publish fan-out' "$WORK/notification-fanout.out" | sed 's/^/    /' | head -50
+if grep -qE 'FAIL:|PRECONDITION FAILED|ERROR' "$WORK/notification-fanout.out"; then
+  bad "PUBLISH FAN-OUT / PUSH TESTS REPORTED A FAILURE"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'All publish fan-out SQL tests passed' "$WORK/notification-fanout.out" \
+  && ok "fan-out, push opt-out, email block, showcase tenures, dedupe and RLS passed" \
+  || bad "publish fan-out suite did not reach its summary"
+$PG -q -c "delete from auth.users where email like 'notif-%@example.com' or email like 'showcase-%@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11e. notification retention
+step "11e. supabase/test-notification-retention.sql"
+$PG < "$REPO/supabase/test-notification-retention.sql" > "$WORK/notification-retention.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'TEST [0-9]|PASS|FAIL|PRECONDITION|All notification retention' "$WORK/notification-retention.out" | sed 's/^/    /' | head -60
+if grep -qE 'FAIL:|PRECONDITION FAILED|ERROR' "$WORK/notification-retention.out"; then
+  bad "NOTIFICATION RETENTION TESTS REPORTED A FAILURE"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'All notification retention SQL tests passed' "$WORK/notification-retention.out" \
+  && ok "24-hour retention, batching, push-state safety, dedupe ledger, showcase tenure and RLS passed" \
+  || bad "notification retention suite did not reach its summary"
+$PG -q -c "delete from auth.users where email like 'retention-%@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11f. admission numbers + USN linking
+step "11f. supabase/test-admission-numbers.sql"
+$PG < "$REPO/supabase/test-admission-numbers.sql" > "$WORK/admission-numbers.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'TEST [0-9]|PASS|FAIL|All admission' "$WORK/admission-numbers.out" | sed 's/^/    /' | head -40
+if grep -qE 'FAIL:|ERROR' "$WORK/admission-numbers.out"; then
+  bad "ADMISSION-NUMBER / USN-LINKING TESTS REPORTED A FAILURE"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'All admission-number and USN-linking tests passed' "$WORK/admission-numbers.out" \
+  && ok "first-year admission, duplicate rollback, years 2-4 rejection, USN linking and RLS passed" \
+  || bad "admission-number suite did not reach its summary"
+$PG -q -c "delete from auth.users where email like 'ucc-admission-%@example.com';" >/dev/null 2>&1
+
 # ------------------------------------------------- 12. negative controls
 step "12. negative controls (each MUST fail with the expected message)"
 note "(a) unsafe contact_visibility default"
@@ -356,9 +522,77 @@ step "13. residue check (only the seeded rows and the migration ledger may remai
 $PG -c "select 'profiles' t, count(*) from public.profiles
         union all select 'profile_contacts', count(*) from public.profile_contacts
         union all select 'content_visits', count(*) from public.content_visits
+        union all select 'discussion_pins', count(*) from public.discussion_pins
         union all select 'notifications', count(*) from public.notifications
+        union all select 'notification_push_outbox', count(*) from public.notification_push_outbox
+        union all select 'notification_dedupe_ledger', count(*) from public.notification_dedupe_ledger
+        union all select 'showcase_top_entries', count(*) from public.showcase_top_entries
         union all select 'auth.users', count(*) from auth.users
         union all select 'ledger rows', count(*) from supabase_migrations.schema_migrations;" | sed 's/^/    /'
+
+for table in profile_contacts content_visits discussion_pins notifications notification_push_outbox notification_dedupe_ledger showcase_top_entries; do
+  n=$(q "select count(*) from public.$table;")
+  if [ "$n" = "0" ]; then
+    ok "residue: $table is empty"
+  else
+    bad "residue: $table has $n row(s)"
+  fi
+done
+for check in "profiles:11" "auth.users:11" "supabase_migrations.schema_migrations:${#CANONICAL[@]}"; do
+  table=${check%:*}
+  want=${check##*:}
+  n=$(q "select count(*) from $table;")
+  if [ "$n" = "$want" ]; then
+    ok "residue: $table has the expected $want row(s)"
+  else
+    bad "residue: $table has $n row(s), expected $want"
+  fi
+done
+
+# --------------------------------- 14. fresh schema.sql install
+step "14. fresh-install schema.sql (new-install path, separate database)"
+FRESH_DB="ucc2_fresh_$$"
+FRESH_PG="docker exec -i $CTR psql -v ON_ERROR_STOP=1 -U postgres -d $FRESH_DB"
+docker exec "$CTR" psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "create database \"$FRESH_DB\";" >/dev/null 2>&1 \
+  || bad "could not create the fresh-install database"
+$FRESH_PG -q < "$REPO/supabase/local-rehearsal/auth-stub.sql" > "$WORK/fresh-stub.out" 2>&1 \
+  || { bad "fresh-install auth stub failed"; tail -20 "$WORK/fresh-stub.out" | sed 's/^/    /'; }
+$FRESH_PG -q < "$REPO/supabase/schema.sql" > "$WORK/fresh-schema.out" 2>&1
+rc=$?
+if [ $rc -ne 0 ]; then
+  bad "supabase/schema.sql failed on a fresh PostgreSQL 16 install"
+  tail -30 "$WORK/fresh-schema.out" | sed 's/^/    /'
+else
+  ok "supabase/schema.sql applied to a fresh PostgreSQL 16 database"
+  for check in \
+    "core tables:4:select count(*) from pg_tables where schemaname='public' and tablename in ('notifications','notification_push_outbox','notification_dedupe_ledger','showcase_top_entries')" \
+    "dedupe trigger:1:select count(*) from pg_trigger where tgname='trg_guard_notification_dedupe'" \
+    "retention functions:3:select count(*) from pg_proc where proname in ('cleanup_expired_notifications','ensure_notification_retention_schedule','notification_push_outbox_is_terminal')" \
+    "updated_at helper:1:select count(*) from pg_proc where proname='update_updated_at_column'" \
+    "retention scan index:1:select count(*) from pg_indexes where schemaname='public' and indexname='notifications_created_at_idx'"; do
+    label=${check%%:*}
+    rest=${check#*:}
+    want=${rest%%:*}
+    sql=${rest#*:}
+    got=$(docker exec "$CTR" psql -t -A -U postgres -d "$FRESH_DB" -c "$sql" 2>/dev/null | tr -d '[:space:]')
+    if [ "$got" = "$want" ]; then
+      ok "fresh schema: $label = $want"
+    else
+      bad "fresh schema: $label is '$got', expected $want"
+    fi
+  done
+
+  detachable=$(docker exec "$CTR" psql -t -A -U postgres -d "$FRESH_DB" -c \
+    "select is_nullable from information_schema.columns where table_schema='public' and table_name='notification_push_outbox' and column_name='notification_id';" 2>/dev/null | tr -d '[:space:]')
+  if [ "$detachable" = "YES" ]; then
+    ok "fresh schema: push outbox notification_id is detachable"
+  else
+    bad "fresh schema: push outbox notification_id is '$detachable', expected YES"
+  fi
+fi
+docker exec "$CTR" psql -v ON_ERROR_STOP=1 -U postgres -d postgres \
+  -c "drop database if exists \"$FRESH_DB\";" >/dev/null 2>&1 || true
 
 if [ $FAIL -eq 0 ]; then
   rm -rf "$WORK"

@@ -12,9 +12,9 @@
  *   screens. Signing out removes protected history automatically.
  */
 
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
-import { Stack } from 'expo-router';
+import { Stack, router, type Href } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import * as SplashScreen from 'expo-splash-screen';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -30,6 +30,10 @@ import {
 } from '@expo-google-fonts/space-grotesk';
 
 import { AuthProvider, useAuth } from '@/lib/auth-context';
+import { initializeAndroidPush, syncPushIdentity } from '@/lib/onesignal';
+import { UnreadNotificationsProvider } from '@/lib/unread-notifications';
+import { AdminNominationBanner } from '@/components/admin-nomination-banner';
+import { NotificationPopup } from '@/components/notification-popup';
 import { Brand, Type } from '@/lib/theme';
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -56,7 +60,13 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <AuthProvider>{ready ? <RootNavigator /> : null}</AuthProvider>
+      <AuthProvider>
+        {ready ? (
+          <UnreadNotificationsProvider>
+            <RootNavigator />
+          </UnreadNotificationsProvider>
+        ) : null}
+      </AuthProvider>
       <StatusBar style="light" />
     </SafeAreaProvider>
   );
@@ -64,6 +74,32 @@ export default function RootLayout() {
 
 function RootNavigator() {
   const { session, loading } = useAuth();
+  const userId = session?.user.id ?? null;
+  const [pushRoute, setPushRoute] = useState<Href | null>(null);
+
+  // OneSignal initializes once, on Android only. The SDK never prompts here;
+  // permission is requested from the notifications screen's explicit control.
+  useEffect(() => {
+    void initializeAndroidPush(setPushRoute);
+  }, []);
+
+  // Wait for the session restore before reconciling identity so a cold start
+  // does not briefly log the device out of its persisted external id.
+  useEffect(() => {
+    if (loading) return;
+    void syncPushIdentity(userId);
+  }, [loading, userId]);
+
+  // Navigation is deferred until auth loading finishes so a cold-start
+  // notification tap lands inside the mounted, protected navigator.
+  useEffect(() => {
+    if (loading || !pushRoute) return;
+    const timer = setTimeout(() => {
+      setPushRoute(null);
+      router.push(pushRoute);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [loading, pushRoute]);
 
   if (loading) {
     return (
@@ -76,25 +112,38 @@ function RootNavigator() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        headerShown: false,
-        contentStyle: { backgroundColor: Brand.canvas },
-        animation: 'fade',
-      }}
-    >
-      <Stack.Protected guard={Boolean(session)}>
-        <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="create-post" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
-        <Stack.Screen name="messages/[id]" options={{ animation: 'slide_from_right' }} />
-        <Stack.Screen name="people" options={{ animation: 'slide_from_right' }} />
-      </Stack.Protected>
+    <>
+      <Stack
+        screenOptions={{
+          headerShown: false,
+          contentStyle: { backgroundColor: Brand.canvas },
+          animation: 'fade',
+        }}
+      >
+        <Stack.Protected guard={Boolean(session)}>
+          <Stack.Screen name="(tabs)" />
+          <Stack.Screen name="post/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="create-post" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="create-event" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="event/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="announcements/index" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="announcements/create" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="announcements/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+          <Stack.Screen name="people/[id]" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="faculty/dashboard" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="admin/index" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="profile/edit" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        </Stack.Protected>
 
-      <Stack.Protected guard={!session}>
-        <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
-      </Stack.Protected>
-    </Stack>
+        <Stack.Protected guard={!session}>
+          <Stack.Screen name="sign-in" options={{ animation: 'fade' }} />
+          <Stack.Screen name="sign-up" options={{ animation: 'slide_from_right' }} />
+          <Stack.Screen name="forgot-password" options={{ animation: 'slide_from_right' }} />
+        </Stack.Protected>
+      </Stack>
+      {session ? <AdminNominationBanner /> : null}
+      {session ? <NotificationPopup /> : null}
+    </>
   );
 }
 

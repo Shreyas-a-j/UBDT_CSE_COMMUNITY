@@ -36,7 +36,7 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { logSupabaseError } from './errors';
-import { fallbackProfileFromAuth, normalizeProfile } from './profile';
+import { fallbackProfileFromAuth, normalizeProfile, profileWritableFields } from './profile';
 import type { Profile } from './types';
 import { supabase } from './supabase';
 export interface AuthState {
@@ -50,6 +50,8 @@ export interface AuthState {
   signIn: (email: string, password: string) => Promise<string | null>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
+  /** Persist allowlisted profile fields, then reload the row. Returns an error message or null. */
+  updateProfile: (updated: Partial<Profile>) => Promise<string | null>;
 }
 
 const AuthContext = createContext<AuthState>({
@@ -61,6 +63,7 @@ const AuthContext = createContext<AuthState>({
   signIn: async () => null,
   signOut: async () => {},
   refreshProfile: async () => {},
+  updateProfile: async () => 'Not signed in.',
 });
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -112,6 +115,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       designation: null,
       employee_id: null,
       expertise: [],
+      member_type: fallback.member_type,
+      graduation_year: fallback.graduation_year,
+      portfolio_url: fallback.portfolio_url,
+      github_url: fallback.github_url,
+      linkedin_url: fallback.linkedin_url,
     });
 
     // 3. Log all Supabase error fields; a failed insert must not be
@@ -154,6 +162,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (user) await fetchProfile(user);
   }, [fetchProfile, user]);
+
+  const updateProfile = useCallback(
+    async (updated: Partial<Profile>): Promise<string | null> => {
+      if (!user) return 'You need to be signed in to update your profile.';
+      const payload = profileWritableFields({ ...profile, ...updated });
+      const { error: writeError } = await supabase
+        .from('profiles')
+        .update(payload)
+        .eq('id', user.id);
+
+      if (writeError) {
+        logSupabaseError('Profile update error', writeError);
+        return writeError.message || 'Your profile could not be saved.';
+      }
+
+      await fetchProfile(user);
+      return null;
+    },
+    [fetchProfile, profile, user]
+  );
 
   const signIn = useCallback(async (email: string, password: string): Promise<string | null> => {
     setError(null);
@@ -241,8 +269,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchProfile]);
 
   const value = useMemo<AuthState>(
-    () => ({ user, session, profile, loading, error, signIn, signOut, refreshProfile }),
-    [user, session, profile, loading, error, signIn, signOut, refreshProfile]
+    () => ({
+      user,
+      session,
+      profile,
+      loading,
+      error,
+      signIn,
+      signOut,
+      refreshProfile,
+      updateProfile,
+    }),
+    [user, session, profile, loading, error, signIn, signOut, refreshProfile, updateProfile]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

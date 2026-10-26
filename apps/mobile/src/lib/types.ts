@@ -1,14 +1,16 @@
 /**
- * UCC domain types — ported (subset) from the web app's `lib/types.ts`, which
- * is framework-free TypeScript and safe for React Native. Kept in sync
- * manually; the web app remains the source of truth for column meanings.
+ * UCC domain types — ported from the web app's `lib/types.ts`, which is
+ * framework-free TypeScript and safe for React Native. Kept in sync manually;
+ * the web app remains the source of truth for column meanings.
  */
 
 export type UserRole = 'student' | 'faculty' | 'admin';
 export type FacultyStatus = 'none' | 'pending' | 'approved' | 'verified' | 'rejected';
-export type ConnectionStatus = 'pending' | 'accepted' | 'rejected' | 'cancelled';
+export type MemberType = 'student' | 'faculty' | 'alumni';
 export type EventType = 'Workshop' | 'Meeting' | 'Showcase' | 'Seminar' | 'Project Session';
 export type PostType = 'discussion' | 'showcase';
+export type FeedFilter = 'all' | 'discussions' | 'showcases' | 'events' | 'announcements';
+export type AnnouncementReaction = 'thumbs_up' | 'heart' | 'party' | 'clap';
 
 export interface Profile {
   id: string;
@@ -28,9 +30,14 @@ export interface Profile {
   designation: string | null;
   employee_id: string | null;
   expertise: string[];
+  /** UCC 2.0 community identity. `role` remains the authorisation field. */
+  member_type: MemberType;
+  graduation_year: number | null;
+  portfolio_url: string | null;
+  github_url: string | null;
+  linkedin_url: string | null;
   created_at: string;
   updated_at?: string | null;
-  connection_count?: number;
 }
 
 export interface Event {
@@ -49,6 +56,7 @@ export interface Event {
   host_usn?: string;
   host_avatar?: string | null;
   host_role?: UserRole;
+  host_year?: number | null;
   rsvp_count?: number;
 }
 
@@ -73,6 +81,10 @@ export interface Post {
   like_count?: number;
   upvote_count?: number;
   comment_count?: number;
+  /** Active pin metadata, when this post is currently pinned. */
+  pinned_at?: string | null;
+  pin_expires_at?: string | null;
+  pinned_by?: string | null;
 }
 
 export interface Comment {
@@ -87,17 +99,46 @@ export interface Comment {
   author_usn?: string;
 }
 
+export interface AnnouncementReactionRow {
+  user_id: string;
+  reaction: AnnouncementReaction;
+  created_at?: string;
+}
+
+export interface Announcement {
+  id: string;
+  author_id: string;
+  title: string;
+  body: string;
+  image_urls: string[];
+  created_at: string;
+  updated_at: string;
+  author_name?: string;
+  author_avatar?: string | null;
+  author_designation?: string | null;
+  reactions: AnnouncementReactionRow[];
+}
+
+export interface DiscussionPin {
+  id: string;
+  post_id: string;
+  pinned_by: string;
+  pinned_at: string;
+  pin_expires_at: string;
+  unpinned_at: string | null;
+  unpinned_by: string | null;
+}
+
 export type NotificationType =
   | 'comment'
   | 'rsvp'
   | 'event_reminder'
   | 'like'
   | 'upvote'
-  | 'connection_request'
-  | 'connection_accepted'
-  | 'message'
   | 'announcement'
-  | 'faculty_decision';
+  | 'faculty_decision'
+  | 'event_published'
+  | 'showcase_top2';
 
 export interface Notification {
   id: string;
@@ -108,45 +149,6 @@ export interface Notification {
   link: string | null;
   read: boolean;
   created_at: string;
+  content_type?: string | null;
+  content_id?: string | null;
 }
-
-export interface ConnectionRequest {
-  id: string;
-  requester_id: string;
-  addressee_id: string;
-  status: ConnectionStatus;
-  created_at: string;
-  responded_at: string | null;
-  requester?: Profile | null;
-  addressee?: Profile | null;
-}
-
-export interface Conversation {
-  id: string;
-  is_group: boolean;
-  title: string | null;
-  created_at: string;
-  updated_at: string;
-  last_message_at: string | null;
-  last_message_preview: string | null;
-  other?: Profile | null;
-  unread_count?: number;
-}
-
-export interface Message {
-  id: string;
-  conversation_id: string;
-  sender_id: string;
-  body: string;
-  created_at: string;
-  sender_name?: string;
-  sender_avatar?: string | null;
-}
-
-export type ConnectionAction =
-  | 'connect'
-  | 'pending_outgoing'
-  | 'pending_incoming'
-  | 'connected'
-  | 'self'
-  | 'none';

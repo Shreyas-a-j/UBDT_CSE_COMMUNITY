@@ -3,6 +3,7 @@ import {
   ANNOUNCEMENT_IMAGE_MAX_BYTES,
   ANNOUNCEMENT_MAX_IMAGES,
   ANNOUNCEMENT_REACTIONS,
+  canDeleteAnnouncement,
   canPublishAnnouncements,
   groupAnnouncementsByDay,
   isAnnouncementReaction,
@@ -268,5 +269,28 @@ describe('groupAnnouncementsByDay', () => {
 
   it('returns no groups for no announcements', () => {
     expect(groupAnnouncementsByDay([], now)).toEqual([])
+  })
+})
+
+describe('canDeleteAnnouncement', () => {
+  const authorId = 'faculty-1'
+
+  it('allows the author', () => {
+    expect(canDeleteAnnouncement({ id: 'faculty-1', role: 'faculty' }, authorId)).toBe(true)
+  })
+
+  it('allows an admin who is not the author', () => {
+    expect(canDeleteAnnouncement({ id: 'admin-1', role: 'admin' }, authorId)).toBe(true)
+  })
+
+  it('rejects another student or faculty member', () => {
+    expect(canDeleteAnnouncement({ id: 'student-1', role: 'student' }, authorId)).toBe(false)
+    expect(canDeleteAnnouncement({ id: 'faculty-2', role: 'faculty' }, authorId)).toBe(false)
+  })
+
+  it('rejects a signed-out viewer', () => {
+    expect(canDeleteAnnouncement(null, authorId)).toBe(false)
+    expect(canDeleteAnnouncement(undefined, authorId)).toBe(false)
+    expect(canDeleteAnnouncement({ role: 'admin' }, authorId)).toBe(false)
   })
 })

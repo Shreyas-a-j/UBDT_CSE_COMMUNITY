@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
-import { Megaphone } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { Megaphone, Trash2 } from 'lucide-react'
+import toast from 'react-hot-toast'
 import type { Announcement } from '@/lib/types'
 import { formatDate, formatRelativeTime } from '@/lib/utils'
+import { canDeleteAnnouncement } from '@/lib/logic/announcements'
+import { useCommunity } from '@/contexts/CommunityContext'
 import UserAvatar from '@/components/UserAvatar'
 import AnnouncementReactions from '@/components/AnnouncementReactions'
 
@@ -22,12 +25,40 @@ export default function AnnouncementCard({
   announcement: Announcement
   variant?: 'card' | 'message'
 }) {
+  const { currentUser, deleteAnnouncement } = useCommunity()
   // Relative time depends on the current clock, so it is filled in after mount
   // (same deferral as PostCard) to keep prerendering deterministic.
   const [relative, setRelative] = useState('')
+  const [deleting, setDeleting] = useState(false)
+  const deletingRef = useRef<Set<string>>(new Set())
   useEffect(() => {
     queueMicrotask(() => setRelative(formatRelativeTime(announcement.created_at)))
   }, [announcement.created_at])
+
+  // Mirrors the DELETE policy (author or admin). The server route and RLS
+  // remain the authority; this only decides whether to render the control.
+  const canDelete = canDeleteAnnouncement(currentUser, announcement.author_id)
+
+  const handleDelete = async () => {
+    if (deletingRef.current.has(announcement.id)) return
+    if (!window.confirm('Delete this announcement? This cannot be undone.')) return
+
+    deletingRef.current.add(announcement.id)
+    setDeleting(true)
+    try {
+      const result = await deleteAnnouncement(announcement.id)
+      if (result.ok) {
+        toast.success(
+          result.alreadyGone ? 'The announcement was already gone.' : 'Announcement deleted'
+        )
+      } else {
+        toast.error(result.error || 'The announcement could not be deleted.')
+      }
+    } finally {
+      deletingRef.current.delete(announcement.id)
+      setDeleting(false)
+    }
+  }
 
   const authorName = announcement.author_name || 'CSE Faculty'
   const images = announcement.image_urls ?? []
@@ -35,6 +66,7 @@ export default function AnnouncementCard({
 
   return (
     <article
+      id={`announcement-${announcement.id}`}
       className={
         variant === 'card'
           ? 'card p-4 sm:p-5'
@@ -68,6 +100,18 @@ export default function AnnouncementCard({
             >
               {relative || formatDate(announcement.created_at)}
             </time>
+            {canDelete && (
+              <button
+                type="button"
+                onClick={handleDelete}
+                disabled={deleting}
+                aria-label="Delete announcement"
+                aria-disabled={deleting}
+                className="ml-auto inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md text-dim transition-colors hover:bg-error/10 hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
 
           <h3 className="mt-1.5 text-[15.5px] font-semibold leading-snug text-ink sm:text-[16.5px]">

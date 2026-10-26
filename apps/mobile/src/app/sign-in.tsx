@@ -7,8 +7,8 @@
  * Layout notes:
  * - The ScrollView uses flexGrow so the form is vertically centred when it
  *   fits and scrolls naturally on small screens or with a large font scale.
- * - The root window uses Android `adjustResize` (see app.json); the focused
- *   field is therefore kept above the keyboard by the native window resize.
+ * - The shared KeyboardAvoiding behavior applies padding on both platforms;
+ *   Android edge-to-edge disables the native window resize.
  *   No fixed heights or manual keyboard-offset math are used.
  * - Inputs keep focus while typing: they are stable components, and the
  *   "show password" action only toggles `secureTextEntry` in place.
@@ -18,7 +18,6 @@ import { useRef, useState } from 'react';
 import {
   KeyboardAvoidingView,
   Linking,
-  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -27,9 +26,11 @@ import {
 } from 'react-native';
 import type { TextInputInstance } from 'react-native';
 import Ionicons from '@expo/vector-icons/Ionicons';
+import { router } from 'expo-router';
 import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { useAuth } from '@/lib/auth-context';
+import { KEYBOARD_AVOIDING_BEHAVIOR } from '@/lib/keyboard';
 import { UCC_WEBSITE_URL } from '@/lib/links';
 import { isNetworkError } from '@/lib/supabase';
 import { Brand, Type } from '@/lib/theme';
@@ -87,7 +88,7 @@ export default function SignInScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={KEYBOARD_AVOIDING_BEHAVIOR}
         style={styles.fill}
       >
         <View pointerEvents="none" style={styles.glowTop} />
@@ -166,18 +167,40 @@ export default function SignInScreen() {
 
             <View style={styles.websiteBlock}>
               <Pressable
-                onPress={openWebsite}
-                accessibilityRole="link"
-                accessibilityLabel="New to UCC? Visit our website"
-                accessibilityHint="Opens the UCC website in your browser"
+                onPress={() => router.push('/sign-up')}
+                accessibilityRole="button"
+                accessibilityLabel="Create an account"
                 hitSlop={8}
                 style={({ pressed }) => [styles.websiteLink, pressed && styles.websiteLinkPressed]}
               >
                 <Text style={styles.websiteLinkText}>
-                  New to UCC? <Text style={styles.websiteLinkAction}>Visit our website</Text>
+                  New to UCC? <Text style={styles.websiteLinkAction}>Create an account</Text>
                 </Text>
+                <Ionicons name="person-add-outline" size={15} color={Brand.accent} />
+              </Pressable>
+
+              <Pressable
+                onPress={() => router.push('/forgot-password')}
+                accessibilityRole="button"
+                accessibilityLabel="Forgot your password"
+                hitSlop={8}
+                style={({ pressed }) => [styles.websiteLink, pressed && styles.websiteLinkPressed]}
+              >
+                <Text style={styles.websiteLinkText}>Forgot your password?</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={openWebsite}
+                accessibilityRole="link"
+                accessibilityLabel="Visit the community website"
+                accessibilityHint="Opens the UCC website in your browser"
+                hitSlop={8}
+                style={({ pressed }) => [styles.websiteLink, pressed && styles.websiteLinkPressed]}
+              >
+                <Text style={styles.websiteLinkText}>Visit the community website</Text>
                 <Ionicons name="open-outline" size={15} color={Brand.accent} />
               </Pressable>
+
               {websiteError ? (
                 <Text
                   accessibilityRole="alert"
@@ -193,8 +216,8 @@ export default function SignInScreen() {
           <View style={styles.footer}>
             <View style={styles.rule} />
             <Text style={styles.footnote}>
-              Use the account you registered on the community website. Sessions are kept securely on
-              this device, so you stay signed in.
+              Use your community account. Sessions are kept securely on this device, so you stay
+              signed in.
             </Text>
           </View>
         </ScrollView>

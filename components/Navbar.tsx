@@ -14,6 +14,7 @@ import { displayName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 import SearchInput from '@/components/SearchInput'
 import MobileNavigation from '@/components/MobileNavigation'
+import AndroidAppButton from '@/components/AndroidAppButton'
 
 function useDismiss(open: boolean, close: () => void) {
   const ref = useRef<HTMLDivElement>(null)
@@ -183,6 +184,8 @@ export default function Navbar() {
             >
               <Search className="h-[18px] w-[18px]" />
             </button>
+
+            <AndroidAppButton />
 
             <div className="relative" ref={createRef}>
               <button

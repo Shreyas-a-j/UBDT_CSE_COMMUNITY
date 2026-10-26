@@ -80,6 +80,62 @@ export const TextField = forwardRef<TextInputInstance, TextFieldProps>(function 
   );
 });
 
+/* ------------------------------- SelectField ------------------------------ */
+
+interface SelectFieldProps {
+  label: string;
+  value: string;
+  placeholder: string;
+  onPress: () => void;
+  icon?: IconName;
+  disabled?: boolean;
+  hint?: string;
+  accessibilityHint?: string;
+}
+
+/** A text-field-shaped control that opens a native picker or menu. */
+export function SelectField({
+  label,
+  value,
+  placeholder,
+  onPress,
+  icon,
+  disabled = false,
+  hint,
+  accessibilityHint,
+}: SelectFieldProps) {
+  const hasValue = value.length > 0;
+  return (
+    <View>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <Pressable
+        onPress={onPress}
+        disabled={disabled}
+        accessibilityRole="button"
+        accessibilityLabel={`${label}: ${hasValue ? value : placeholder}`}
+        accessibilityHint={accessibilityHint}
+        accessibilityState={{ disabled }}
+        style={({ pressed }) => [
+          styles.fieldRow,
+          styles.selectRow,
+          disabled && styles.disabled,
+          pressed && styles.pressedSurface,
+        ]}
+      >
+        <Text
+          numberOfLines={1}
+          style={[styles.selectValue, !hasValue && styles.selectPlaceholder]}
+        >
+          {hasValue ? value : placeholder}
+        </Text>
+        {icon ? <Ionicons name={icon} size={18} color={Brand.dim} /> : null}
+        <Ionicons name="chevron-down" size={15} color={Brand.dim} />
+      </Pressable>
+      {hint ? <Text style={styles.fieldHint}>{hint}</Text> : null}
+    </View>
+  );
+}
+
 /* --------------------------------- Buttons -------------------------------- */
 
 interface ButtonProps {
@@ -338,6 +394,20 @@ const styles = StyleSheet.create({
   },
   fieldSecure: {
     paddingRight: 44,
+  },
+  selectRow: {
+    gap: 8,
+    paddingVertical: 11,
+  },
+  selectValue: {
+    flex: 1,
+    fontFamily: Type.body,
+    fontSize: 15,
+    lineHeight: 21,
+    color: Brand.ink,
+  },
+  selectPlaceholder: {
+    color: Brand.dim,
   },
   revealHit: {
     minWidth: 48,

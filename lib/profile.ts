@@ -272,6 +272,19 @@ export function canPublishFacultyContent(profile?: Profile | null): boolean {
   return isApprovedFaculty(profile)
 }
 
+/**
+ * Pin/unpin is an administrator or approved-faculty action. The admin branch
+ * is explicit and independent of faculty_status, mirroring the database's
+ * `public.is_admin(auth.uid()) OR public.is_verified_faculty(auth.uid())`.
+ * This only controls the visible affordance; the database re-checks the
+ * authenticated identity inside the RPC.
+ */
+export function canManageDiscussionPins(
+  profile?: { role?: unknown; faculty_status?: unknown } | null
+): boolean {
+  return profile?.role === 'admin' || isApprovedFaculty(profile)
+}
+
 export function profileWritableFields(updated: Partial<Profile>) {
   // Normalize links at the write boundary too. The modal validates first and
   // shows field-level errors, but this keeps every caller (including future

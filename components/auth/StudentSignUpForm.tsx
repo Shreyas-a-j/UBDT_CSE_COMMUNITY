@@ -18,6 +18,7 @@ export default function StudentSignUpForm() {
 
   const [name, setName] = useState('')
   const [usn, setUsn] = useState('')
+  const [admissionNumber, setAdmissionNumber] = useState('')
   const [email, setEmail] = useState('')
   const [year, setYear] = useState<number>(1)
   const [section, setSection] = useState('')
@@ -35,7 +36,15 @@ export default function StudentSignUpForm() {
     setUsn(upper)
     setError('')
     const detected = getYearFromUSN(upper)
-    if (detected) setYear(detected)
+    if (detected) {
+      setYear(detected)
+      setAdmissionNumber('')
+    } else if (!upper) {
+      // First-year students without a USN stay in year 1 and may supply an
+      // admission number instead. Adding a valid USN unlocks the year select.
+      setYear(1)
+      setAdmissionNumber('')
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -49,6 +58,7 @@ export default function StudentSignUpForm() {
       password,
       confirmPassword,
       usn: formattedUsn,
+      admissionNumber,
       year,
       section,
     })
@@ -63,20 +73,23 @@ export default function StudentSignUpForm() {
 
       // Double-check USN availability before submitting.
       // The database unique constraint is the authoritative check;
-      // this provides early user feedback.
-      const { data: existing, error: usnCheckError } = await supabase
-        .from('profiles')
-        .select('id, role')
-        .eq('usn', formattedUsn)
-        .maybeSingle()
+      // this provides early user feedback. Admission-only first-year signup
+      // skips the probe entirely.
+      if (formattedUsn) {
+        const { data: existing, error: usnCheckError } = await supabase
+          .from('profiles')
+          .select('id, role')
+          .eq('usn', formattedUsn)
+          .maybeSingle()
 
-      if (usnCheckError) {
-        // Column might not exist yet — log but proceed; DB constraint is authoritative
-        console.error('USN check failed (relying on DB constraint):', usnCheckError)
-      } else if (existing) {
-        setError('This USN is already registered. Please sign in or contact the administrator.')
-        setLoading(false)
-        return
+        if (usnCheckError) {
+          // Column might not exist yet — log but proceed; DB constraint is authoritative
+          console.error('USN check failed (relying on DB constraint):', usnCheckError)
+        } else if (existing) {
+          setError('This USN is already registered. Please sign in or contact the administrator.')
+          setLoading(false)
+          return
+        }
       }
 
       // Step 1: Create auth account
@@ -86,7 +99,10 @@ export default function StudentSignUpForm() {
         options: {
           data: {
             name: name.trim(),
-            usn: formattedUsn,
+            usn: formattedUsn || null,
+            ...(!formattedUsn && year === 1 && admissionNumber.trim()
+              ? { admission_number: admissionNumber.trim().toUpperCase() }
+              : {}),
             year,
             department: 'CSE',
             section: section.trim() || null,
@@ -102,6 +118,12 @@ export default function StudentSignUpForm() {
           signUpError.message.includes('User already registered')
         ) {
           setError('This email is already registered. Please sign in instead.')
+          return
+        }
+        if (signUpError.message.toLowerCase().includes('admission number')) {
+          setError(
+            'This admission number is already registered. Sign in or contact the department.'
+          )
           return
         }
         // Check for USN uniqueness constraint violation (PG error code 23505)
@@ -213,7 +235,6 @@ export default function StudentSignUpForm() {
           <input
             id="signup-usn"
             type="text"
-            required
             placeholder="e.g. 4UB24CS045"
             value={usn}
             onChange={e => handleUsnChange(e.target.value)}
@@ -226,10 +247,36 @@ export default function StudentSignUpForm() {
             </p>
           ) : (
             <p className="mt-1.5 text-[10.5px] text-dim">
-              4UB[YY]CS[Roll] — academic year is detected automatically
+              4UB[YY]CS[Roll] — academic year is detected automatically. First-year students
+              without a USN can use an admission number below.
             </p>
           )}
         </div>
+
+        {year === 1 && !usn.trim() && (
+          <div>
+            <label htmlFor="signup-admission" className="label">
+              Admission number
+            </label>
+            <input
+              id="signup-admission"
+              type="text"
+              placeholder="e.g. ADM-2026-001"
+              value={admissionNumber}
+              onChange={e => {
+                setAdmissionNumber(e.target.value.toUpperCase())
+                setError('')
+              }}
+              className="field font-mono uppercase placeholder:normal-case"
+              maxLength={24}
+              autoCapitalize="characters"
+            />
+            <p className="mt-1.5 text-[10.5px] text-dim">
+              For first-year students who do not have a USN yet. 4-24 letters, digits,
+              hyphens or slashes.
+            </p>
+          </div>
+        )}
 
         <div>
           <label htmlFor="signup-email" className="label">
@@ -260,12 +307,22 @@ export default function StudentSignUpForm() {
               value={year}
               onChange={e => setYear(Number(e.target.value))}
               className="field-select"
+              disabled={!usn.trim()}
             >
               <option value={1}>1st year</option>
-              <option value={2}>2nd year</option>
-              <option value={3}>3rd year</option>
-              <option value={4}>4th year</option>
+              {usn.trim() && (
+                <>
+                  <option value={2}>2nd year</option>
+                  <option value={3}>3rd year</option>
+                  <option value={4}>4th year</option>
+                </>
+              )}
             </select>
+            {!usn.trim() && (
+              <p className="mt-1.5 text-[10.5px] text-dim">
+                Add a USN to change your year.
+              </p>
+            )}
           </div>
           <div>
             <label htmlFor="signup-section" className="label">

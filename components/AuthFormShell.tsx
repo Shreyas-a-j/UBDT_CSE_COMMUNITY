@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { ArrowLeft, Code2, GraduationCap } from 'lucide-react'
+import AndroidAppButton from '@/components/AndroidAppButton'
 
 export default function AuthFormShell({
   title,
@@ -83,6 +84,7 @@ export default function AuthFormShell({
               </span>
               <span className="text-[12.5px] font-semibold text-ink">UBDT CSE</span>
             </Link>
+            <AndroidAppButton />
           </div>
 
           <h2 className="font-display text-[28px] font-semibold tracking-tight text-ink">{title}</h2>

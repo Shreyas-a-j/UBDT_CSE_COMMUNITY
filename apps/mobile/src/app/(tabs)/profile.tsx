@@ -2,10 +2,11 @@
 
 /**
  * Profile tab — the signed-in member's real `public.profiles` row plus live
- * counts from `connection_requests`, `posts` and `event_rsvps`.
+ * counts from `posts` and `event_rsvps`.
  *
- * There is intentionally no edit action here: the website owns profile
- * editing, and a button that cannot persist changes would be a fake control.
+ * Editing uses the same allowlisted columns as the website's ProfileModal.
+ * Avatar changes remain on the website because the R2 upload route is bound
+ * to the website session and server secret.
  */
 
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -23,13 +24,14 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { canPublishFacultyContent, displayName, firstName } from '@/lib/profile';
+import { canPublishFacultyContent, displayName, firstName, isAdmin } from '@/lib/profile';
 import { getYearLabel } from '@/lib/community';
 import { logSupabaseError } from '@/lib/errors';
 import { Brand, Radius, Type } from '@/lib/theme';
 import { Avatar } from '@/components/avatar';
 import { Badge } from '@/components/badge';
 import { PageHeader, Screen } from '@/components/layout';
+import { ProfileLinks } from '@/components/profile-links';
 import { EmptyState, ErrorState } from '@/components/states';
 import {
   ActionButton,
@@ -41,12 +43,11 @@ import {
 } from '@/components/ui';
 
 interface Counts {
-  connections: number;
   posts: number;
   events: number;
 }
 
-const EMPTY_COUNTS: Counts = { connections: 0, posts: 0, events: 0 };
+const EMPTY_COUNTS: Counts = { posts: 0, events: 0 };
 
 export default function ProfileScreen() {
   const { session, profile, error: authError, signOut, refreshProfile } = useAuth();
@@ -75,12 +76,7 @@ export default function ProfileScreen() {
       return;
     }
 
-    const [connections, posts, events] = await Promise.all([
-      supabase
-        .from('connection_requests')
-        .select('id', { count: 'exact', head: true })
-        .eq('status', 'accepted')
-        .or(`requester_id.eq.${userId},addressee_id.eq.${userId}`),
+    const [posts, events] = await Promise.all([
       supabase
         .from('posts')
         .select('id', { count: 'exact', head: true })
@@ -93,7 +89,7 @@ export default function ProfileScreen() {
 
     if (!mounted.current) return;
 
-    const failure = connections.error ?? posts.error ?? events.error;
+    const failure = posts.error ?? events.error;
     if (failure) {
       logSupabaseError('Profile counts error', failure);
       setCountsError(failure.message || 'Your activity counts could not be loaded.');
@@ -102,7 +98,6 @@ export default function ProfileScreen() {
     }
 
     setCounts({
-      connections: connections.count ?? 0,
       posts: posts.count ?? 0,
       events: events.count ?? 0,
     });
@@ -173,7 +168,13 @@ export default function ProfileScreen() {
 
   const facts = [
     profile.usn ? `USN ${profile.usn}` : null,
-    profile.year ? getYearLabel(profile.year) : null,
+    profile.member_type === 'alumni'
+      ? profile.graduation_year
+        ? `Class of ${profile.graduation_year}`
+        : 'Alumni'
+      : profile.year
+        ? getYearLabel(profile.year)
+        : null,
     profile.branch,
     profile.section ? `Section ${profile.section}` : null,
   ].filter((value): value is string => Boolean(value));
@@ -201,6 +202,22 @@ export default function ProfileScreen() {
           subtitle="Your community profile, activity and account controls."
           right={<ActionButton label="Refresh" icon="refresh" onPress={() => void refresh()} busy={refreshing} />}
         />
+
+        <View style={styles.profileActions}>
+          <ActionButton
+            label="Edit profile"
+            icon="create-outline"
+            tone="accent"
+            onPress={() => router.push('/profile/edit')}
+          />
+          <ActionButton
+            label="View public profile"
+            icon="person-outline"
+            onPress={() =>
+              router.push({ pathname: '/people/[id]', params: { id: profile.id } })
+            }
+          />
+        </View>
 
         <View style={styles.card}>
           <View style={styles.identityRow}>
@@ -242,14 +259,9 @@ export default function ProfileScreen() {
 
           {profile.bio ? <Text style={styles.bio}>{profile.bio}</Text> : null}
 
+          <ProfileLinks profile={profile} />
+
           <View style={styles.stats}>
-            <Stat
-              label="Connections"
-              value={counts.connections}
-              loading={loadingCounts}
-              onPress={() => router.navigate({ pathname: '/network', params: { tab: 'connections' } })}
-            />
-            <View style={styles.statDivider} />
             <Stat label="Posts" value={counts.posts} loading={loadingCounts} onPress={() => router.navigate('/')} />
             <View style={styles.statDivider} />
             <Stat
@@ -286,19 +298,29 @@ export default function ProfileScreen() {
             <LinkRow
               icon="people-outline"
               title="Find people"
-              detail="Browse every student and faculty member"
+              detail="Browse every student, alumnus and faculty member"
               onPress={() => router.push('/people')}
             />
-            <LinkRow
-              icon="chatbubble-ellipses-outline"
-              title="Messages"
-              detail="Open your private conversations"
-              onPress={() => router.navigate({ pathname: '/network', params: { tab: 'messages' } })}
-            />
+            {canPublishFacultyContent(profile) ? (
+              <LinkRow
+                icon="school-outline"
+                title="Faculty workspace"
+                detail="Announcements, events and the community CSV export"
+                onPress={() => router.push('/faculty/dashboard')}
+              />
+            ) : null}
+            {isAdmin(profile) ? (
+              <LinkRow
+                icon="shield-checkmark-outline"
+                title="Admin review"
+                detail="Review faculty applications"
+                onPress={() => router.push('/admin')}
+              />
+            ) : null}
             <LinkRow
               icon="notifications-outline"
               title="Notifications"
-              detail="Replies, requests and updates"
+              detail="Replies, reactions and updates"
               onPress={() => router.navigate('/notifications')}
             />
             <LinkRow
@@ -317,8 +339,9 @@ export default function ProfileScreen() {
             </View>
           ) : null}
           <Text style={styles.accountCopy}>
-            Profile details are managed on the community website. Signing out removes this device’s saved
-            session; your posts and connections stay in the community.
+            Profile details use the same community account as the website. Avatar changes stay on
+            the website; signing out removes this device’s saved session while your posts, projects
+            and event history stay in the community.
           </Text>
           <View style={styles.signOutRow}>
             <GhostButton
@@ -403,6 +426,13 @@ const styles = StyleSheet.create({
   content: {
     paddingBottom: 34,
     flexGrow: 1,
+  },
+  profileActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginHorizontal: 18,
+    marginBottom: 12,
   },
   card: {
     marginHorizontal: 18,

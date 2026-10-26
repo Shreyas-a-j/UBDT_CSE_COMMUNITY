@@ -24,6 +24,7 @@ import React from 'react'
 import { renderHook, act, waitFor } from '@testing-library/react'
 import { CommunityProvider, useCommunity } from './CommunityContext'
 import { summarizeReactions } from '@/lib/logic/announcements'
+import { PIN_LIMIT_MESSAGE, PIN_PERMISSION_MESSAGE } from '@/lib/logic/discussionPins'
 import { Profile } from '@/lib/types'
 
 const toastMock = vi.hoisted(() => {
@@ -61,12 +62,22 @@ function makeSupabaseStub() {
     upvotes: { data: [], error: null },
     event_rsvps: { data: [], error: null },
     notifications: { data: [], error: null },
+    discussion_pins: { data: [], error: null },
   }
   /** Per-table resolution for delete operations, set by tests. */
   const deleteResults: Record<string, unknown> = {}
   const ops: Operation[] = []
   /** Payloads passed to .insert(), in call order. */
   const insertPayloads: Record<string, unknown>[] = []
+  /** Payloads passed to .update(), in call order. */
+  const updatePayloads: Record<string, unknown>[] = []
+  const rpcCalls: Array<{ name: string; args: unknown }> = []
+  const rpcResults: Record<string, { data: unknown; error: unknown }> = {}
+  const channelHandlers: Array<{
+    event: string
+    config: Record<string, unknown>
+    callback: (payload: unknown) => void
+  }> = []
 
   function resolveResult(rec: { table: string; op: string }) {
     if (rec.op === 'delete') {
@@ -102,6 +113,7 @@ function makeSupabaseStub() {
               }
               if (name === 'delete' || name === 'insert' || name === 'update') rec.op = name
               if (name === 'insert') insertPayloads.push(args[0] as Record<string, unknown>)
+              if (name === 'update') updatePayloads.push(args[0] as Record<string, unknown>)
               return proxy
             }
           },
@@ -109,20 +121,42 @@ function makeSupabaseStub() {
       )
       return proxy
     },
-    channel: vi.fn(() => ({
-      on: vi.fn().mockReturnThis(),
-      subscribe: vi.fn().mockReturnThis(),
-    })),
+    channel: vi.fn(() => {
+      const channel = {
+        on: vi.fn(
+          (
+            event: string,
+            config: Record<string, unknown>,
+            callback: (payload: unknown) => void
+          ) => {
+            channelHandlers.push({ event, config, callback })
+            return channel
+          }
+        ),
+        subscribe: vi.fn(() => channel),
+      }
+      return channel
+    }),
     removeChannel: vi.fn(),
+    rpc(name: string, args: unknown) {
+      rpcCalls.push({ name, args })
+      return Promise.resolve(rpcResults[name] ?? { data: null, error: null })
+    },
   }
 
   return {
     stub: stub as unknown as Record<string, unknown>,
     ops,
     insertPayloads,
+    updatePayloads,
+    rpcCalls,
     baseResults,
+    channelHandlers,
     setDeleteResult(table: string, result: unknown) {
       deleteResults[table] = result
+    },
+    setRpcResult(name: string, result: { data: unknown; error: unknown }) {
+      rpcResults[name] = result
     },
   } as const
 }
@@ -804,5 +838,519 @@ describe('createAnnouncement', () => {
     expect(created).toBeNull()
     expect(fetchMock).not.toHaveBeenCalled()
     expect(toastMock.error).toHaveBeenCalledWith('Only verified faculty can publish announcements')
+  })
+})
+
+describe('deleteAnnouncement', () => {
+  const facultyProfile = {
+    id: 'faculty-1',
+    name: 'Dr Rao',
+    role: 'faculty',
+    faculty_status: 'approved',
+  } as unknown as Profile
+
+  const row = {
+    id: 'ann-1',
+    author_id: 'faculty-1',
+    title: 'Delete me',
+    body: 'body',
+    image_urls: [],
+    created_at: '2026-10-22T10:00:00.000Z',
+    updated_at: '2026-10-22T10:00:00.000Z',
+    author: { name: 'Dr Rao', avatar_url: null, designation: 'Professor' },
+    reactions: [],
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals()
+  })
+
+  async function render(fetchResult: unknown) {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.announcements = { data: [row], error: null }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(fetchResult))
+    const result = await seedAndRender(supabase, facultyProfile)
+    await waitFor(() => expect(result.current.announcements).toHaveLength(1))
+    return result
+  }
+
+  it('removes the row only after the server confirms deletion', async () => {
+    const result = await render({
+      ok: true,
+      status: 200,
+      json: async () => ({ deleted: true }),
+    })
+
+    let outcome: { ok: boolean; alreadyGone?: boolean; error?: string } | null = null
+    await act(async () => {
+      outcome = await result.current.deleteAnnouncement('ann-1')
+    })
+
+    expect(outcome!.ok).toBe(true)
+    expect(result.current.announcements).toHaveLength(0)
+  })
+
+  it('treats the route\'s explicit already-gone 404 as success', async () => {
+    const result = await render({
+      ok: false,
+      status: 404,
+      json: async () => ({ error: 'This announcement is already gone.' }),
+    })
+
+    let outcome: { ok: boolean; alreadyGone?: boolean; error?: string } | null = null
+    await act(async () => {
+      outcome = await result.current.deleteAnnouncement('ann-1')
+    })
+
+    expect(outcome!.ok).toBe(true)
+    expect(outcome!.alreadyGone).toBe(true)
+    expect(result.current.announcements).toHaveLength(0)
+  })
+
+  it('keeps the row when a 404 is not the route JSON (missing route/HTML)', async () => {
+    const result = await render({
+      ok: false,
+      status: 404,
+      json: async () => {
+        throw new Error('HTML 404')
+      },
+    })
+
+    let outcome: { ok: boolean; alreadyGone?: boolean; error?: string } | null = null
+    await act(async () => {
+      outcome = await result.current.deleteAnnouncement('ann-1')
+    })
+
+    expect(outcome!.ok).toBe(false)
+    expect(result.current.announcements).toHaveLength(1)
+  })
+
+  it('keeps the row when a 200 response does not confirm deletion', async () => {
+    const result = await render({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    })
+
+    let outcome: { ok: boolean; alreadyGone?: boolean; error?: string } | null = null
+    await act(async () => {
+      outcome = await result.current.deleteAnnouncement('ann-1')
+    })
+
+    expect(outcome!.ok).toBe(false)
+    expect(result.current.announcements).toHaveLength(1)
+  })
+
+  it('keeps the row on a 409 policy/grant failure', async () => {
+    const result = await render({
+      ok: false,
+      status: 409,
+      json: async () => ({ error: 'The announcement could not be deleted.' }),
+    })
+
+    let outcome: { ok: boolean; alreadyGone?: boolean; error?: string } | null = null
+    await act(async () => {
+      outcome = await result.current.deleteAnnouncement('ann-1')
+    })
+
+    expect(outcome!.ok).toBe(false)
+    expect(result.current.announcements).toHaveLength(1)
+  })
+})
+
+describe('notification load state', () => {
+  it('marks the list loaded and replaces the previous account rows on a user switch', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.notifications = {
+      data: [
+        {
+          id: 'notification-a',
+          user_id: 'author-1',
+          type: 'announcement',
+          title: 'For account A',
+          body: null,
+          link: '/announcements',
+          read: false,
+          created_at: '2026-10-25T09:00:00.000Z',
+        },
+      ],
+      error: null,
+    }
+    stubState.current = supabase.stub
+    const auth = {
+      profile: authorProfile,
+      loading: false,
+      signOut: vi.fn().mockResolvedValue(undefined),
+      refreshProfile: vi.fn().mockResolvedValue(undefined),
+    }
+    useAuthMock.mockReturnValue(auth)
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <CommunityProvider>{children}</CommunityProvider>
+    )
+    const { result, rerender } = renderHook(() => useCommunity(), { wrapper })
+
+    await waitFor(() => expect(result.current.notifications).toHaveLength(1))
+    expect(result.current.notificationsLoaded).toBe(true)
+
+    const secondProfile = { ...authorProfile, id: 'author-2' } as unknown as Profile
+    supabase.baseResults.notifications = {
+      data: [
+        {
+          id: 'notification-b',
+          user_id: 'author-2',
+          type: 'comment',
+          title: 'For account B',
+          body: null,
+          link: '/',
+          read: false,
+          created_at: '2026-10-25T10:00:00.000Z',
+        },
+      ],
+      error: null,
+    }
+    useAuthMock.mockReturnValue({ ...auth, profile: secondProfile })
+    rerender()
+
+    await waitFor(() => expect(result.current.notifications[0]?.id).toBe('notification-b'))
+    expect(result.current.notificationsLoaded).toBe(true)
+    expect(
+      supabase.ops.some(
+        op =>
+          op.table === 'notifications' &&
+          op.filters.some(filter => filter.column === 'user_id' && filter.value === 'author-2')
+      )
+    ).toBe(true)
+  })
+
+  it('does not mark notifications loaded when the read fails, and recovers on focus', async () => {
+    Object.defineProperty(document, 'visibilityState', {
+      configurable: true,
+      get: () => 'visible',
+    })
+
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.notifications = {
+      data: null,
+      error: { message: 'notifications read failed' },
+    }
+
+    const result = await seedAndRender(supabase, authorProfile)
+
+    await waitFor(() =>
+      expect(supabase.ops.some(op => op.table === 'notifications')).toBe(true)
+    )
+    // A failed read is not "no notifications": the list must stay unloaded so
+    // the bell/popup can retry instead of reporting an empty inbox forever.
+    expect(result.current.notificationsLoaded).toBe(false)
+
+    supabase.baseResults.notifications = {
+      data: [
+        {
+          id: 'notification-recovered',
+          user_id: 'author-1',
+          type: 'announcement',
+          title: 'Recovered',
+          body: null,
+          link: '/announcements',
+          read: false,
+          created_at: '2026-10-25T11:00:00.000Z',
+        },
+      ],
+      error: null,
+    }
+
+    act(() => {
+      window.dispatchEvent(new Event('focus'))
+    })
+
+    await waitFor(() => expect(result.current.notifications).toHaveLength(1))
+    expect(result.current.notificationsLoaded).toBe(true)
+  })
+})
+
+describe('notification realtime retention', () => {
+  it('persists mark-one and mark-all as database updates', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.notifications = {
+      data: [
+        {
+          id: 'notification-a',
+          user_id: 'author-1',
+          type: 'announcement',
+          title: 'A',
+          body: null,
+          link: '/announcements',
+          read: false,
+          created_at: '2026-10-25T09:00:00.000Z',
+        },
+        {
+          id: 'notification-b',
+          user_id: 'author-1',
+          type: 'announcement',
+          title: 'B',
+          body: null,
+          link: '/announcements',
+          read: false,
+          created_at: '2026-10-25T09:01:00.000Z',
+        },
+      ],
+      error: null,
+    }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.notifications).toHaveLength(2))
+
+    // A bare `void builder` never sent the PATCH; attaching .then() does.
+    act(() => result.current.markNotificationAsRead('notification-a'))
+    await waitFor(() => expect(supabase.updatePayloads).toContainEqual({ read: true }))
+    expect(
+      supabase.ops.some(
+        op =>
+          op.table === 'notifications' &&
+          op.op === 'update' &&
+          op.filters.some(filter => filter.column === 'id' && filter.value === 'notification-a')
+      )
+    ).toBe(true)
+
+    supabase.updatePayloads.length = 0
+    act(() => result.current.markAllNotificationsAsRead())
+    await waitFor(() =>
+      expect(
+        supabase.ops.some(
+          op =>
+            op.table === 'notifications' &&
+            op.op === 'update' &&
+            op.filters.some(f => f.column === 'user_id' && f.value === 'author-1') &&
+            op.filters.some(f => f.column === 'read' && f.value === false)
+        )
+      ).toBe(true)
+    )
+    expect(supabase.updatePayloads).toContainEqual({ read: true })
+  })
+
+  it('adds a live INSERT as an unread notification and ignores hidden types', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.notificationsLoaded).toBe(true))
+
+    const insertHandler = supabase.channelHandlers.find(
+      handler =>
+        handler.config.event === 'INSERT' &&
+        handler.config.table === 'notifications' &&
+        handler.config.filter === 'user_id=eq.author-1'
+    )
+    expect(insertHandler).toBeDefined()
+
+    act(() => {
+      insertHandler!.callback({
+        new: {
+          id: 'notification-live',
+          user_id: 'author-1',
+          type: 'event_published',
+          title: 'Live event',
+          body: null,
+          link: '/#event-1',
+          read: false,
+          created_at: '2026-10-25T12:00:00.000Z',
+        },
+      })
+    })
+
+    await waitFor(() => expect(result.current.notifications).toHaveLength(1))
+    // The bell derives its unread count from this state.
+    expect(result.current.notifications[0].read).toBe(false)
+
+    // Legacy messaging rows are hidden by the shared visibility rule.
+    act(() => {
+      insertHandler!.callback({
+        new: {
+          id: 'notification-hidden',
+          user_id: 'author-1',
+          type: 'message',
+          title: 'Hidden',
+          body: null,
+          link: '/',
+          read: false,
+          created_at: '2026-10-25T12:01:00.000Z',
+        },
+      })
+    })
+    expect(result.current.notifications).toHaveLength(1)
+  })
+
+  it('removes a notification when the server deletes it after the 24-hour window', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.baseResults.notifications = {
+      data: [
+        {
+          id: 'notification-old',
+          user_id: 'author-1',
+          type: 'announcement',
+          title: 'Old announcement',
+          body: 'This row is due for retention cleanup.',
+          link: '/announcements',
+          read: false,
+          created_at: '2026-10-24T09:00:00.000Z',
+        },
+      ],
+      error: null,
+    }
+
+    const result = await seedAndRender(supabase, authorProfile)
+    await waitFor(() => expect(result.current.notifications).toHaveLength(1))
+
+    const deleteHandler = supabase.channelHandlers.find(
+      handler =>
+        handler.config.event === 'DELETE' &&
+        handler.config.table === 'notifications' &&
+        handler.config.filter === 'user_id=eq.author-1'
+    )
+    expect(deleteHandler).toBeDefined()
+
+    act(() => {
+      deleteHandler!.callback({ old: { id: 'notification-old' } })
+    })
+
+    await waitFor(() => expect(result.current.notifications).toHaveLength(0))
+  })
+})
+
+describe('discussion pin actions', () => {
+  const approvedFaculty = {
+    id: 'faculty-1',
+    name: 'Dr Rao',
+    role: 'faculty',
+    faculty_status: 'approved',
+  } as unknown as Profile
+
+  const adminWithoutFaculty = {
+    id: 'admin-1',
+    name: 'Admin',
+    role: 'admin',
+    faculty_status: 'none',
+  } as unknown as Profile
+
+  const pendingFaculty = {
+    id: 'faculty-pending',
+    name: 'Pending Faculty',
+    role: 'faculty',
+    faculty_status: 'pending',
+  } as unknown as Profile
+
+  it('calls the pin RPC and refreshes the feed for approved faculty', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, approvedFaculty)
+
+    let pinned = false
+    await act(async () => {
+      pinned = await result.current.pinDiscussion('post-1')
+    })
+
+    expect(pinned).toBe(true)
+    expect(supabase.rpcCalls).toContainEqual({
+      name: 'pin_discussion',
+      args: { p_discussion_id: 'post-1' },
+    })
+    expect(toastMock.success).toHaveBeenCalledWith('Discussion pinned for 7 days.')
+  })
+
+  it('calls the unpin RPC for approved faculty', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, approvedFaculty)
+
+    let unpinned = false
+    await act(async () => {
+      unpinned = await result.current.unpinDiscussion('post-1')
+    })
+
+    expect(unpinned).toBe(true)
+    expect(supabase.rpcCalls).toContainEqual({
+      name: 'unpin_discussion',
+      args: { p_discussion_id: 'post-1' },
+    })
+    expect(toastMock.success).toHaveBeenCalledWith('Discussion unpinned.')
+  })
+
+  it('calls the pin RPC for an admin without any faculty verification', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, adminWithoutFaculty)
+
+    let pinned = false
+    await act(async () => {
+      pinned = await result.current.pinDiscussion('post-1')
+    })
+
+    expect(pinned).toBe(true)
+    expect(supabase.rpcCalls).toContainEqual({
+      name: 'pin_discussion',
+      args: { p_discussion_id: 'post-1' },
+    })
+    expect(toastMock.success).toHaveBeenCalledWith('Discussion pinned for 7 days.')
+  })
+
+  it('calls the unpin RPC for an admin without any faculty verification', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, adminWithoutFaculty)
+
+    let unpinned = false
+    await act(async () => {
+      unpinned = await result.current.unpinDiscussion('post-1')
+    })
+
+    expect(unpinned).toBe(true)
+    expect(supabase.rpcCalls).toContainEqual({
+      name: 'unpin_discussion',
+      args: { p_discussion_id: 'post-1' },
+    })
+    expect(toastMock.success).toHaveBeenCalledWith('Discussion unpinned.')
+  })
+
+  it('never calls the RPC for a student', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, authorProfile)
+
+    let pinned = true
+    await act(async () => {
+      pinned = await result.current.pinDiscussion('post-1')
+    })
+
+    expect(pinned).toBe(false)
+    expect(supabase.rpcCalls).toHaveLength(0)
+    expect(toastMock.error).toHaveBeenCalledWith(PIN_PERMISSION_MESSAGE)
+  })
+
+  it('never calls the RPC for unapproved faculty', async () => {
+    const supabase = makeSupabaseStub()
+    const result = await seedAndRender(supabase, pendingFaculty)
+
+    let pinned = true
+    await act(async () => {
+      pinned = await result.current.pinDiscussion('post-1')
+    })
+
+    expect(pinned).toBe(false)
+    expect(supabase.rpcCalls).toHaveLength(0)
+    expect(toastMock.error).toHaveBeenCalledWith(PIN_PERMISSION_MESSAGE)
+  })
+
+  it('shows the global-limit message when the database rejects a pin', async () => {
+    const supabase = makeSupabaseStub()
+    supabase.setRpcResult('pin_discussion', {
+      data: null,
+      error: {
+        message:
+          'The community already has 3 active pinned discussions. Wait for a pin to expire or unpin one first.',
+      },
+    })
+    const result = await seedAndRender(supabase, approvedFaculty)
+
+    let pinned = true
+    await act(async () => {
+      pinned = await result.current.pinDiscussion('post-1')
+    })
+
+    expect(pinned).toBe(false)
+    expect(toastMock.error).toHaveBeenCalledWith(PIN_LIMIT_MESSAGE)
   })
 })

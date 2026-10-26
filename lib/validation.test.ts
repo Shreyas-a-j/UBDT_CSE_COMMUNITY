@@ -1,5 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
+  normalizeAdmissionNumber,
+  validateAcademicYear,
+  validateAdmissionNumber,
   validateAlumniSignup,
   validateFacultySignup,
   validateStudentSignup,
@@ -56,23 +59,74 @@ describe('validateAlumniSignup', () => {
   })
 })
 
-describe('student and faculty signup validation remain unchanged', () => {
-  it('student signup still requires a valid USN', () => {
-    const yy = String(currentYear % 100).padStart(2, '0')
-    const valid = {
-      name: 'Rahul Sharma',
-      email: 'rahul@example.com',
-      password: 'secret1',
-      confirmPassword: 'secret1',
-      usn: `4UB${yy}CS045`,
-      year: 2,
-    }
+describe('student signup validation', () => {
+  const yy = String(currentYear % 100).padStart(2, '0')
+  const base = {
+    name: 'Rahul Sharma',
+    email: 'rahul@example.com',
+    password: 'secret1',
+    confirmPassword: 'secret1',
+    usn: `4UB${yy}CS045`,
+    year: 2,
+  }
 
-    expect(validateStudentSignup(valid)).toBeNull()
-    expect(validateStudentSignup({ ...valid, usn: '' })).toMatch(/invalid usn/i)
+  it('accepts a valid year 2-4 USN', () => {
+    expect(validateStudentSignup(base)).toBeNull()
   })
 
-  it('faculty signup still requires designation and department', () => {
+  it('requires a USN for years 2-4 even with an admission number', () => {
+    expect(validateStudentSignup({ ...base, usn: '' })).toMatch(/USN is required/i)
+    expect(
+      validateStudentSignup({ ...base, usn: '', admissionNumber: 'ADM-2026-001' }),
+    ).toMatch(/USN is required/i)
+  })
+
+  it('accepts a first-year admission number without a USN', () => {
+    expect(
+      validateStudentSignup({ ...base, usn: '', year: 1, admissionNumber: 'ADM-2026-001' }),
+    ).toBeNull()
+  })
+
+  it('rejects a first-year student with neither identifier', () => {
+    expect(validateStudentSignup({ ...base, usn: '', year: 1 })).toMatch(
+      /either a USN or an admission number/i,
+    )
+  })
+
+  it('rejects an invalid USN even when the admission number is valid', () => {
+    expect(
+      validateStudentSignup({
+        ...base,
+        usn: 'NOT-A-USN',
+        year: 1,
+        admissionNumber: 'ADM-2026-001',
+      }),
+    ).toMatch(/invalid USN/i)
+  })
+
+  it('rejects an invalid admission number', () => {
+    expect(
+      validateStudentSignup({ ...base, usn: '', year: 1, admissionNumber: 'A B' }),
+    ).toMatch(/valid admission number/i)
+  })
+
+  it('normalizes admission numbers by trimming and uppercasing', () => {
+    expect(normalizeAdmissionNumber('  adm-2026-001  ')).toBe('ADM-2026-001')
+    expect(validateAdmissionNumber('  adm-2026-001  ')).toBe(true)
+  })
+
+  it('enforces the 4-24 character admission-number length', () => {
+    expect(validateAdmissionNumber('ADM1')).toBe(true)
+    expect(validateAdmissionNumber(`A${'B'.repeat(22)}C`)).toBe(true)
+    expect(validateAdmissionNumber('AB1')).toBe(false)
+    expect(validateAdmissionNumber(`A${'B'.repeat(23)}C`)).toBe(false)
+    expect(validateAdmissionNumber('-ABC')).toBe(false)
+    expect(validateAdmissionNumber('ABC-')).toBe(false)
+  })
+})
+
+describe('faculty signup validation', () => {
+  it('still requires designation and department', () => {
     const valid = {
       name: 'Dr. Anita Sharma',
       email: 'anita@ubdt.ac.in',
@@ -85,5 +139,19 @@ describe('student and faculty signup validation remain unchanged', () => {
     expect(validateFacultySignup(valid)).toBeNull()
     expect(validateFacultySignup({ ...valid, designation: '' })).toMatch(/designation/i)
     expect(validateFacultySignup({ ...valid, department: '' })).toMatch(/department/i)
+  })
+})
+
+describe('validateAcademicYear', () => {
+  it('accepts 1 through 4', () => {
+    for (const year of [1, 2, 3, 4]) {
+      expect(validateAcademicYear(year)).toBeNull()
+    }
+  })
+
+  it('rejects out-of-range, fractional, string and missing values', () => {
+    for (const year of [0, 5, 1.5, '2', null, undefined, NaN]) {
+      expect(validateAcademicYear(year)).toBe('Select a valid academic year.')
+    }
   })
 })

@@ -19,6 +19,16 @@
       "predictiveBackGestureEnabled": false
     },
     "plugins": [
+      [
+        "onesignal-expo-plugin",
+        {
+          "mode": "production",
+          "disableNSE": true,
+          "disableLocation": true,
+          "smallIcons": ["./assets/images/android-icon-monochrome.png"],
+          "smallIconAccentColor": "#8B7CF6"
+        }
+      ],
       "expo-router",
       [
         "expo-splash-screen",
@@ -33,7 +43,14 @@
         {
           "configureAndroidBackup": true
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow UCC to access your photos so you can attach images to faculty announcements."
+        }
+      ],
+      "expo-sharing"
     ],
     "experiments": {
       "typedRoutes": true
@@ -44,6 +61,7 @@
           "web": true
         }
       },
+      "onesignalAppId": "3b04746e-3970-48d8-ae9e-29f02f226aaf",
       "eas": {
         "projectId": "298e402a-7b44-4899-b5eb-710c93554bcc"
       }

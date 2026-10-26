@@ -19,15 +19,18 @@ import 'react-native-url-polyfill/auto';
 import * as SecureStore from 'expo-secure-store';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
+const configuredSupabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY;
 
-if (!supabaseUrl || !supabaseAnonKey) {
+if (!configuredSupabaseUrl || !supabaseAnonKey) {
   throw new Error(
     'Missing Supabase environment variables. Check EXPO_PUBLIC_SUPABASE_URL and ' +
       'EXPO_PUBLIC_SUPABASE_ANON_KEY in apps/mobile/.env (see .env.example).'
   );
 }
+
+/** Non-null after the environment check above. */
+export const supabaseUrl: string = configuredSupabaseUrl;
 
 /** SecureStore-backed Supabase storage adapter (AsyncStorage-compatible API). */
 const SecureStoreAdapter = {

@@ -1,16 +1,22 @@
 'use client'
 
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
   ArrowBigUp, Check, Edit2, ExternalLink, GitBranch, Heart, Link as LinkIcon,
-  MessageSquare, Save, Send, Share2, Sparkles, Trash2, X,
+  MessageSquare, Pin, PinOff, Save, Send, Share2, Sparkles, Trash2, X,
 } from 'lucide-react'
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatDate, formatRelativeTime, getYearLabel } from '@/lib/utils'
-import { isAdmin, firstName } from '@/lib/profile'
+import { isAdmin, canManageDiscussionPins, firstName } from '@/lib/profile'
+import {
+  MAX_ACTIVE_DISCUSSION_PINS,
+  PIN_SLOTS_FULL_MESSAGE,
+  formatPinCountdown,
+} from '@/lib/logic/discussionPins'
 import UserAvatar from '@/components/UserAvatar'
+import LinkifiedText from '@/components/LinkifiedText'
 
 interface PostCardProps {
   post: Post
@@ -28,6 +34,7 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
   const {
     currentUser, likedPostIds, upvotedPostIds, toggleLikePost, toggleUpvotePost,
     comments, addComment, updatePost, deletePost,
+    pinnedPostIds, pinPendingIds, pinDiscussion, unpinDiscussion, refreshPins,
   } = useCommunity()
 
   const [showComments, setShowComments] = useState(false)
@@ -43,6 +50,8 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
   const [isSaving, setIsSaving] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
   const [relativeTime, setRelativeTime] = useState('')
+  const [now, setNow] = useState(() => new Date())
+  const expiryRefreshedRef = useRef<string | null>(null)
 
   const isLiked = likedPostIds.has(post.id)
   const isUpvoted = upvotedPostIds.has(post.id)
@@ -55,11 +64,44 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
     currentUser && (currentUser.id === post.author_id || isAdmin(currentUser))
   )
   const isShowcase = post.type === 'showcase'
+  // Pinning is a discussion-only admin/approved-faculty affordance. The
+  // admin branch is independent of faculty verification; the database is
+  // authoritative and re-checks is_admin() OR is_verified_faculty().
+  const canPin = !isShowcase && canManageDiscussionPins(currentUser)
+  const isPinned = pinnedPostIds.has(post.id)
+  const isPinPending = pinPendingIds.has(post.id)
   const postComments = comments.filter(c => c.post_id === post.id)
+
+  const pinExpiresMs = post.pin_expires_at ? Date.parse(post.pin_expires_at) : Number.NaN
+  const isPinActive =
+    isPinned && Number.isFinite(pinExpiresMs) && pinExpiresMs > now.getTime()
+  const pinSlotsFull =
+    canPin && !isPinned && pinnedPostIds.size >= MAX_ACTIVE_DISCUSSION_PINS
+  const pinCountdown = post.pin_expires_at
+    ? formatPinCountdown(post.pin_expires_at, now)
+    : 'Expired'
 
   useEffect(() => {
     queueMicrotask(() => setRelativeTime(formatRelativeTime(post.created_at)))
   }, [post.created_at])
+
+  // Tick only while a live pin is on screen. The interval stops as soon as
+  // the expiry instant passes, so an unpinned card costs nothing.
+  useEffect(() => {
+    if (!isPinActive) return
+    const timer = setInterval(() => setNow(new Date()), 1000)
+    return () => clearInterval(timer)
+  }, [isPinActive])
+
+  // At expiry, drop the banner and ask the context to re-read the authoritative
+  // pin rows. The ref keeps this to one refresh per post id.
+  useEffect(() => {
+    if (!isPinned || !post.pin_expires_at) return
+    if (formatPinCountdown(post.pin_expires_at, now) !== 'Expired') return
+    if (expiryRefreshedRef.current === post.id) return
+    expiryRefreshedRef.current = post.id
+    void refreshPins()
+  }, [isPinned, post.id, post.pin_expires_at, now, refreshPins])
 
   useEffect(() => {
     // While the editor is open the local draft is authoritative: the same
@@ -313,6 +355,33 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
             {isShowcase ? <Sparkles className="h-3 w-3" /> : <MessageSquare className="h-3 w-3" />}
             {isShowcase ? 'Showcase' : 'Discussion'}
           </span>
+          {canPin && (
+            <button
+              type="button"
+              className={`btn-icon h-8 w-8 border-transparent ${
+                isPinned ? 'text-accent-text hover:text-accent-text' : ''
+              }`}
+              onClick={() => (isPinned ? unpinDiscussion(post.id) : pinDiscussion(post.id))}
+              disabled={isPinPending || pinSlotsFull}
+              aria-disabled={isPinPending || pinSlotsFull}
+              aria-label={
+                isPinned
+                  ? 'Unpin discussion'
+                  : pinSlotsFull
+                    ? 'Maximum 3 active pins'
+                    : 'Pin discussion'
+              }
+              title={
+                isPinned
+                  ? `Pinned by faculty${post.pin_expires_at ? ` · ${pinCountdown}` : ''}`
+                  : pinSlotsFull
+                    ? PIN_SLOTS_FULL_MESSAGE
+                    : 'Pin this discussion for 7 days'
+              }
+            >
+              {isPinned ? <PinOff className="h-3.5 w-3.5" /> : <Pin className="h-3.5 w-3.5" />}
+            </button>
+          )}
           {isAuthor && (
             <>
               <button
@@ -338,12 +407,20 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
         </div>
       </div>
 
+      {isPinned && isPinActive && (
+        <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 rounded-md border border-accent/25 bg-accent-soft px-3 py-2 text-[11.5px]">
+          <Pin className="h-3.5 w-3.5 shrink-0 text-accent-text" aria-hidden />
+          <span className="font-medium text-accent-text">Pinned by faculty</span>
+          {post.pin_expires_at && <span className="text-muted">· {pinCountdown}</span>}
+        </div>
+      )}
+
       {/* Content */}
       <h3 className="mt-4 text-[17px] font-semibold leading-snug text-ink sm:text-[18px]">
         {post.title}
       </h3>
       <p className="mt-2 max-w-[68ch] whitespace-pre-line text-[14px] leading-relaxed text-muted">
-        {post.body}
+        <LinkifiedText text={post.body} />
       </p>
 
       {isShowcase && (post.demo_url || post.github_url || (post.tech_stack?.length ?? 0) > 0) && (

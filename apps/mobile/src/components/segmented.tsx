@@ -51,7 +51,7 @@ export function FilterChips<T extends string>({
   onChange,
   accessibilityLabel,
 }: {
-  options: { value: T; label: string }[];
+  options: { value: T; label: string; count?: number }[];
   value: T;
   onChange: (value: T) => void;
   accessibilityLabel: string;
@@ -75,6 +75,11 @@ export function FilterChips<T extends string>({
             style={({ pressed }) => [styles.filter, active && styles.filterActive, pressed && styles.segmentPressed]}
           >
             <Text style={[styles.filterLabel, active && styles.filterLabelActive]}>{option.label}</Text>
+            {typeof option.count === 'number' ? (
+              <Text style={[styles.filterCount, active && styles.filterCountActive]}>
+                {option.count}
+              </Text>
+            ) : null}
           </Pressable>
         );
       })}
@@ -129,6 +134,8 @@ const styles = StyleSheet.create({
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: Brand.line,
     backgroundColor: Brand.surface,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   filterActive: {
     borderColor: Brand.accent,
@@ -140,6 +147,15 @@ const styles = StyleSheet.create({
     color: Brand.muted,
   },
   filterLabelActive: {
+    color: Brand.accent,
+  },
+  filterCount: {
+    fontFamily: Type.bodyMedium,
+    fontSize: 10,
+    color: Brand.dim,
+    marginLeft: 5,
+  },
+  filterCountActive: {
     color: Brand.accent,
   },
 });

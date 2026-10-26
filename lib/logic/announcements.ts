@@ -208,6 +208,19 @@ export function canPublishAnnouncements(
   return isApprovedFaculty(profile)
 }
 
+/**
+ * Mirrors the announcements DELETE policy: the author or an admin. This only
+ * decides whether to render the control; the server route and RLS remain the
+ * authority for the write itself.
+ */
+export function canDeleteAnnouncement(
+  viewer: { id?: string | null; role?: string | null } | null | undefined,
+  authorId: string
+): boolean {
+  if (!viewer?.id) return false
+  return viewer.id === authorId || viewer.role === 'admin'
+}
+
 // ---------------------------------------------------------------------------
 // Display grouping
 // ---------------------------------------------------------------------------

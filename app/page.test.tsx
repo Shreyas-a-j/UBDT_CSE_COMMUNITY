@@ -101,6 +101,11 @@ const openCreateEventMock = vi.fn()
 const baseValue: Record<string, unknown> = {
   currentUser: null,
   posts,
+  pinnedPosts: [],
+  pinnedPostIds: new Set<string>(),
+  pinPendingIds: new Set<string>(),
+  pinDiscussion: vi.fn(),
+  unpinDiscussion: vi.fn(),
   events: [],
   announcements: [],
   feedLoading: false,
@@ -133,7 +138,7 @@ const baseValue: Record<string, unknown> = {
   signOut: vi.fn(),
 }
 
-function Harness() {
+function Harness({ overrides = {} }: { overrides?: Record<string, unknown> }) {
   const [yearFilter, setYearFilterState] = React.useState(0)
   const [feedFilter, setFeedFilter] = React.useState<'all' | 'events' | 'discussions' | 'showcases' | 'announcements'>('all')
   const [searchQuery, setSearchQuery] = React.useState('')
@@ -145,6 +150,7 @@ function Harness() {
     <TestContext.Provider
       value={{
         ...baseValue,
+        ...overrides,
         yearFilter,
         setYearFilter,
         feedFilter,
@@ -245,6 +251,76 @@ describe('batch selection filters the real feed', () => {
 
     expect(screen.getAllByText('Year 1 project').length).toBeGreaterThan(0)
     expect(screen.getAllByText('Year 4 project').length).toBeGreaterThan(0)
+  })
+})
+
+describe('pinned discussions', () => {
+  it('renders an active pin once, in the Pinned section', () => {
+    const pinned = posts.find(post => post.id === 'p5')!
+    render(
+      <Harness
+        overrides={{
+          pinnedPosts: [pinned],
+          pinnedPostIds: new Set(['p5']),
+        }}
+      />
+    )
+
+    const region = screen.getByRole('region', { name: /Pinned/i })
+    expect(within(region).getByText('Year 3 discussion')).toBeInTheDocument()
+    // Not duplicated in Latest: the same discussion is shown exactly once.
+    expect(screen.getAllByText('Year 3 discussion')).toHaveLength(1)
+  })
+
+  it('keeps the regular feed unchanged when nothing is pinned', () => {
+    render(<Harness />)
+
+    expect(screen.queryByRole('region', { name: /Pinned/i })).not.toBeInTheDocument()
+    expect(screen.getByText('Year 3 discussion')).toBeInTheDocument()
+  })
+
+  it('tells an authorized admin when all three pin slots are occupied', () => {
+    const pinned = [1, 2, 3].map(index =>
+      makePost({
+        id: `pinned-${index}`,
+        title: `Pinned discussion ${index}`,
+        type: 'discussion',
+      })
+    )
+
+    render(
+      <Harness
+        overrides={{
+          currentUser: { id: 'admin-1', role: 'admin', faculty_status: 'none' },
+          pinnedPosts: pinned,
+          pinnedPostIds: new Set(pinned.map(post => post.id)),
+        }}
+      />
+    )
+
+    expect(screen.getByRole('status')).toHaveTextContent(/All 3 pin slots are in use/)
+  })
+
+  it('does not show the slot message to a student', () => {
+    const pinned = [1, 2, 3].map(index =>
+      makePost({
+        id: `pinned-${index}`,
+        title: `Pinned discussion ${index}`,
+        type: 'discussion',
+      })
+    )
+
+    render(
+      <Harness
+        overrides={{
+          currentUser: { id: 'student-1', role: 'student', faculty_status: 'none' },
+          pinnedPosts: pinned,
+          pinnedPostIds: new Set(pinned.map(post => post.id)),
+        }}
+      />
+    )
+
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 })
 
