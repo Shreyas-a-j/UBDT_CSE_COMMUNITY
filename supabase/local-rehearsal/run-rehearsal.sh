@@ -68,6 +68,7 @@ CANONICAL=(
   2026102601_discussion_pins_pkey_repair
   2026102602_admin_nominee_eligibility
   2026102603_announcement_delete_policy
+  2026102701_alumni_signup_identity
 )
 
 FAIL=0
@@ -502,6 +503,20 @@ grep -q 'All admission-number and USN-linking tests passed' "$WORK/admission-num
   && ok "first-year admission, duplicate rollback, years 2-4 rejection, USN linking and RLS passed" \
   || bad "admission-number suite did not reach its summary"
 $PG -q -c "delete from auth.users where email like 'ucc-admission-%@example.com';" >/dev/null 2>&1
+
+# --------------------------------- 11g. alumni signup identity
+step "11g. supabase/test-alumni-signup-provisioning.sql"
+$PG < "$REPO/supabase/test-alumni-signup-provisioning.sql" > "$WORK/alumni-signup.out" 2>&1
+rc=$?
+note "exit=$rc"
+grep -E 'TEST [0-9]|PASS|FAIL|All alumni' "$WORK/alumni-signup.out" | sed 's/^/    /' | head -40
+if grep -qE 'FAIL:|ERROR' "$WORK/alumni-signup.out"; then
+  bad "ALUMNI SIGNUP IDENTITY TESTS REPORTED A FAILURE"; FAIL=1
+fi
+[ $rc -ne 0 ] && FAIL=1
+grep -q 'All alumni signup identity checks passed' "$WORK/alumni-signup.out" \
+  && ok "alumni signup persisted member_type/graduation_year and non-alumni intents stayed untagged" \
+  || bad "alumni signup identity suite did not reach its summary"
 
 # ------------------------------------------------- 12. negative controls
 step "12. negative controls (each MUST fail with the expected message)"
