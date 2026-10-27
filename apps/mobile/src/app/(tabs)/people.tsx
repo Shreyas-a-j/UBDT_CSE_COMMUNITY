@@ -29,7 +29,7 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { isApprovedFaculty, normalizeProfile } from '@/lib/profile';
+import { alumniTag, isApprovedFaculty, normalizeProfile } from '@/lib/profile';
 import {
   DIRECTORY_FILTERS,
   PEOPLE_COLUMNS,
@@ -336,7 +336,9 @@ function PersonCard({
               {person.name}
             </Text>
             {faculty ? <Badge label="Faculty" tone="accent" /> : null}
-            {person.member_type === 'alumni' ? <Badge label="Alumni" /> : null}
+            {person.member_type === 'alumni' ? (
+              <Badge label={alumniTag(person.graduation_year)} tone="warn" />
+            ) : null}
           </View>
           <Text style={styles.meta} numberOfLines={1}>
             {meta}

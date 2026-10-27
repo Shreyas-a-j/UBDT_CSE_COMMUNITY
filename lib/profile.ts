@@ -54,11 +54,25 @@ function asMemberType(value: unknown, role: UserRole): MemberType {
   return 'student'
 }
 
+/**
+ * Resolves a persisted community identity from a profile row or a joined
+ * author projection. The authorisation role wins, so a stale `alumni` value
+ * on a faculty/admin row cannot override their actual role.
+ */
+export function resolveMemberType(value: unknown, role: unknown): MemberType {
+  return asMemberType(value, asRole(role))
+}
+
 function asGraduationYear(value: unknown): number | null {
   const year = asNumber(value)
   return year !== null && Number.isInteger(year) && year >= 1950 && year <= 2200
     ? year
     : null
+}
+
+/** Validates the alumni graduation year used only for the badge label. */
+export function resolveGraduationYear(value: unknown): number | null {
+  return asGraduationYear(value)
 }
 
 function asContactVisibility(value: unknown): ContactVisibility {

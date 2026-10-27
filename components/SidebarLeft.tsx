@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { Check, Compass, Edit3, GraduationCap, LogIn } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { getYearLabel } from '@/lib/utils'
-import { displayName } from '@/lib/profile'
+import { alumniTag, displayName, resolveMemberType } from '@/lib/profile'
 import { YearFilter } from '@/lib/types'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -50,7 +50,13 @@ export default function SidebarLeft() {
             </h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
               {currentUser.usn && <span className="chip chip-mono">{currentUser.usn}</span>}
-              <span className="chip">{getYearLabel(currentUser.year)}</span>
+              {resolveMemberType(currentUser.member_type, currentUser.role) === 'alumni' ? (
+                <span className="chip chip-peach">
+                  <GraduationCap className="h-3 w-3" /> {alumniTag(currentUser.graduation_year)}
+                </span>
+              ) : (
+                <span className="chip">{getYearLabel(currentUser.year)}</span>
+              )}
             </div>
 
             {currentUser.bio && (

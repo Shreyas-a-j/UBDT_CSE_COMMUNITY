@@ -4,11 +4,11 @@ import React from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  CalendarDays, Check, Edit3, LayoutDashboard,
+  CalendarDays, Check, Edit3, GraduationCap, LayoutDashboard,
   LogIn, Megaphone, MessagesSquare, Shield, Sparkles, UserRound, Users,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
-import { displayName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
+import { alumniTag, displayName, isAdmin, isVerifiedFaculty, resolveMemberType } from '@/lib/profile'
 import { filterEventsByBatch, filterPostsByBatch, normalizeBatch } from '@/lib/logic/batch'
 import { getYearLabel } from '@/lib/utils'
 import UserAvatar from '@/components/UserAvatar'
@@ -227,8 +227,13 @@ export default function CommunitySidebar({
                 size={36}
               />
               <div className="min-w-0 flex-1">
-                <p className="truncate text-[12.5px] font-semibold text-header-ink">
-                  {displayName(currentUser)}
+                <p className="flex items-center gap-1.5 text-[12.5px] font-semibold text-header-ink">
+                  <span className="truncate">{displayName(currentUser)}</span>
+                  {resolveMemberType(currentUser.member_type, currentUser.role) === 'alumni' && (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded border border-peach/40 bg-peach-soft px-1.5 py-px text-[9.5px] font-medium text-peach-text">
+                      <GraduationCap className="h-2.5 w-2.5" aria-hidden /> {alumniTag(currentUser.graduation_year)}
+                    </span>
+                  )}
                 </p>
                 <p className="truncate text-[10.5px] text-sidebar-muted">
                   {currentUser.usn || currentUser.email || currentUser.role}

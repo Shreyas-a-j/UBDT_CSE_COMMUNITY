@@ -4,13 +4,13 @@ import React, { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
-  Bell, Calendar, ChevronDown, LayoutDashboard, LogIn, LogOut,
+  Bell, Calendar, ChevronDown, GraduationCap, LayoutDashboard, LogIn, LogOut,
   Menu, MessageSquarePlus, Moon, Plus, Search, Shield, Sun, User, X,
 } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { useTheme } from '@/contexts/ThemeContext'
 import { getYearLabel } from '@/lib/utils'
-import { displayName, isAdmin, isVerifiedFaculty } from '@/lib/profile'
+import { alumniTag, displayName, isAdmin, isVerifiedFaculty, resolveMemberType } from '@/lib/profile'
 import UserAvatar from '@/components/UserAvatar'
 import SearchInput from '@/components/SearchInput'
 import MobileNavigation from '@/components/MobileNavigation'
@@ -351,7 +351,14 @@ export default function Navbar() {
                 {showUserMenu && (
                   <div className="absolute right-0 top-full z-50 mt-3.5 w-[17rem] overflow-hidden rounded-xl border border-line-strong bg-surface shadow-pop">
                     <div className="border-b border-line px-4 py-3">
-                      <p className="truncate text-[13px] font-semibold text-ink">{displayName(currentUser)}</p>
+                      <p className="flex items-center gap-1.5 text-[13px] font-semibold text-ink">
+                        <span className="truncate">{displayName(currentUser)}</span>
+                        {resolveMemberType(currentUser.member_type, currentUser.role) === 'alumni' && (
+                          <span className="chip chip-peach shrink-0 py-0 text-[9.5px]">
+                            <GraduationCap className="h-2.5 w-2.5" /> {alumniTag(currentUser.graduation_year)}
+                          </span>
+                        )}
+                      </p>
                       <p className="mt-0.5 truncate text-[11px] text-muted">
                         {currentUser.usn || currentUser.email || currentUser.role}
                       </p>

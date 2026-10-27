@@ -8,6 +8,7 @@ import { Chip } from './ui';
 import { Brand, Type } from '@/lib/theme';
 import { formatRelativeTime, getYearLabel } from '@/lib/community';
 import { formatPinCountdown } from '@/lib/feed-logic';
+import { alumniTag, resolveMemberType } from '@/lib/profile';
 import type { Post } from '@/lib/types';
 
 export function PostCard({
@@ -79,6 +80,9 @@ export function PostCard({
             </Text>
             {post.author_role && post.author_role !== 'student' ? (
               <Badge label={post.author_role} tone="accent" />
+            ) : null}
+            {resolveMemberType(post.author_member_type, post.author_role) === 'alumni' ? (
+              <Badge label={alumniTag(post.author_graduation_year)} tone="warn" />
             ) : null}
           </View>
           <Text style={styles.authorMeta} numberOfLines={1}>

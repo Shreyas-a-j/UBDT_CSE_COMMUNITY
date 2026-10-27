@@ -17,7 +17,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { POST_SELECT, getYearLabel, mapPost } from '@/lib/community';
-import { normalizeProfile } from '@/lib/profile';
+import { alumniTag, normalizeProfile } from '@/lib/profile';
 import { logSupabaseError } from '@/lib/errors';
 import { Brand, Radius, Type } from '@/lib/theme';
 import type { Post, Profile } from '@/lib/types';
@@ -193,11 +193,8 @@ export default function PublicProfileScreen() {
               ))}
               {profile.role === 'faculty' ? <Badge label="Faculty" tone="warn" /> : null}
               {profile.role === 'admin' ? <Badge label="Admin" tone="warn" /> : null}
-              {profile.member_type === 'alumni' && profile.graduation_year ? (
-                <Badge
-                  label={`Alumni '${String(profile.graduation_year).slice(-2)}`}
-                  tone="warn"
-                />
+              {profile.member_type === 'alumni' ? (
+                <Badge label={alumniTag(profile.graduation_year)} tone="warn" />
               ) : null}
             </View>
           </View>

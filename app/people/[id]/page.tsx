@@ -68,7 +68,7 @@ function ProfileDetail({ params }: { params: Promise<{ id: string }> }) {
       .from('posts')
       .select(`
         *,
-        author:profiles!author_id (name, usn, avatar_url, year, role),
+        author:profiles!author_id (name, usn, avatar_url, year, role, member_type, graduation_year),
         likes (count),
         comments (count),
         upvotes (count)

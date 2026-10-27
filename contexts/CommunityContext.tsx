@@ -29,6 +29,8 @@ import {
   canPublishFacultyContent,
   normalizeProfile,
   profileWritableFields,
+  resolveGraduationYear,
+  resolveMemberType,
 } from '@/lib/profile'
 import { sanitizeText } from '@/lib/validation'
 import { validateUSN } from '@/lib/utils'
@@ -173,12 +175,14 @@ type EmbeddedProfile = {
   avatar_url?: string | null
   year?: number | null
   role?: string | null
+  member_type?: string | null
+  graduation_year?: number | null
 }
 
 /** The feed's post projection, shared by the regular and pinned queries. */
 const POST_SELECT = `
   *,
-  author:profiles!author_id (name, usn, avatar_url, year, role),
+  author:profiles!author_id (name, usn, avatar_url, year, role, member_type, graduation_year),
   likes (count),
   comments (count),
   upvotes (count)
@@ -251,13 +255,15 @@ export function mapPost(row: Record<string, unknown>): Post {
     author_year: batchOfYear(author?.year),
     author_avatar: author?.avatar_url || null,
     author_role: author?.role === 'faculty' || author?.role === 'admin' ? author.role : 'student',
+    author_member_type: resolveMemberType(author?.member_type, author?.role),
+    author_graduation_year: resolveGraduationYear(author?.graduation_year),
     like_count: countFromEmbed(row.likes) || Number(row.like_count) || 0,
     upvote_count: countFromEmbed(row.upvotes) || Number(row.upvote_count) || 0,
     comment_count: countFromEmbed(row.comments) || Number(row.comment_count) || 0,
   }
 }
 
-function mapEvent(row: Record<string, unknown>): Event {
+export function mapEvent(row: Record<string, unknown>): Event {
   const host = (row.host ?? row.profiles) as EmbeddedProfile | null
   const allowed: EventType[] = ['Workshop', 'Meeting', 'Showcase', 'Seminar', 'Project Session']
   const type = allowed.includes(row.type as EventType) ? (row.type as EventType) : 'Workshop'
@@ -277,7 +283,26 @@ function mapEvent(row: Record<string, unknown>): Event {
     host_usn: host?.usn || '',
     host_avatar: host?.avatar_url || null,
     host_year: batchOfYear(host?.year),
+    host_member_type: resolveMemberType(host?.member_type, host?.role),
+    host_graduation_year: resolveGraduationYear(host?.graduation_year),
     rsvp_count: countFromEmbed(row.event_rsvps) || Number(row.rsvp_count) || 0,
+  }
+}
+
+export function mapComment(row: Record<string, unknown>): Comment {
+  const author = (row.author ?? row.profiles) as EmbeddedProfile | null
+  return {
+    id: String(row.id),
+    post_id: String(row.post_id),
+    author_id: String(row.author_id),
+    body: String(row.body ?? ''),
+    parent_id: (row.parent_id as string | null) ?? null,
+    created_at: String(row.created_at ?? ''),
+    author_name: author?.name || 'CSE Student',
+    author_usn: author?.usn || '',
+    author_avatar: author?.avatar_url || null,
+    author_member_type: resolveMemberType(author?.member_type, author?.role),
+    author_graduation_year: resolveGraduationYear(author?.graduation_year),
   }
 }
 
@@ -505,7 +530,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       .from('events')
       .select(`
         *,
-        host:profiles!host_id (name, usn, avatar_url, role, year),
+        host:profiles!host_id (name, usn, avatar_url, role, year, member_type, graduation_year),
         event_rsvps (count)
       `)
       .gte('event_date', minEventDate)
@@ -516,7 +541,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       .from('comments')
       .select(`
         *,
-        author:profiles!author_id (name, usn, avatar_url)
+        author:profiles!author_id (name, usn, avatar_url, role, member_type, graduation_year)
       `)
       .order('created_at', { ascending: true })
       .limit(200)
@@ -580,22 +605,7 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       if (commentsRes.error) errors.push(`comments: ${commentsRes.error.message}`)
     }
     if (commentsRes.data) {
-      setComments(
-        (commentsRes.data as Record<string, unknown>[]).map(row => {
-          const author = (row.author ?? row.profiles) as EmbeddedProfile | null
-          return {
-            id: String(row.id),
-            post_id: String(row.post_id),
-            author_id: String(row.author_id),
-            body: String(row.body ?? ''),
-            parent_id: (row.parent_id as string | null) ?? null,
-            created_at: String(row.created_at ?? ''),
-            author_name: author?.name || 'CSE Student',
-            author_usn: author?.usn || '',
-            author_avatar: author?.avatar_url || null,
-          }
-        })
-      )
+      setComments((commentsRes.data as Record<string, unknown>[]).map(mapComment))
     }
 
     setFeedError(errors.length ? errors.join(' · ') : null)
@@ -1077,6 +1087,8 @@ export function CommunityProvider({ children }: { children: React.ReactNode }) {
       author_name: currentUser.name,
       author_usn: currentUser.usn || '',
       author_avatar: currentUser.avatar_url,
+      author_member_type: currentUser.member_type,
+      author_graduation_year: currentUser.graduation_year,
       body: text,
       parent_id: null,
       created_at: data?.created_at ?? new Date().toISOString(),

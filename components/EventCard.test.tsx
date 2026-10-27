@@ -134,3 +134,39 @@ describe('EventCard delete control', () => {
     expect(screen.getByText('4')).toBeInTheDocument()
   })
 })
+
+describe('EventCard host alumni identity', () => {
+  it('shows the alumni badge for a persisted alumni host', () => {
+    useCommunityMock.mockReturnValue(makeContext(other, vi.fn()))
+
+    render(<EventCard event={makeEvent({
+      host_member_type: 'alumni',
+      host_graduation_year: 2024,
+    })} />)
+
+    expect(screen.getByText("Alumni '24")).toBeInTheDocument()
+  })
+
+  it('does not tag a student host who merely has a graduation year', () => {
+    useCommunityMock.mockReturnValue(makeContext(other, vi.fn()))
+
+    render(<EventCard event={makeEvent({
+      host_member_type: 'student',
+      host_graduation_year: 2028,
+    })} />)
+
+    expect(screen.queryByText(/^Alumni/)).not.toBeInTheDocument()
+  })
+
+  it('never tags faculty as alumni, even if the row carries a stale alumni value', () => {
+    useCommunityMock.mockReturnValue(makeContext(other, vi.fn()))
+
+    render(<EventCard event={makeEvent({
+      host_role: 'faculty',
+      host_member_type: 'alumni',
+      host_graduation_year: 2018,
+    })} />)
+
+    expect(screen.queryByText(/^Alumni/)).not.toBeInTheDocument()
+  })
+})

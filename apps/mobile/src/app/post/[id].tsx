@@ -33,12 +33,13 @@ import {
   POST_SELECT,
   formatRelativeTime,
   getYearLabel,
+  mapComment,
   mapPost,
   sanitizeText,
 } from '@/lib/community';
 import { pinErrorMessage } from '@/lib/feed-logic';
 import { KEYBOARD_AVOIDING_BEHAVIOR } from '@/lib/keyboard';
-import { canManageDiscussionPins } from '@/lib/profile';
+import { alumniTag, canManageDiscussionPins, resolveMemberType } from '@/lib/profile';
 import { logSupabaseError } from '@/lib/errors';
 import { Brand, Radius, Type } from '@/lib/theme';
 import type { Comment, Post } from '@/lib/types';
@@ -131,22 +132,7 @@ export default function PostDetailScreen() {
 
     if (!commentsResult.error && commentsResult.data) {
       setComments(
-        (commentsResult.data as unknown as Record<string, unknown>[]).map((row) => {
-          const author = (Array.isArray(row.author) ? row.author[0] : row.author) as
-            | Record<string, unknown>
-            | null;
-          return {
-            id: String(row.id),
-            post_id: String(row.post_id),
-            author_id: String(row.author_id),
-            body: String(row.body ?? ''),
-            parent_id: (row.parent_id as string | null) ?? null,
-            created_at: String(row.created_at ?? ''),
-            author_name: author ? String(author.name ?? 'CSE member') : 'CSE member',
-            author_usn: author ? String(author.usn ?? '') : '',
-            author_avatar: author ? ((author.avatar_url as string | null) ?? null) : null,
-          };
-        })
+        (commentsResult.data as unknown as Record<string, unknown>[]).map(mapComment)
       );
     } else if (commentsResult.error) {
       logSupabaseError('Comments error', commentsResult.error);
@@ -280,6 +266,8 @@ export default function PostDetailScreen() {
       author_name: profile?.name ?? 'You',
       author_usn: profile?.usn ?? '',
       author_avatar: profile?.avatar_url ?? null,
+      author_member_type: profile?.member_type ?? 'student',
+      author_graduation_year: profile?.graduation_year ?? null,
     };
 
     setComments((previous) => [...previous, created]);
@@ -483,6 +471,9 @@ export default function PostDetailScreen() {
             </View>
             {post.author_role && post.author_role !== 'student' ? (
               <Badge label={post.author_role} tone="accent" />
+            ) : null}
+            {resolveMemberType(post.author_member_type, post.author_role) === 'alumni' ? (
+              <Badge label={alumniTag(post.author_graduation_year)} tone="warn" />
             ) : null}
           </View>
 
@@ -754,6 +745,9 @@ function CommentRow({
           <Text style={styles.commentName} numberOfLines={1}>
             {comment.author_name}
           </Text>
+          {comment.author_member_type === 'alumni' ? (
+            <Badge label={alumniTag(comment.author_graduation_year)} tone="warn" />
+          ) : null}
           <Text style={styles.commentTime}>{formatRelativeTime(comment.created_at)}</Text>
         </View>
         <LinkifiedText text={comment.body} style={styles.commentText} />

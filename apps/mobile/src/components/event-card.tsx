@@ -5,6 +5,7 @@ import { Badge } from './badge';
 import { LinkifiedText } from './linkified-text';
 import { eventDateParts, formatEventDate, formatEventTime } from '@/lib/community';
 import { getEventPhase } from '@/lib/feed-logic';
+import { alumniTag, resolveMemberType } from '@/lib/profile';
 import { Brand, Type } from '@/lib/theme';
 import type { Event } from '@/lib/types';
 
@@ -104,6 +105,9 @@ export function EventCard({
           <Text style={styles.host} numberOfLines={1}>
             Hosted by <Text style={styles.hostName}>{event.host_name ?? 'CSE member'}</Text>
           </Text>
+          {resolveMemberType(event.host_member_type, event.host_role) === 'alumni' ? (
+            <Badge label={alumniTag(event.host_graduation_year)} tone="warn" />
+          ) : null}
         </View>
       ) : null}
 

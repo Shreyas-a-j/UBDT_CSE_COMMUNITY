@@ -185,6 +185,65 @@ describe('PostCard delete controls', () => {
   })
 })
 
+describe('PostCard alumni identity', () => {
+  it('shows the alumni badge for a persisted alumni author', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost({
+      author_member_type: 'alumni',
+      author_graduation_year: 2024,
+    })} />)
+
+    expect(screen.getByText("Alumni '24")).toBeInTheDocument()
+  })
+
+  it('does not tag a student who merely has a graduation year', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost({
+      author_member_type: 'student',
+      author_graduation_year: 2028,
+    })} />)
+
+    expect(screen.queryByText(/^Alumni/)).not.toBeInTheDocument()
+  })
+
+  it('does not tag faculty as alumni', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn()))
+
+    render(<PostCard post={makePost({
+      author_role: 'faculty',
+      author_member_type: 'faculty',
+      author_graduation_year: 2018,
+    })} />)
+
+    expect(screen.queryByText(/^Alumni/)).not.toBeInTheDocument()
+  })
+
+  it('shows the alumni badge on reply authors', () => {
+    useCommunityMock.mockReturnValue(makeContext(viewerProfile, vi.fn(), {
+      comments: [{
+        id: 'comment-1',
+        post_id: 'post-9',
+        author_id: 'author-2',
+        body: 'A reply',
+        parent_id: null,
+        created_at: '2026-10-25T10:00:00.000Z',
+        author_name: 'Asha Rao',
+        author_usn: '',
+        author_avatar: null,
+        author_member_type: 'alumni',
+        author_graduation_year: 2022,
+      }],
+    }))
+
+    render(<PostCard post={makePost()} />)
+    fireEvent.click(screen.getByRole('button', { name: /Reply/i }))
+
+    expect(screen.getByText("Alumni '22")).toBeInTheDocument()
+  })
+})
+
 describe('PostCard pin countdown and cap', () => {
   const farFuture = '2099-01-01T00:00:00.000Z'
 

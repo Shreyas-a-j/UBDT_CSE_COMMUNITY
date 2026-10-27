@@ -53,6 +53,20 @@ function asGraduationYear(value: unknown): number | null {
   return year !== null && Number.isInteger(year) && year >= 1950 && year <= 2200 ? year : null;
 }
 
+/**
+ * Resolves a persisted community identity. The authorisation role wins, so a
+ * stale `alumni` value on a faculty/admin row cannot override their real role.
+ * Never infer alumni from graduation_year: students have one too.
+ */
+export function resolveMemberType(value: unknown, role: unknown): MemberType {
+  return asMemberType(value, asRole(role));
+}
+
+/** Validates the alumni graduation year used only for the badge label. */
+export function resolveGraduationYear(value: unknown): number | null {
+  return asGraduationYear(value);
+}
+
 export function displayName(profile?: { name?: string | null } | null): string {
   const name = profile?.name?.trim();
   return name && name.length > 0 ? name : 'Member';

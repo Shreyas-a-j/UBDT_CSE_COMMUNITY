@@ -78,6 +78,9 @@ export interface Event {
   host_role?: UserRole
   /** The host's batch (`profiles.year`), or null when the host has none. */
   host_year?: number | null
+  /** Persisted community identity from the host's profile row. */
+  host_member_type?: MemberType
+  host_graduation_year?: number | null
   rsvp_count?: number
 }
 
@@ -106,6 +109,9 @@ export interface Post {
   author_avatar?: string | null
   author_year?: number | null
   author_role?: UserRole
+  /** Persisted community identity from the author's profile row. */
+  author_member_type?: MemberType
+  author_graduation_year?: number | null
   like_count?: number
   upvote_count?: number
   comment_count?: number
@@ -140,6 +146,9 @@ export interface Comment {
   author_name?: string
   author_avatar?: string | null
   author_usn?: string
+  /** Persisted community identity from the author's profile row. */
+  author_member_type?: MemberType
+  author_graduation_year?: number | null
 }
 
 export type NotificationType =

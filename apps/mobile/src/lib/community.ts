@@ -11,6 +11,7 @@ import type {
   Announcement,
   AnnouncementReaction,
   AnnouncementReactionRow,
+  Comment,
   DiscussionPin,
   Event,
   EventType,
@@ -19,13 +20,14 @@ import type {
   Profile,
   UserRole,
 } from './types';
+import { resolveGraduationYear, resolveMemberType } from './profile';
 
 type Row = Record<string, unknown>;
 
 export const POST_SELECT = `
   id, author_id, type, title, body, image_url, github_url, demo_url,
   tech_stack, tags, target_years, created_at,
-  author:profiles!author_id (id, name, usn, avatar_url, year, role),
+  author:profiles!author_id (id, name, usn, avatar_url, year, role, member_type, graduation_year),
   likes (count),
   comments (count),
   upvotes (count)
@@ -34,13 +36,13 @@ export const POST_SELECT = `
 export const EVENT_SELECT = `
   id, host_id, title, description, type, event_date, event_time, duration,
   link, target_years, created_at,
-  host:profiles!host_id (id, name, usn, avatar_url, year, role),
+  host:profiles!host_id (id, name, usn, avatar_url, year, role, member_type, graduation_year),
   event_rsvps (count)
 `;
 
 export const COMMENT_SELECT = `
   id, post_id, author_id, body, parent_id, created_at,
-  author:profiles!author_id (id, name, usn, avatar_url)
+  author:profiles!author_id (id, name, usn, avatar_url, member_type, graduation_year)
 `;
 
 export const ANNOUNCEMENT_SELECT = `
@@ -90,6 +92,7 @@ function embeddedProfile(value: unknown): Profile | null {
   const row = Array.isArray(value) ? value[0] : value;
   if (!row || typeof row !== 'object') return null;
   const source = row as Row;
+  const role = asRole(source.role);
   return {
     id: asString(source.id),
     usn: asNullableString(source.usn),
@@ -101,13 +104,13 @@ function embeddedProfile(value: unknown): Profile | null {
     avatar_url: asNullableString(source.avatar_url),
     skills: [],
     interests: [],
-    role: asRole(source.role),
+    role,
     faculty_status: 'none',
     designation: null,
     employee_id: null,
     expertise: [],
-    member_type: asRole(source.role) === 'student' ? 'student' : 'faculty',
-    graduation_year: null,
+    member_type: resolveMemberType(source.member_type, role),
+    graduation_year: resolveGraduationYear(source.graduation_year),
     portfolio_url: null,
     github_url: null,
     linkedin_url: null,
@@ -136,6 +139,8 @@ export function mapPost(row: Row): Post {
     author_avatar: author?.avatar_url ?? null,
     author_year: author?.year ?? null,
     author_role: author?.role ?? 'student',
+    author_member_type: author?.member_type ?? 'student',
+    author_graduation_year: author?.graduation_year ?? null,
     like_count: countFromEmbed(row.likes) || Number(row.like_count) || 0,
     upvote_count: countFromEmbed(row.upvotes) || Number(row.upvote_count) || 0,
     comment_count: countFromEmbed(row.comments) || Number(row.comment_count) || 0,
@@ -162,7 +167,26 @@ export function mapEvent(row: Row): Event {
     host_avatar: host?.avatar_url ?? null,
     host_role: host?.role ?? 'student',
     host_year: host?.year ?? null,
+    host_member_type: host?.member_type ?? 'student',
+    host_graduation_year: host?.graduation_year ?? null,
     rsvp_count: countFromEmbed(row.event_rsvps) || Number(row.rsvp_count) || 0,
+  };
+}
+
+export function mapComment(row: Row): Comment {
+  const author = embeddedProfile(row.author ?? row.profiles);
+  return {
+    id: String(row.id),
+    post_id: String(row.post_id),
+    author_id: String(row.author_id),
+    body: asString(row.body),
+    parent_id: asNullableString(row.parent_id),
+    created_at: asString(row.created_at, new Date().toISOString()),
+    author_name: author?.name ?? 'CSE member',
+    author_usn: author?.usn ?? '',
+    author_avatar: author?.avatar_url ?? null,
+    author_member_type: author?.member_type ?? 'student',
+    author_graduation_year: author?.graduation_year ?? null,
   };
 }
 

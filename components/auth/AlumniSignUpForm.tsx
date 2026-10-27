@@ -52,9 +52,10 @@ export default function AlumniSignUpForm() {
     try {
       const skillsList = parseTagList(skills)
 
-      // Step 1: Create auth account. No USN is sent for alumni; the existing
-      // handle_new_user() trigger provisions the alumni profile with
-      // role='student', faculty_status='none', member_type='alumni'.
+      // Step 1: Create auth account. No USN is sent for alumni; the
+      // profiles_set_alumni_identity_on_insert trigger reads this metadata and
+      // provisions the profile with role='student', faculty_status='none',
+      // member_type='alumni'.
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: email.trim(),
         password,

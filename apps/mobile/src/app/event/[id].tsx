@@ -15,10 +15,12 @@ import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
 import { EVENT_SELECT, mapEvent } from '@/lib/community';
 import { isEventUpcoming } from '@/lib/feed-logic';
+import { alumniTag, resolveMemberType } from '@/lib/profile';
 import { logSupabaseError } from '@/lib/errors';
 import { Brand, Type } from '@/lib/theme';
 import type { Event } from '@/lib/types';
 import { BackHeader, Screen } from '@/components/layout';
+import { Badge } from '@/components/badge';
 import { EventCard } from '@/components/event-card';
 import { ListSkeleton } from '@/components/skeleton';
 import { EmptyState, ErrorState } from '@/components/states';
@@ -220,7 +222,12 @@ export default function EventDetailScreen() {
 
             <View style={styles.infoCard}>
               <Text style={styles.infoTitle}>Event details</Text>
-              <Text style={styles.infoRow}>Hosted by {event.host_name ?? 'CSE member'}</Text>
+              <View style={styles.infoHostRow}>
+                <Text style={styles.infoRow}>Hosted by {event.host_name ?? 'CSE member'}</Text>
+                {resolveMemberType(event.host_member_type, event.host_role) === 'alumni' ? (
+                  <Badge label={alumniTag(event.host_graduation_year)} tone="warn" />
+                ) : null}
+              </View>
               <Text style={styles.infoRow}>
                 {event.target_years.length === 4
                   ? 'Open to every batch'
@@ -262,5 +269,11 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     color: Brand.dim,
+  },
+  infoHostRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 8,
   },
 });

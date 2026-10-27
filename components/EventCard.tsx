@@ -4,11 +4,12 @@ import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import {
-  Calendar, Check, Clock, Edit2, ExternalLink, Save, Trash2, Users, Video, X,
+  Calendar, Check, Clock, Edit2, ExternalLink, GraduationCap, Save, Trash2, Users, Video, X,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { Event } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
+import { alumniTag, resolveMemberType } from '@/lib/profile'
 import { formatEventDateTime, getCountdown } from '@/lib/utils'
 import UserAvatar from '@/components/UserAvatar'
 
@@ -60,6 +61,7 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
     useCommunity()
   const isRsvped = rsvpedEventIds.has(event.id)
   const isHost = currentUser?.id === event.host_id
+  const hostMemberType = resolveMemberType(event.host_member_type, event.host_role)
   const [countdown, setCountdown] = useState('')
   const [isEditing, setIsEditing] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
@@ -344,8 +346,15 @@ export default function EventCard({ event, compact = false }: EventCardProps) {
           >
             <UserAvatar src={event.host_avatar} name={event.host_name || 'Host'} size={28} />
             <span className="min-w-0">
-              <span className="block truncate text-[12.5px] font-medium text-ink group-hover:underline">
-                {event.host_name}
+              <span className="flex min-w-0 items-center gap-1.5">
+                <span className="truncate text-[12.5px] font-medium text-ink group-hover:underline">
+                  {event.host_name}
+                </span>
+                {hostMemberType === 'alumni' && (
+                  <span className="chip chip-peach shrink-0 py-0 text-[9.5px]">
+                    <GraduationCap className="h-2.5 w-2.5" /> {alumniTag(event.host_graduation_year)}
+                  </span>
+                )}
               </span>
               <span className="block text-[10.5px] text-dim">
                 Host{event.host_usn ? ` · ${event.host_usn}` : ''}

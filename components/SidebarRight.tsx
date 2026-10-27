@@ -3,12 +3,12 @@
 import React from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { ArrowBigUp, ArrowUpRight, CalendarDays, Megaphone, MessageSquare, Sparkles } from 'lucide-react'
+import { ArrowBigUp, ArrowUpRight, CalendarDays, GraduationCap, Megaphone, MessageSquare, Sparkles } from 'lucide-react'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { selectTrendingShowcases } from '@/lib/logic/feed'
 import { filterEventsByBatch } from '@/lib/logic/batch'
 import UserAvatar from '@/components/UserAvatar'
-import { displayName } from '@/lib/profile'
+import { alumniTag, displayName, resolveMemberType } from '@/lib/profile'
 
 function EventDate({ date }: { date: string }) {
   let parsed: Date | null = null
@@ -119,7 +119,14 @@ export default function SidebarRight() {
                   <p className="line-clamp-2 text-[12.5px] font-medium leading-snug text-ink">
                     {post.title}
                   </p>
-                  <p className="mt-0.5 truncate text-[10.5px] text-dim">{displayName({ name: post.author_name || 'CSE Student' })}</p>
+                  <p className="mt-0.5 flex items-center gap-1.5 truncate text-[10.5px] text-dim">
+                    <span className="truncate">{displayName({ name: post.author_name || 'CSE Student' })}</span>
+                    {resolveMemberType(post.author_member_type, post.author_role) === 'alumni' && (
+                      <span className="chip chip-peach shrink-0 py-0 text-[9px]">
+                        <GraduationCap className="h-2.5 w-2.5" /> {alumniTag(post.author_graduation_year)}
+                      </span>
+                    )}
+                  </p>
                   <p className="mt-1 flex items-center gap-2 text-[10px] text-dim">
                     <span className="inline-flex items-center gap-1">
                       <ArrowBigUp className="h-3 w-3" /> {post.upvote_count ?? 0}

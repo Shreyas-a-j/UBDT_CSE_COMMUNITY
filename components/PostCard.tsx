@@ -3,13 +3,14 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import {
-  ArrowBigUp, Check, Edit2, ExternalLink, GitBranch, Heart, Link as LinkIcon,
-  MessageSquare, Pin, PinOff, Save, Send, Share2, Sparkles, Trash2, X,
+  ArrowBigUp, Check, Edit2, ExternalLink, GitBranch, GraduationCap, Heart,
+  Link as LinkIcon, MessageSquare, Pin, PinOff, Save, Send, Share2, Sparkles,
+  Trash2, X,
 } from 'lucide-react'
 import { Post, Comment } from '@/lib/types'
 import { useCommunity } from '@/contexts/CommunityContext'
 import { formatDate, formatRelativeTime, getYearLabel } from '@/lib/utils'
-import { isAdmin, canManageDiscussionPins, firstName } from '@/lib/profile'
+import { isAdmin, canManageDiscussionPins, firstName, alumniTag, resolveMemberType } from '@/lib/profile'
 import {
   MAX_ACTIVE_DISCUSSION_PINS,
   PIN_SLOTS_FULL_MESSAGE,
@@ -320,6 +321,11 @@ export default function PostCard({ post, isPopular = false }: PostCardProps) {
               {post.author_role === 'faculty' && (
                 <span className="chip chip-accent py-0 text-[10px]">Faculty</span>
               )}
+              {resolveMemberType(post.author_member_type, post.author_role) === 'alumni' && (
+                <span className="chip chip-peach py-0 text-[10px]">
+                  <GraduationCap className="h-3 w-3" /> {alumniTag(post.author_graduation_year)}
+                </span>
+              )}
             </div>
             <div className="mt-1 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-dim">
               {post.author_year && <span>{getYearLabel(post.author_year)}</span>}
@@ -582,6 +588,11 @@ function CommentItem({ comment }: { comment: Comment }) {
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="text-[12.5px] font-medium text-ink">{comment.author_name}</span>
+          {comment.author_member_type === 'alumni' && (
+            <span className="chip chip-peach py-0 text-[9.5px]">
+              <GraduationCap className="h-2.5 w-2.5" /> {alumniTag(comment.author_graduation_year)}
+            </span>
+          )}
           {comment.author_usn && (
             <span className="font-mono text-[10px] text-dim">{comment.author_usn}</span>
           )}

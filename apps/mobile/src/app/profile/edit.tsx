@@ -30,6 +30,7 @@ import { useAuth } from '@/lib/auth-context';
 import { KEYBOARD_AVOIDING_BEHAVIOR } from '@/lib/keyboard';
 import { supabase } from '@/lib/supabase';
 import {
+  alumniTag,
   normalizeProfileLinks,
   type ProfileLinkErrors,
   type ProfileLinkField,
@@ -37,6 +38,7 @@ import {
 import { validateAcademicYear, validateUSN } from '@/lib/validation';
 import { Brand, Radius, Type } from '@/lib/theme';
 import { Avatar } from '@/components/avatar';
+import { Badge } from '@/components/badge';
 import { BackHeader, Screen } from '@/components/layout';
 import { EmptyState } from '@/components/states';
 import { GhostButton, PrimaryButton, StatusBanner, TextField } from '@/components/ui';
@@ -247,7 +249,12 @@ export default function EditProfileScreen() {
           <View style={styles.identity}>
             <Avatar name={profile.name} uri={profile.avatar_url} size={64} />
             <View style={styles.identityText}>
-              <Text style={styles.identityName}>{profile.name}</Text>
+              <View style={styles.identityNameRow}>
+                <Text style={styles.identityName}>{profile.name}</Text>
+                {profile.member_type === 'alumni' ? (
+                  <Badge label={alumniTag(profile.graduation_year)} tone="warn" />
+                ) : null}
+              </View>
               <Text style={styles.identityMeta}>
                 {[profile.usn, profile.branch].filter(Boolean).join(' · ')}
               </Text>
@@ -484,6 +491,12 @@ const styles = StyleSheet.create({
   identityText: {
     flex: 1,
     minWidth: 0,
+  },
+  identityNameRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: 7,
   },
   identityName: {
     fontFamily: Type.display,

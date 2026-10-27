@@ -24,7 +24,7 @@ import { router } from 'expo-router';
 
 import { useAuth } from '@/lib/auth-context';
 import { supabase } from '@/lib/supabase';
-import { canPublishFacultyContent, displayName, firstName, isAdmin } from '@/lib/profile';
+import { alumniTag, canPublishFacultyContent, displayName, firstName, isAdmin } from '@/lib/profile';
 import { getYearLabel } from '@/lib/community';
 import { logSupabaseError } from '@/lib/errors';
 import { Brand, Radius, Type } from '@/lib/theme';
@@ -232,7 +232,11 @@ export default function ProfileScreen() {
                 </Text>
               ) : null}
               <View style={styles.badgeRow}>
-                <Badge label={profile.role} tone={profile.role === 'student' ? 'plain' : 'accent'} />
+                {profile.member_type === 'alumni' ? (
+                  <Badge label={alumniTag(profile.graduation_year)} tone="warn" />
+                ) : (
+                  <Badge label={profile.role} tone={profile.role === 'student' ? 'plain' : 'accent'} />
+                )}
                 {profile.faculty_status !== 'none' ? (
                   <Badge
                     label={`Faculty ${profile.faculty_status}`}
