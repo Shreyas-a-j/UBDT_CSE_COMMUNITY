@@ -2,13 +2,14 @@
   "expo": {
     "name": "UCC",
     "slug": "ucc",
-    "version": "1.0.0",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "ucc",
     "userInterfaceStyle": "dark",
     "android": {
       "package": "com.ucc.community",
+      "versionCode": 3,
       "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#11111F",
@@ -25,7 +26,9 @@
           "mode": "production",
           "disableNSE": true,
           "disableLocation": true,
-          "smallIcons": ["./assets/images/android-icon-monochrome.png"],
+          "smallIcons": [
+            "./assets/images/android-icon-monochrome.png"
+          ],
           "smallIconAccentColor": "#8B7CF6"
         }
       ],
@@ -50,7 +53,8 @@
           "photosPermission": "Allow UCC to access your photos so you can attach images to faculty announcements."
         }
       ],
-      "expo-sharing"
+      "expo-sharing",
+      "expo-status-bar"
     ],
     "experiments": {
       "typedRoutes": true

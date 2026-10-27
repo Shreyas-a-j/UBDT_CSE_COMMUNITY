@@ -33,6 +33,7 @@ import { AuthProvider, useAuth } from '@/lib/auth-context';
 import { initializeAndroidPush, syncPushIdentity } from '@/lib/onesignal';
 import { UnreadNotificationsProvider } from '@/lib/unread-notifications';
 import { AdminNominationBanner } from '@/components/admin-nomination-banner';
+import { AppUpdateGate } from '@/components/app-update-gate';
 import { NotificationPopup } from '@/components/notification-popup';
 import { Brand, Type } from '@/lib/theme';
 
@@ -143,6 +144,7 @@ function RootNavigator() {
       </Stack>
       {session ? <AdminNominationBanner /> : null}
       {session ? <NotificationPopup /> : null}
+      <AppUpdateGate />
     </>
   );
 }

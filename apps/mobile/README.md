@@ -24,6 +24,23 @@ Copy `.env.example` to `.env` and fill `EXPO_PUBLIC_SUPABASE_URL` /
 Real env files are git-ignored. For EAS cloud builds, set the same two keys as
 EAS environment variables (`eas env:create`).
 
+## Android in-app updates
+
+Release builds check a public JSON manifest on launch and offer the newer APK
+inside the app. Optional updates can be postponed for the session; mandatory
+updates must reach Android's browser/installer hand-off before the app unlocks.
+The app never installs an APK silently.
+
+- Default manifest:
+  `https://pub-984d3335c03543f6bbddf6400b88a737.r2.dev/app/android-update.json`
+- Checked-in source: `apps/mobile/update/android-update.json`
+- Release and signing procedure: `docs/mobile/APP_UPDATES.md`
+- Optional build-time override: `EXPO_PUBLIC_UPDATE_MANIFEST_URL` (HTTPS only)
+
+The manifest, version, signing, upload, and verification steps live in
+`docs/mobile/APP_UPDATES.md`. Always increase `expo.android.versionCode` and
+keep the release certificate unchanged so Android accepts the update.
+
 ## Installable internal APK (EAS cloud build)
 
 ```bash

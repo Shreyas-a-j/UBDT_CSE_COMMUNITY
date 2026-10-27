@@ -12,7 +12,7 @@ describe('AndroidDownloadCard', () => {
     render(<AndroidDownloadCard />)
 
     expect(screen.getByText('UCC')).toBeInTheDocument()
-    expect(screen.getByText('v1.0.0')).toBeInTheDocument()
+    expect(screen.getByText('v1.0.2')).toBeInTheDocument()
     expect(screen.getByText('com.ucc.community')).toBeInTheDocument()
 
     const links = screen.getAllByRole('link', { name: /Download.*Android/i })

@@ -1,0 +1,11 @@
+{
+  "version": "1.0.2",
+  "versionCode": 3,
+  "apkUrl": "https://pub-984d3335c03543f6bbddf6400b88a737.r2.dev/app/ucc-android-v1.0.2.apk",
+  "releaseNotes": [
+    "UCC now checks for a newer Android build when the app launches.",
+    "The update dialog shows the available version and release notes before you download.",
+    "Retrying the download after the browser opens now works correctly."
+  ],
+  "mandatory": false
+}
