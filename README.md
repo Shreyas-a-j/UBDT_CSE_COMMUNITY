@@ -9,6 +9,7 @@ Connect with fellow students, discover people with shared interests, exchange me
 [![Supabase](https://img.shields.io/badge/Backend-Supabase-3FCF8E?logo=supabase)](https://supabase.com/)
 [![Tailwind CSS](https://img.shields.io/badge/Tailwind_CSS-v4-06B6D4?logo=tailwindcss)](https://tailwindcss.com/)
 [![Cloudflare Workers](https://img.shields.io/badge/Deployment-Cloudflare_Workers-F38020?logo=cloudflare)](https://workers.cloudflare.com/)
+[![XERJ Corpus Hub contributor](https://hub.xerj.org/contributors/Shreyas-a-j/badge.svg)](https://hub.xerj.org/contributors/Shreyas-a-j)
 
 **Live website:** [UBDT CSE Community](https://ubdt-cse-community.vercel.app/)
 
